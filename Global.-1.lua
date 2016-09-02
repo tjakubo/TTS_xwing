@@ -349,10 +349,13 @@ MoveModule.restWaitQuota = {}
 -- END MAIN MOVEMENT MODULE
 --------
 
-iter = 0
+iter = 1000
 spos = {}
 srot = {}
 sobj = nil
+colship = nil
+fin = false
+fin2 = false
 -- Sample update to test functionalities
 function update()
     if sobj == nil then
@@ -363,16 +366,104 @@ function update()
                 obj.setRotation(finalPos.rot)
                 obj.setDescription('')]]--
                 sobj = obj
+                spos = sobj.getPosition()
+                srot = sobj.getRotation()
+                colship = nil
+                fin = false
+                fin2 = false
             end
         end
     else
-        if iter == 0 then spos = sobj.getPosition() srot = sobj.getRotation() end
-        sobj.setPosition(spos)
-        sobj.setRotation(srot)
-        local finalPos = MoveModule.GetPartialPos(sobj.getDescription(), sobj, iter)
-        sobj.setPosition(finalPos.pos)
-        sobj.setRotation(finalPos.rot)
-        iter = iter+10
-        if iter > 1000 then iter = 0 sobj.setDescription('') sobj = nil end
+        if colship == nil then
+            for k,obj in pairs(getAllObjects()) do
+                if obj.getName() == 'TEST' then colship = obj end
+            end
+        end
+        while fin ~= true do
+            sobj.setPosition(spos)
+            sobj.setRotation(srot)
+            local finPos = MoveModule.GetPartialPos(sobj.getDescription(), sobj, iter)
+            sobj.setPosition(finPos.pos)
+            sobj.setRotation(finPos.rot)
+            if collide({sobj, colship}) then iter = iter -10
+            else
+                fin = true
+            end
+        end
+        while fin2 ~= true do
+            iter = iter+1
+            sobj.setPosition(spos)
+            sobj.setRotation(srot)
+            local finPos = MoveModule.GetPartialPos(sobj.getDescription(), sobj, iter)
+            sobj.setPosition(finPos.pos)
+            sobj.setRotation(finPos.rot)
+            if collide({sobj, colship}) then
+                sobj.setPosition(spos)
+                sobj.setRotation(srot)
+                iter = iter - 1 sobj.setDescription('')
+                local finPos = MoveModule.GetPartialPos(sobj.getDescription(), sobj, iter)
+                sobj.setPosition(finPos.pos)
+                sobj.setRotation(finPos.rot)
+                iter = 1000 sobj = nil fin2 = true
+            end
+        end
+
     end
+end
+
+function getCorners(ship)
+    local corners = {}
+    local spos = ship.getPosition()
+    local srot = ship.getRotation()[2]
+    local size = 0.7225
+    --if isBigShip(guid) == true then
+    --    size = size * 2
+    --end
+    local world_coords = {}
+    world_coords[1] = {spos[1] - size, spos[3] + size}
+    world_coords[2] = {spos[1] + size, spos[3] + size}
+    world_coords[3] = {spos[1] + size, spos[3] - size}
+    world_coords[4] = {spos[1] - size, spos[3] - size}
+    for r, corr in ipairs(world_coords) do
+        local xcoord = spos[1] + ((corr[1] - spos[1]) * math.sin(math.rad(srot))) - ((corr[2] - spos[3]) * math.cos(math.rad(srot)))
+        local ycoord = spos[3] + ((corr[1] - spos[1]) * math.cos(math.rad(srot))) + ((corr[2] - spos[3]) * math.sin(math.rad(srot)))
+        corners[r] = {xcoord,ycoord}
+    end
+    return corners
+end
+
+function getAxis(c1,c2)
+    local axis = {}
+    axis[1] = {c1[2][1]-c1[1][1],c1[2][2]-c1[1][2]}
+    axis[2] = {c1[4][1]-c1[1][1],c1[4][2]-c1[1][2]}
+    axis[3] = {c2[2][1]-c2[1][1],c2[2][2]-c2[1][2]}
+    axis[4] = {c2[4][1]-c2[1][1],c2[4][2]-c2[1][2]}
+    return axis
+end
+
+function dot2d(p,o)
+    return p[1] * o[1] + p[2] * o[2]
+end
+
+function collide(tab)
+    local c2 = getCorners(tab[2])
+    local c1 = getCorners(tab[1])
+    local axis = getAxis(c1,c2)
+    local scalars = {}
+    for i1 = 1, #axis do
+        for i2, set in pairs({c1,c2}) do
+            scalars[i2] = {}
+            for i3, point in pairs(set) do
+                table.insert(scalars[i2],dot2d(point,axis[i1]))
+            end
+        end
+        local s1max = math.max(unpack(scalars[1]))
+        local s1min = math.min(unpack(scalars[1]))
+        local s2max = math.max(unpack(scalars[2]))
+        local s2min = math.min(unpack(scalars[2]))
+        if s2min > s1max or s2max < s1min then
+            return false
+        end
+    end
+    return true
 end
