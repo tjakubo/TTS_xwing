@@ -104,11 +104,11 @@ function XW_ObjMatchType(obj, type)
     return false
 end
 
-function XW_ObjWithinDist(position, maxDistance, type, excludeObj)
+function XW_ObjWithinDist(position, maxDistance, type)
     local ships = {}
     --print(position[1] .. position[2] .. position[3])
     for k,obj in pairs(getAllObjects()) do
-        if obj ~= excludeObj and XW_ObjMatchType(obj, type) == true then
+        if XW_ObjMatchType(obj, type) == true then
             if Dist_Pos(position, obj.getPosition()) < maxDistance then
                 table.insert(ships, obj)
             end
@@ -147,6 +147,31 @@ end
 -- END MISC FUNCTIONS
 --------
 
+-- This takes care of hadnling description-based commands
+XW_cmd = {}
+
+-- Table of valid commands: their patterns and general types
+XW_cmd.ValidCommands = {}
+XW_cmd.AddCommand = function(cmdRegex, type)
+    if cmdRegex:sub(1,1) ~= '^' then cmdRegex = '^' .. cmdRegex end
+    if cmdRegex:sub(-1,-1) ~= '$' then cmdRegex = cmdRegex .. '$' end
+    table.insert(XW_cmd.ValidCommands, {cmdRegex, type})
+end
+
+-- Process provided command on a provided object
+XW_cmd.Process = function(obj, cmd)
+    cmd = cmd:match( "^%s*(.-)%s*$" )
+    local type = nil
+    for k,pat in pairs(XW_cmd.ValidCommands) do
+        if cmd:match(pat[1]) ~= nil then
+            type = pat[2]
+            break
+        end
+    end
+    if type ~= nil then print('Caught: ' .. cmd .. ', type: ' .. type)
+    else print('Not recognised: ' .. cmd) end
+    obj.setDescription('')
+end
 
 --------
 -- MAIN MOVEMENT MODULE
@@ -164,6 +189,8 @@ bankRad_mm = {80, 130, 180}
 turnRad_mm = {35, 62.5, 90}
 -- ~~~~~~
 
+
+
 -- Table telling us how moves final position is determined
 -- Format: {xOffset, yOffset, zOffset, rotOffset}
 -- Axis' offsets are in milimeters, rotation offset is in degrees
@@ -180,13 +207,13 @@ MoveData.straight[3] = {0, 0, str_mm[3], 0}
 MoveData.straight[4] = {0, 0, str_mm[4], 0}
 MoveData.straight[5] = {0, 0, str_mm[5], 0}
 --[[MoveData.straight.baseOffset = function(size, part)
-    local baseSize = mm_smallBase
-    if size == 'large' then baseSize = mm_largeBase end
-    local offsetInit = {0, 0, baseSize/2, 0}
-    local offsetFinal = {0, 0, baseSize/2, 0}
-    if part == 'init' then return offsetInit
-    elseif part == 'final' then return offsetFinal
-    else return Vect_Sum()
+local baseSize = mm_smallBase
+if size == 'large' then baseSize = mm_largeBase end
+local offsetInit = {0, 0, baseSize/2, 0}
+local offsetFinal = {0, 0, baseSize/2, 0}
+if part == 'init' then return offsetInit
+elseif part == 'final' then return offsetFinal
+else return Vect_Sum()
 end]]--
 MoveData.straight.smallBaseOffsetInit = {0, 0, mm_smallBase/2, 0}
 MoveData.straight.smallBaseOffsetFinal = {0, 0, mm_smallBase/2, 0}
@@ -195,6 +222,7 @@ MoveData.straight.largeBaseOffsetInit = {0, 0, mm_largeBase/2, 0}
 MoveData.straight.largeBaseOffsetFinal = {0, 0, mm_largeBase/2, 0}
 MoveData.straight.largeBaseOffset = Vect_Sum(MoveData.straight.largeBaseOffsetInit, MoveData.straight.largeBaseOffsetFinal)
 MoveData.straight.length = {str_mm[1], str_mm[2], str_mm[3], str_mm[4], str_mm[5]}
+XW_cmd.AddCommand('s[12345]', 'move')
 
 -- Banks RIGHT (member function to modify to left)
 -- Path traversed is eighth part (1/8 or 45deg) of a circle of specified radius (see CONFIGURATION)
@@ -211,6 +239,7 @@ MoveData.bank.largeBaseOffsetInit = {0, 0, mm_largeBase/2, 0}
 MoveData.bank.largeBaseOffsetFinal = {(mm_largeBase/2)/math.sqrt(2), 0, (mm_largeBase/2)/math.sqrt(2), 0}
 MoveData.bank.largeBaseOffset = Vect_Sum(MoveData.bank.largeBaseOffsetInit, MoveData.bank.largeBaseOffsetFinal)
 MoveData.bank.length = {2*math.pi*bankRad_mm[1]/8, 2*math.pi*bankRad_mm[2]/8, 2*math.pi*bankRad_mm[3]/8}
+XW_cmd.AddCommand('b[rle][123][st]', 'move')
 
 -- Turns RIGHT (member function to modify to left)
 -- Path traversed is fourth part (1/4 or 90deg) of a circle of specified radius (see CONFIGURATION)
@@ -227,6 +256,7 @@ MoveData.turn.largeBaseOffsetInit = {0, 0, mm_largeBase/2, 0}
 MoveData.turn.largeBaseOffsetFinal = {mm_largeBase/2, 0, 0, 0}
 MoveData.turn.largeBaseOffset = Vect_Sum(MoveData.turn.largeBaseOffsetInit, MoveData.turn.largeBaseOffsetFinal)
 MoveData.turn.length = {2*math.pi*turnRad_mm[1]/4, 2*math.pi*turnRad_mm[2]/4, 2*math.pi*turnRad_mm[3]/4}
+XW_cmd.AddCommand('t[rle][123][st]', 'move')
 
 MoveData.roll = {}
 MoveData.roll[1] = {str_mm[1], 0, 0, 0}
@@ -240,7 +270,10 @@ MoveData.roll.smallBaseOffset = Vect_Sum(MoveData.roll.smallBaseOffsetInit, Move
 MoveData.roll.largeBaseOffsetInit = {mm_largeBase/2, 0, 0, 0}
 MoveData.roll.largeBaseOffsetFinal = {mm_largeBase/2, 0, 0, 0}
 MoveData.roll.largeBaseOffset = Vect_Sum(MoveData.roll.largeBaseOffsetInit, MoveData.roll.largeBaseOffsetFinal)
-
+XW_cmd.AddCommand('x[rle]', 'actionMove')
+XW_cmd.AddCommand('x[rle][fb]', 'actionMove')
+XW_cmd.AddCommand('c[srle]', 'actionMove')
+XW_cmd.AddCommand('c[rle][fb]', 'actionMove')
 
 
 -- Convert an entry from milimeters to in-game units
@@ -280,10 +313,11 @@ MoveData.BaseOffset = function(entry, info)
     return {entry[1]+offset[1], entry[2]+offset[2], entry[3]+offset[3], entry[4]+offset[4]}
 end
 
+-- Decode a move command into table with type, direction, speed etc info
 MoveData.DecodeInfo = function (move_code, ship)
-    local info = {type='invalid', speed=nil, dir=nil, extra=nil, size=nil}
+    local info = {type='invalid', speed=nil, dir=nil, extra=nil, size=nil, note=nil}
 
-    if ship.getName():find('LGS') ~= nil then info.size = 'large'
+    if DB_isLargeBase(ship) == true then info.size = 'large'
     else info.size = 'small' end
 
     if move_code:sub(1,1) == 's' or move_code:sub(1,1) == 'k' then
@@ -291,8 +325,12 @@ MoveData.DecodeInfo = function (move_code, ship)
         info.speed = tonumber(move_code:sub(2,2))
         if move_code:sub(1,1) == 'k' then
             info.extra = 'koiogran'
+            info.note = 'koiogran turned ' .. info.speed
+        else
+            info.note = 'flew straight ' .. info.speed
         end
         if info.speed > 5 then info.type = 'invalid' end
+
     elseif move_code:sub(1,1) == 'b' then
         info.type = 'bank'
         info.dir = 'right'
@@ -302,6 +340,9 @@ MoveData.DecodeInfo = function (move_code, ship)
         end
         if move_code:sub(-1,-1) == 's' then
             info.extra = 'segnor'
+            info.note = 'segnor looped ' .. info.dir .. ' ' .. info.speed
+        else
+            info.note = 'banked ' .. info.dir .. ' ' .. info.speed
         end
         if info.speed > 3 then info.type = 'invalid' end
     elseif move_code:sub(1,1) == 't' then
@@ -313,8 +354,12 @@ MoveData.DecodeInfo = function (move_code, ship)
         end
         if move_code:sub(-1,-1) == 't' then
             info.extra = 'talon'
+            info.note = 'talon rolled ' .. info.dir .. ' ' .. info.speed
         elseif move_code:sub(-1,-1) == 's' then
             info.extra = 'segnor'
+            info.note = 'segnor looped (turn template) ' .. info.dir .. ' ' .. info.speed
+        else
+            info.note = 'turned ' .. info.dir .. ' ' .. info.speed
         end
         if info.speed > 3 then info.type = 'invalid' end
     elseif move_code:sub(1,1) == 'x' or move_code:sub(1,1) == 'c' then
@@ -326,13 +371,20 @@ MoveData.DecodeInfo = function (move_code, ship)
         if move_code:sub(2,2) == 'l' or move_code:sub(2,2) == 'e' then
             info.dir = 'left'
         end
+        info.note = 'barrel rolled'
         if move_code:sub(-1,-1) == 'f' then
             info.extra = 'forward'
+            info.note = info.note .. ' forward ' .. info.dir
         elseif move_code:sub(-1,-1) == 'b' then
             info.extra = 'backward'
+            info.note = info.note .. ' backward' .. info.dir
         end
 
-        if move_code:sub(2,2) == 's' then info.speed = 2 info.extra = 'straight' end
+        if move_code:sub(2,2) == 's' then
+            info.speed = 2
+            info.extra = 'straight'
+            info.note = 'decloaked forward'
+        end
 
         if info.speed > 2 or (info.size == 'large' and info.speed > 1) then info.type = 'invalid' end
 
@@ -345,74 +397,99 @@ end
 
 -- Decode a "move" from the standard X-Wing notation into a valid movement data
 -- Provide a 'ship' object reference to determine if it is large based
---- TO_DO: actually check if base is large (include database and failsafe LGS in name handling)
---- TO_DO: barrel rolls, decloaks and all this shit
 -- Returns a valid path the ship has to traverse to perform a move (if it was at origin)
 -- Standard format {xOffset, yOffset, zOffset, rotOffset}
 MoveData.DecodeFull = function(move_code, ship)
     local data = {}
+    -- get the info about the move
     local info = MoveData.DecodeInfo(move_code, ship)
     if info.type == 'invalid' then print('Wrong move') return {0, 0, 0, 0} end
+    -- copy relevant offest
     data = Lua_ShallowCopy(MoveData[info.type][info.speed])
+    -- apply modifiers
     if info.dir == 'left' then data = MoveData.LeftVariant(data) end
     if info.extra == 'koiogran' or info.extra == 'segnor' then
         data = MoveData.TurnAroundVariant(data)
     elseif info.extra == 'talon' then
         data = MoveData.TurnInwardVariant(data)
     end
-    if info.type == 'roll' then
 
+    -- handle rolls and decloak
+    if info.type == 'roll' then
+        -- treat decloak straight as a straight move
         if info.extra == 'straight' then return MoveData.DecodeFull('s' .. info.speed, ship) end
 
+        -- aply yank foward/backward for rolls
         if info.extra == 'forward' then
             data = Vect_Sum(data, MoveData.roll[info.size .. 'BaseWiggle'].max)
         elseif info.extra == 'backward' then
             data = Vect_Sum(data, MoveData.roll[info.size .. 'BaseWiggle'].min)
         end
     end
+
+    -- apply ship base offset
     data = MoveData.BaseOffset(data, info)
 
     return MoveData.ConvertDataToIGU(data)
 end
 
-
--- Get a position of a ship if it would do A PART of the move
-
+-- Max part value for partial moves
+-- Part equal to this is a full move
+-- Value is largely irrelevant since part can be a fraction (any kind of number really)
 PartMax = 1000
 
+-- Get an offset of a ship if it would do A PART of the move
 MoveData.DecodePartial = function(move_code, ship, part)
     local data = {}
     local info = MoveData.DecodeInfo(move_code, ship)
 
+    -- handle part out of (0, PartMax) bounds
     if part >= PartMax then return MoveData.DecodeFull(move_code, ship)
     elseif part < 0 then return {0, 0, 0, 0} end
     if info.type == 'invalid' then print('Wrong move partial') return {0, 0, 0, 0} end
 
+    -- PARTIAL STRAIGHT
+    -- Simply get a proportional part of a full straight move (oof)
     if info.type == 'straight' then
         data = MoveData.DecodeFull(move_code, ship)
         if part < PartMax then data[4] = 0 end
         data[3] = data[3]*(part/PartMax)
+
+    -- PARTIAL BANK/TURN
+    -- angle changes linearly throughout whole move
+    -- move IS separated in 3 sections:
+    -- - before center of the ship moves onto the template
+    -- - when ship center moves over the template
+    -- - when ship moves off the template and slides it between guides again
     elseif info.type == 'bank' or info.type == 'turn' then
 
+        -- calculate length of the base offsets and real move
         local initOffLen = Vect_Length(MoveData[info.type][info.size .. 'BaseOffsetInit'])
         local moveLen = MoveData[info.type].length[info.speed]
         local finalOffLen = Vect_Length(MoveData[info.type][info.size .. 'BaseOffsetFinal'])
         local totalLen = initOffLen + moveLen + finalOffLen
 
+        -- check where (at which part value) transitions initOffset-move and move-finalOffset happen
         local initPartCutoff = (initOffLen/totalLen)*PartMax
         local movePartCutoff = ((initOffLen+moveLen)/totalLen)*PartMax
 
+        -- if part is in the initial base offset region
         if part <= initPartCutoff then
+            -- proportiaonal angle change
+            -- proportional part of the init offset since it is straight
             local offset = MoveData.ConvertDataToIGU(MoveData[info.type][info.size .. 'BaseOffsetInit'])[3]*(part/initPartCutoff)
             local angle = MoveData[info.type][info.speed][4]*(part/PartMax)
-            --if info.dir == 'left' then angle = -1*angle end
             data = {0, 0, offset, angle}
             if info.dir == 'left' then data=MoveData.LeftVariant(data) end
         elseif part > movePartCutoff then
+            -- similiar idea as above
+            -- get the final position and slide the ship BACK
+            --  a proportional part of the final offset (since it is a straight)
             data = MoveData.DecodeFull(move_code, ship)
             data[4] = MoveData[info.type][info.speed][4]*(part/PartMax)
             if info.dir == 'left' then data[4] = -1*data[4] end
 
+            -- scale the part value so it's 0 for full move and PartMax for move just before final offset
             part = (part-PartMax)*(-1/(PartMax-movePartCutoff))
 
             local xInset = MoveData.ConvertDataToIGU(MoveData[info.type][info.size .. 'BaseOffsetFinal'])[1]*part
@@ -421,10 +498,13 @@ MoveData.DecodePartial = function(move_code, ship, part)
             data[1] = data[1] - xInset
             data[3] = data[3] - zInset
         else
+            -- simply slide the ship over a part of a circle
             local angle = MoveData[info.type][info.speed][4]*(part/PartMax)
             if info.dir == 'left' then angle = -1*angle end
             data = Lua_ShallowCopy(MoveData[info.type][info.size .. 'BaseOffsetInit'])
+            -- scale part so it's 0 at the start of the template and PartMax at its end
             part = (part-(initPartCutoff))*(PartMax/(movePartCutoff-initPartCutoff))
+            -- argument at the end of a move is 1/4 of a circle for turn and 1/8 for a bank
             local fullArg = nil
             if info.type == 'bank' then fullArg = math.pi/4
             elseif info.type == 'turn' then fullArg = math.pi/2 end
@@ -442,10 +522,13 @@ MoveData.DecodePartial = function(move_code, ship, part)
             data = MoveData.ConvertDataToIGU(data)
         end
 
+    -- PARTIAL ROLL/DECLOAK
+    -- kinda special since it;s not partial "sideways" but partial as in fwd/backwd wiggle room
     elseif info.type == 'roll' then
 
         if info.extra == 'straight' then return MoveData.DecodePartial('s' .. info.speed, ship, part) end
 
+        -- scale the part so it's PartMax at max forward and -1*PartMax at max backward
         part = (part-(PartMax/2))*2
         local move_code_adj = move_code
         if move_code:sub(-1, -1) == 'f' or move_code:sub(-1, -1) == 'b' then
@@ -471,7 +554,7 @@ end
 -- Table containing all the high-level functions used to move stuff around
 MoveModule = {}
 
--- Simply get the final position for a 'ship' if it did a 'move' (standard move code)
+-- Simply get the final position for a 'ship' if it did a move (standard move code)
 -- Format:  out.pos for position, out.rot for rotation
 -- Position and rotation are ready to feed TTS functions
 MoveModule.GetFinalPos = function(move, ship)
@@ -482,6 +565,10 @@ MoveModule.GetFinalPos = function(move, ship)
     return {pos=finalPos, rot={0, finalRot, 0}}
 end
 
+-- Simply get the final position for a 'ship' if it did a part of a move (standard move code)
+-- part goes from 0 to PartMax
+-- Format:  out.pos for position, out.rot for rotation
+-- Position and rotation are ready to feed TTS functions
 MoveModule.GetPartialPos = function(move, ship, part)
     local finalPos = MoveData.DecodePartial(move, ship, part)
     local finalRot = finalPos[4] + ship.getRotation()[2]
@@ -490,67 +577,150 @@ MoveModule.GetPartialPos = function(move, ship, part)
     return {pos=finalPos, rot={0, finalRot, 0}}
 end
 
---MoveModule.restWaitQuota = {}
 
-MoveModule.PerformMove = function(move_code, ship)
-    --[[local initCheckSectNum = 4 + MoveData.DecodeInfo(move_code, ship).speed
-    local k=initCheckSectNum
-    local initCheckPos = {}
-    local initCheckPart = {}
-    while k >= 0 do
-        table.insert(initCheckPos, MoveData.GetPartialPos(move_code, ship, (k/initCheckSectNum)*PartMax))
+-- This tidbit lets us wait till ships lands WITHOUT checking for this condition
+--  on everything all the time
 
-        k = k-1
+-- Queue containing ships that want to be watched
+MoveModule.restWaitQueue = {}
+
+
+-- This completes when a ship is resting at a table level
+-- also yanks it down if TTS decides it should just hang out resting midair
+function restWaitCoroutine()
+    if MoveModule.restWaitQueue[1] == nil then print('EMPTY') return 0 end
+    local actShip = MoveModule.restWaitQueue[#MoveModule.restWaitQueue]
+    local yank = false
+    table.remove(MoveModule.restWaitQueue, #MoveModule.restWaitQueue)
+    repeat
+        if actShip.getPosition()[2] > 1.5 and actShip.resting == true then
+            actShip.setPositionSmooth({actShip.getPosition()['x'], actShip.getPosition()['y']-0.1, actShip.getPosition()['z']})
+            print('yank')
+        end
+        coroutine.yield(0)
+    until actShip.resting == true and actShip.held_by_color == nil and actShip.getPosition()[2] < 1.5
+    print('MF: ' .. actShip.getName())
+    return 1
+end
+
+-- Check if provided ship in a provided position/rotation would collide
+--  with anything from the provided table
+-- This is ALMOST where shit gets real
+MoveModule.CheckCollisions = function(ship, shipPosRot, colShipTable)
+    local info = {coll=nil, minMargin=0, numCheck=0}
+    local shipInfo = {pos=shipPosRot.pos, rot=shipPosRot.rot, ship=ship}
+    local certShipReach = nil -- distance at which other ships MUST bump it
+    local maxShipReach = nil  -- distance at which other ships CAN bump it
+    if DB_isLargeBase(ship) == true then
+        certShipReach = Convert_mm_igu(mm_largeBase/2)
+        maxShipReach = Convert_mm_igu(mm_largeBase*math.sqrt(2)/2)
+    else
+        certShipReach = Convert_mm_igu(mm_smallBase/2)
+        maxShipReach = Convert_mm_igu(mm_smallBase*math.sqrt(2)/2)
     end
 
-    actPart = MaxPart
-
-    while actPart > 0 do
-        MoveModule.getPartialPos(move_code, ship, actPart)
-
-    end   ]]--
-    local info = MoveData.DecodeInfo(move_code, ship)
-    local moveLength = Convert_mm_igu(MoveData[info.type].length[info.speed])
-    moveLength = moveLength + Vect_Length(MoveData[info.type][info.size .. 'BaseOffsetInit'])
-    moveLength = moveLength + Vect_Length(MoveData[info.type][info.size .. 'BaseOffsetFinal'])
-    local ships = XW_ObjWithinDist(MoveModule.GetPartialPos(move_code, ship, PartMax/2).pos, 10, 'ship', ship)
-    local actPart = PartMax
-    local okPart = PartMax
-    local checkNum = 0
-    local maxMargin = Convert_mm_igu(mm_smallBase)*0.95
-    while actPart > 0 do
-        local minDist = 9999
-        print(actPart)
-        local nPos = MoveModule.GetPartialPos(move_code, ship, actPart)
-        local collision = false
-        for k,colShip in pairs(ships) do
-            checkNum = checkNum + 1
-            if collide(nPos, {pos=colShip.getPosition(), rot=colShip.getRotation()}) == true then
-                collision = true
-                local dist = Dist_Pos(nPos.pos, colShip.getPosition())
-                print('col: ' .. colShip.getName() .. ' : ' .. dist)
-                if dist < minDist then minDist = dist end
+    for k, collShip in pairs(colShipTable) do
+        local certBumpDist = nil -- distance at which these two particular ships ships MUST bump
+        local maxBumpDist = nil  -- distance at which these two particular ships ships CAN bump
+        if DB_isLargeBase(collShip) == true then
+            certBumpDist = certShipReach + Convert_mm_igu(mm_largeBase/2)
+            maxBumpDist = maxShipReach + Convert_mm_igu(mm_largeBase*math.sqrt(2)/2)
+        else
+            certBumpDist = certShipReach + Convert_mm_igu(mm_smallBase/2)
+            maxBumpDist = maxShipReach + Convert_mm_igu(mm_smallBase*math.sqrt(2)/2)
+        end
+        local dist = Dist_Pos(shipPosRot.pos, collShip.getPosition())
+        if dist < maxBumpDist then
+            if dist < certBumpDist then
+                info.coll = collShip
+                --print('CertBump')
+                if certBumpDist - dist > info.minMargin then
+                    info.minMargin = certBumpDist - dist
+                    --print('Dist: ' .. Convert_igu_mm(dist) .. ' to_go: ' .. Convert_igu_mm(info.minMargin))
+                end
+            elseif collide(shipInfo, {pos=collShip.getPosition(), rot=collShip.getRotation(), ship=collShip}) == true then
+                info.coll = collShip
+                info.numCheck = info.numCheck + 1
+                --print('CheckBump')
                 break
             end
-
-        end
-        if collision == true then
-            if minDist < maxMargin then
-                print('DTS: ' .. maxMargin-minDist)
-                local pBef = nPos.pos
-                actPart=actPart-(((maxMargin-minDist)*PartMax)/moveLength)
-                local pAft = MoveModule.GetPartialPos(move_code, ship, actPart).pos
-                print('SKIP: ' .. Dist_Pos(pBef, pAft))
-            else
-                actPart = actPart - 1
+            if info.coll ~= nil then
+                --print('col: ' .. collShip.getName() .. ' : ' .. dist)
             end
-        else print('OK') break end
+        end
+    end
+    return info
+end
+
+function test(table)
+    return MoveModule.CheckCollisions(table[1], table[2], table[3])
+end
+
+MoveModule.PerformMove = function(move_code, ship)
+
+    local info = MoveData.DecodeInfo(move_code, ship)
+    local moveLength = MoveData[info.type].length[info.speed]
+    moveLength = moveLength + Vect_Length(MoveData[info.type][info.size .. 'BaseOffsetInit'])
+    moveLength = moveLength + Vect_Length(MoveData[info.type][info.size .. 'BaseOffsetFinal'])
+    moveLength = Convert_mm_igu(moveLength)
+    local isShipLargeBase = DB_isLargeBase(ship)
+    local certShipReach = nil
+    local maxShipReach = nil
+    if isShipLargeBase == true then
+        certShipReach = Convert_mm_igu(mm_largeBase/2)
+        maxShipReach = Convert_mm_igu(mm_largeBase*math.sqrt(2)/2)
+    else
+        certShipReach = Convert_mm_igu(mm_smallBase/2)
+        maxShipReach = Convert_mm_igu(mm_smallBase*math.sqrt(2)/2)
+    end
+    --print(maxShipReach)
+    local ships = XW_ObjWithinDist(MoveModule.GetPartialPos(move_code, ship, PartMax/2).pos, moveLength+(2*maxShipReach), 'ship')
+    for k, collShip in pairs(ships) do if collShip == ship then table.remove(ships, k) end end
+
+    local finalInfo = MoveModule.CheckCollisions(ship, MoveModule.GetFinalPos(move_code, ship), ships)
+    local actPart = PartMax
+    if finalInfo.coll ~= nil then
+        local checkNum = 0
+
+        local collision = false
+        --print(actPart)
+        local partDelta = -10
+        repeat
+            local nPos = MoveModule.GetPartialPos(move_code, ship, actPart)
+            local collInfo = MoveModule.CheckCollisions(ship, nPos, ships)
+            local distToSkip = nil
+            if collInfo.coll ~= nil then
+                collision = true
+                distToSkip = collInfo.minMargin
+                if distToSkip > 0 then
+                    partDelta = -1*((distToSkip * PartMax)/moveLength)
+                    if partDelta > -10 then partDelta = -10 end
+                    --print('skip: ' .. partDelta*-1)
+                else partDelta = -10 end
+            else collision = false end
+            actPart = actPart + partDelta
+            checkNum = checkNum + collInfo.numCheck
+        until collision == false or actPart < 0
+        partDelta = 1
+        repeat
+            local nPos = MoveModule.GetPartialPos(move_code, ship, actPart)
+            local collInfo = MoveModule.CheckCollisions(ship, nPos, ships)
+            if collInfo.coll ~= nil then collision = true
+            else collision = false end
+            actPart = actPart + partDelta
+            checkNum = checkNum + collInfo.numCheck
+        until collision == true or actPart > PartMax
+        actPart = actPart - 1
+
+        --print('CN: ' .. checkNum)
     end
     local finPos = MoveModule.GetPartialPos(move_code, ship, actPart)
+    finPos.pos[2] = finPos.pos[2] + 1
     ship.setPosition(finPos.pos)
     ship.setRotation(finPos.rot)
     ship.setDescription('')
-    print('CN: ' .. checkNum)
+    table.insert(MoveModule.restWaitQueue, ship)
+    startLuaCoroutine(Global, 'restWaitCoroutine')
 
 end
 
@@ -570,7 +740,8 @@ function update()
     if sobj == nil then
         for k,obj in pairs(getAllObjects()) do
             if obj.tag == 'Figurine' and obj.getDescription() ~= '' then
-                MoveModule.PerformMove(obj.getDescription(), obj)
+                --MoveModule.PerformMove(obj.getDescription(), obj)
+                XW_cmd.Process(obj, obj.getDescription())
                 --[[local finalPos = MoveModule.GetFinalPos(obj.getDescription(), obj)
                 obj.setPosition(finalPos.pos)
                 obj.setRotation(finalPos.rot)
@@ -585,58 +756,60 @@ function update()
         end
     else
         --[[if colship == nil then
-            for k,obj in pairs(getAllObjects()) do
-                if obj.getName() == 'TEST' then colship = obj end
-            end
-        end
-        while fin ~= true do
-            sobj.setPosition(spos)
-            sobj.setRotation(srot)
-            local finPos = MoveModule.GetPartialPos(sobj.getDescription(), sobj, iter)
-            sobj.setPosition(finPos.pos)
-            sobj.setRotation(finPos.rot)
-            if collide({sobj, colship}) then iter = iter -10
-            else
-                fin = true
-            end
-        end
-        while fin2 ~= true do
-            iter = iter+1
-            sobj.setPosition(spos)
-            sobj.setRotation(srot)
-            local finPos = MoveModule.GetPartialPos(sobj.getDescription(), sobj, iter)
-            sobj.setPosition(finPos.pos)
-            sobj.setRotation(finPos.rot)
-            if collide({sobj, colship}) then
-                sobj.setPosition(spos)
-                sobj.setRotation(srot)
-                iter = iter - 1 sobj.setDescription('')
-                local finPos = MoveModule.GetPartialPos(sobj.getDescription(), sobj, iter)
-                sobj.setPosition(finPos.pos)
-                sobj.setRotation(finPos.rot)
-                iter = PartMax sobj = nil fin2 = true
-            end
-        end
-]]--
-        --[[iter = iter+2
-        print(iter)
-        sobj.setPosition(spos)
-        sobj.setRotation(srot)
-        local finPos = MoveModule.GetPartialPos(sobj.getDescription(), sobj, iter)
-        sobj.setPosition(finPos.pos)
-        sobj.setRotation(finPos.rot)
-        if iter > PartMax then iter = 0 sobj.setDescription('') sobj = nil end--]]
+        for k,obj in pairs(getAllObjects()) do
+        if obj.getName() == 'TEST' then colship = obj end
     end
+end
+while fin ~= true do
+sobj.setPosition(spos)
+sobj.setRotation(srot)
+local finPos = MoveModule.GetPartialPos(sobj.getDescription(), sobj, iter)
+sobj.setPosition(finPos.pos)
+sobj.setRotation(finPos.rot)
+if collide({sobj, colship}) then iter = iter -10
+else
+fin = true
+end
+end
+while fin2 ~= true do
+iter = iter+1
+sobj.setPosition(spos)
+sobj.setRotation(srot)
+local finPos = MoveModule.GetPartialPos(sobj.getDescription(), sobj, iter)
+sobj.setPosition(finPos.pos)
+sobj.setRotation(finPos.rot)
+if collide({sobj, colship}) then
+sobj.setPosition(spos)
+sobj.setRotation(srot)
+iter = iter - 1 sobj.setDescription('')
+local finPos = MoveModule.GetPartialPos(sobj.getDescription(), sobj, iter)
+sobj.setPosition(finPos.pos)
+sobj.setRotation(finPos.rot)
+iter = PartMax sobj = nil fin2 = true
+end
+end
+]]--
+--[[iter = iter+2
+print(iter)
+sobj.setPosition(spos)
+sobj.setRotation(srot)
+local finPos = MoveModule.GetPartialPos(sobj.getDescription(), sobj, iter)
+sobj.setPosition(finPos.pos)
+sobj.setRotation(finPos.rot)
+if iter > PartMax then iter = 0 sobj.setDescription('') sobj = nil end--]]
+end
 end
 
 function getCorners(shipInfo)
     local corners = {}
     local spos = shipInfo.pos
     local srot = shipInfo.rot[2]
-    local size = 0.7225
-    --if isBigShip(guid) == true then
-    --    size = size * 2
-    --end
+    local size = nil
+    if DB_isLargeBase(shipInfo.ship) == true then
+        size = Convert_mm_igu(mm_largeBase/2)
+    else
+        size = Convert_mm_igu(mm_smallBase/2)
+    end
     local world_coords = {}
     world_coords[1] = {spos[1] - size, spos[3] + size}
     world_coords[2] = {spos[1] + size, spos[3] + size}
@@ -685,3 +858,90 @@ function collide(shipInfo1, shipInfo2)
     end
     return true
 end
+
+
+function DB_getShipType(shipRef)
+    if shipRef.getVar('DB_shipType') ~= nil then return shipRef.getVar('DB_shipType') end
+    local mesh = shipRef.getCustomObject()['mesh']
+    for k,typeTable in pairs(shipTypeDatabase) do
+        for k2,model in pairs(typeTable) do
+            if model == mesh then
+                shipRef.setVar('DB_shipType', typeTable[1])
+                return typeTable[1]
+            end
+        end
+    end
+    return 'Unknown'
+end
+
+function DB_isLargeBase(shipRef)
+    if shipRef.getVar('DB_isLargeBase') ~= nil then
+        return shipRef.getVar('DB_isLargeBase')
+    end
+    local shipType = DB_getShipType(shipRef)
+    for k,typeTable in pairs(shipTypeDatabase) do
+        if typeTable[1] == shipType then
+            shipRef.setVar('DB_isLargeBase', typeTable[2])
+            return typeTable[2]
+        end
+    end
+    return 'Unknown'
+end
+
+function DB_getBaseSize(shipRef)
+    if shipRef.getVar('DB_isLargeBase') ~= nil then
+        if shipRef.getVar('DB_isLargeBase') == true then return 'large'
+        elseif shipRef.getVar('DB_isLargeBase') == false then return 'small' end
+    end
+    local shipType = DB_getShipType(shipRef)
+    for k,typeTable in pairs(shipTypeDatabase) do
+        if typeTable[1] == shipType then
+            if typeTable[2] == true then shipRef.setVar('DB_isLargeBase', typeTable[2]) return 'large'
+            else shipRef.setVar('DB_isLargeBase', typeTable[2]) return 'small' end
+        end
+    end
+    return 'Unknown'
+end
+
+-- Type <=> Model (mesh) database
+-- Entry: { <type name>, <is large base?>, <model1>, <model2>, ..., <modelN>}
+shipTypeDatabase = {
+    xWing = {'X-Wing', false, 'https://paste.ee/r/54FLC', 'https://paste.ee/r/eAdkb', 'https://paste.ee/r/hxWah', 'https://paste.ee/r/ZxcTT', 'https://paste.ee/r/FfWNK'},
+    yWingReb = {'Y-Wing Rebel', false, 'https://paste.ee/r/MV6qP'},
+    yt1300 = {'YT-1300', true, 'https://paste.ee/r/kkPoB', 'http://pastebin.com/VdHhgdFr'},
+    yt2400 = {'YT-2400', true, 'https://paste.ee/r/Ff0vZ'},
+    aWing = {'A-Wing', false, 'https://paste.ee/r/tIdib', 'https://paste.ee/r/mow3U', 'https://paste.ee/r/ntg8n'},
+    bWing = {'B-Wing', false, 'https://paste.ee/r/8CtXr'},
+    hwk290Reb = {'HWK-290 Rebel', false, 'https://paste.ee/r/MySkn'},
+    vcx100 = {'VCX-100', true, 'https://paste.ee/r/VmV6q'},
+    attShuttle = {'Attack Shuttle', false, 'https://paste.ee/r/jrwRJ'},
+    t70xWing = {'T-70 X-Wing', false, 'https://paste.ee/r/NH1KI'},
+    eWing = {'E-Wing', false, 'https://paste.ee/r/A57A8'},
+    kWing = {'K-Wing', false, 'https://paste.ee/r/2Airh'},
+    z95hhReb = {'Z-95 Headhunter Rebel', false, 'https://paste.ee/r/d91Hu'},
+
+    fs31Scum = {'Firespray-31 Scum', true, 'https://paste.ee/r/3INxK'},
+    z95hhScum = {'Z-95 Headhunter Scum', false, 'https://paste.ee/r/OZrhd'},
+    yWingScum = {'Y-Wing Scum', false, 'https://paste.ee/r/1T0ii'},
+    hwk290Scum = {'HWK-290 Scum', false, 'https://paste.ee/r/tqTsw'},
+    m3aScyk = {'M3-A Interceptor', false, 'https://paste.ee/r/mUFjk'},
+    starViper = {'StarViper', false, 'https://paste.ee/r/jpEbC'},
+    aggressor = {'Aggressor', true, 'https://paste.ee/r/0UFlm'},
+    yv666 = {'YV-666', true, 'https://paste.ee/r/lLZ8W'},
+    kihraxz = {'Kihraxz Fighter', false, 'https://paste.ee/r/E8ZT0'},
+    jm5k = {'JumpMaster 5000', true, 'https://paste.ee/r/1af5C'},
+    g1a = {'G-1A StarFighter', false, 'https://paste.ee/r/aLVFD'},
+
+    tieFighter = {'TIE Fighter', false, 'https://paste.ee/r/Yz0kt'},
+    tieCeptor= {'TIE Interceptor', false, 'https://paste.ee/r/cedkZ', 'https://paste.ee/r/JxWNX'},
+    spaceCow = {'Lambda-Class Shuttle', true, 'https://paste.ee/r/4uxZO'},
+    fs31Imp = {'Firespray-31 Imperial', true, 'https://paste.ee/r/p3iYR'},
+    tieBomber = {'TIE Bomber', false, 'https://paste.ee/r/5A0YG'},
+    tiePhantom = {'TIE Phantom', false, 'https://paste.ee/r/JN16g'},
+    vtDecimator = {'VT-49 Decimator', true, 'https://paste.ee/r/MJOFI'},
+    tieAdv = {'TIE Advanced', false, 'https://paste.ee/r/NeptF'},
+    tiePunisher = {'TIE Punisher', false, 'https://paste.ee/r/aVGkQ'},
+    tieDefender = {'TIE Defender', false, 'https://paste.ee/r/0QVhZ'},
+    tieFoFighter = {'TIE/fo Fighter', false, 'http://pastebin.com/jt2AzA8t'},
+    tieAdvProt = {'TIE Adv. Prototype', false, 'https://paste.ee/r/l7cuZ'}
+}
