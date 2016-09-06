@@ -59,6 +59,16 @@ function Vect_Inverse(vector)
     return out
 end
 
+function Vect_Scale(vector, factor)
+    local out = {}
+    local k = 1
+    while vector[k] ~= nil do
+        out[k] = vector[k]*factor
+        k = k+1
+    end
+    return out
+end
+
 function Vect_Length(vector)
     return math.sqrt(vector[1]*vector[1] + vector[3]*vector[3])
 end
@@ -87,6 +97,7 @@ function Vect_RotateRad(vector, radRotation)
     return {newX, vector[2], newZ}
 end
 
+
 -- END VECTOR RELATED FUNCTIONS
 --------
 
@@ -94,22 +105,39 @@ end
 -- MISC FUNCTIONS
 
 function XW_ObjMatchType(obj, type)
-    if type == 'ship' then
+    if type == 'any' then
+        return true
+    elseif type == 'ship' then
         if obj.tag == 'Figurine' then return true end
     elseif type == 'token' then
-        if (token.tag == 'Chip' or token.getVar('XW_lockSet') ~= nil) then return true end
+        if obj.tag == 'Chip' or obj.getVar('XW_lockSet') ~= nil then return true end
     elseif type == 'lock' then
-        if token.getVar('XW_lockSet') ~= nil then return true end
+        if obj.getVar('XW_lockSet') ~= nil then return true end
     end
     return false
 end
 
-function XW_ObjWithinDist(position, maxDistance, type)
+function XW_ClosestWithinDist(centralObj, maxDist, type)
+    local closest = nil
+    local minDist = maxDist+1
+    for k,obj in pairs(getAllObjects()) do
+        if XW_ObjMatchType(obj, type) == true and obj ~= centralObj then
+            local dist = Dist_Pos(centralObj.getPosition(), obj.getPosition())
+            if dist < maxDist and dist < minDist then
+                minDist = dist
+                closest = obj
+            end
+        end
+    end
+    return {obj=closest, dist=minDist}
+end
+
+function XW_ObjWithinDist(position, maxDist, type)
     local ships = {}
     --print(position[1] .. position[2] .. position[3])
     for k,obj in pairs(getAllObjects()) do
         if XW_ObjMatchType(obj, type) == true then
-            if Dist_Pos(position, obj.getPosition()) < maxDistance then
+            if Dist_Pos(position, obj.getPosition()) < maxDist then
                 table.insert(ships, obj)
             end
         end
@@ -170,6 +198,10 @@ XW_cmd.Process = function(obj, cmd)
     end
     if type ~= nil then print('Caught: ' .. cmd .. ', type: ' .. type)
     else print('Not recognised: ' .. cmd) end
+
+    if type == 'move' or type == 'actionMove' then
+        MoveModule.PerformMove(cmd, obj)
+    end
     obj.setDescription('')
 end
 
@@ -222,7 +254,7 @@ MoveData.straight.largeBaseOffsetInit = {0, 0, mm_largeBase/2, 0}
 MoveData.straight.largeBaseOffsetFinal = {0, 0, mm_largeBase/2, 0}
 MoveData.straight.largeBaseOffset = Vect_Sum(MoveData.straight.largeBaseOffsetInit, MoveData.straight.largeBaseOffsetFinal)
 MoveData.straight.length = {str_mm[1], str_mm[2], str_mm[3], str_mm[4], str_mm[5]}
-XW_cmd.AddCommand('s[12345]', 'move')
+XW_cmd.AddCommand('[sk][12345]', 'move')
 
 -- Banks RIGHT (member function to modify to left)
 -- Path traversed is eighth part (1/8 or 45deg) of a circle of specified radius (see CONFIGURATION)
@@ -239,7 +271,7 @@ MoveData.bank.largeBaseOffsetInit = {0, 0, mm_largeBase/2, 0}
 MoveData.bank.largeBaseOffsetFinal = {(mm_largeBase/2)/math.sqrt(2), 0, (mm_largeBase/2)/math.sqrt(2), 0}
 MoveData.bank.largeBaseOffset = Vect_Sum(MoveData.bank.largeBaseOffsetInit, MoveData.bank.largeBaseOffsetFinal)
 MoveData.bank.length = {2*math.pi*bankRad_mm[1]/8, 2*math.pi*bankRad_mm[2]/8, 2*math.pi*bankRad_mm[3]/8}
-XW_cmd.AddCommand('b[rle][123][st]', 'move')
+XW_cmd.AddCommand('b[rle][123][s]?', 'move')
 
 -- Turns RIGHT (member function to modify to left)
 -- Path traversed is fourth part (1/4 or 90deg) of a circle of specified radius (see CONFIGURATION)
@@ -256,6 +288,7 @@ MoveData.turn.largeBaseOffsetInit = {0, 0, mm_largeBase/2, 0}
 MoveData.turn.largeBaseOffsetFinal = {mm_largeBase/2, 0, 0, 0}
 MoveData.turn.largeBaseOffset = Vect_Sum(MoveData.turn.largeBaseOffsetInit, MoveData.turn.largeBaseOffsetFinal)
 MoveData.turn.length = {2*math.pi*turnRad_mm[1]/4, 2*math.pi*turnRad_mm[2]/4, 2*math.pi*turnRad_mm[3]/4}
+XW_cmd.AddCommand('t[rle][123]', 'move')
 XW_cmd.AddCommand('t[rle][123][st]', 'move')
 
 MoveData.roll = {}
@@ -455,12 +488,12 @@ MoveData.DecodePartial = function(move_code, ship, part)
         if part < PartMax then data[4] = 0 end
         data[3] = data[3]*(part/PartMax)
 
-    -- PARTIAL BANK/TURN
-    -- angle changes linearly throughout whole move
-    -- move IS separated in 3 sections:
-    -- - before center of the ship moves onto the template
-    -- - when ship center moves over the template
-    -- - when ship moves off the template and slides it between guides again
+        -- PARTIAL BANK/TURN
+        -- angle changes linearly throughout whole move
+        -- move IS separated in 3 sections:
+        -- - before center of the ship moves onto the template
+        -- - when ship center moves over the template
+        -- - when ship moves off the template and slides it between guides again
     elseif info.type == 'bank' or info.type == 'turn' then
 
         -- calculate length of the base offsets and real move
@@ -522,8 +555,8 @@ MoveData.DecodePartial = function(move_code, ship, part)
             data = MoveData.ConvertDataToIGU(data)
         end
 
-    -- PARTIAL ROLL/DECLOAK
-    -- kinda special since it;s not partial "sideways" but partial as in fwd/backwd wiggle room
+        -- PARTIAL ROLL/DECLOAK
+        -- kinda special since it;s not partial "sideways" but partial as in fwd/backwd wiggle room
     elseif info.type == 'roll' then
 
         if info.extra == 'straight' then return MoveData.DecodePartial('s' .. info.speed, ship, part) end
@@ -583,7 +616,7 @@ end
 
 -- Queue containing ships that want to be watched
 MoveModule.restWaitQueue = {}
-
+MoveModule.tokenWaitQueue = {}
 
 -- This completes when a ship is resting at a table level
 -- also yanks it down if TTS decides it should just hang out resting midair
@@ -595,11 +628,23 @@ function restWaitCoroutine()
     repeat
         if actShip.getPosition()[2] > 1.5 and actShip.resting == true then
             actShip.setPositionSmooth({actShip.getPosition()['x'], actShip.getPosition()['y']-0.1, actShip.getPosition()['z']})
-            print('yank')
+            --print('yank')
         end
         coroutine.yield(0)
     until actShip.resting == true and actShip.held_by_color == nil and actShip.getPosition()[2] < 1.5
+    for k,tokenInfo in pairs(MoveModule.tokenWaitQueue) do
+        if tokenInfo.ship == actShip then
+            local offset = Vect_RotateDeg(tokenInfo.offset, actShip.getRotation()[2])
+            local dest = Vect_Sum(offset, actShip.getPosition())
+            dest[2] = dest[2] + 1.5
+            tokenInfo.token.setPositionSmooth(dest)
+            table.remove(MoveModule.tokenWaitQueue, k)
+            k = k-1
+        end
+    end
     print('MF: ' .. actShip.getName())
+    actShip.lock()
+
     return 1
 end
 
@@ -715,6 +760,47 @@ MoveModule.PerformMove = function(move_code, ship)
         --print('CN: ' .. checkNum)
     end
     local finPos = MoveModule.GetPartialPos(move_code, ship, actPart)
+
+    local selfTokens = XW_ObjWithinDist(ship.getPosition(), maxShipReach+Convert_mm_igu(50), 'token')
+    for k, token in pairs(selfTokens) do
+        local owner = XW_ClosestWithinDist(token, Convert_mm_igu(80), 'ship').obj
+        if owner == ship then
+            print('ASS: ' .. token.getName())
+            local infoTable = {}
+            infoTable.token = token
+            infoTable.ship = ship
+            local offset = Vect_Sum(token.getPosition(), Vect_Scale(ship.getPosition(), -1))
+            infoTable.offset = Vect_RotateDeg(offset, -1*ship.getRotation()[2])
+            table.insert(MoveModule.tokenWaitQueue, infoTable)
+        end
+    end
+
+    local obstrTokens = XW_ObjWithinDist(finPos.pos, maxShipReach+Convert_mm_igu(20), 'token')
+    for k, token in pairs(obstrTokens) do
+        local owner = XW_ClosestWithinDist(token, Convert_mm_igu(80), 'ship').obj
+        if owner ~= nil and owner ~= ship then
+            local dir = Vect_Sum(owner.getPosition(), Vect_Scale(token.getPosition(), -1))
+            local dist = Vect_Length(dir)
+            local intendedDist = nil
+            if DB_isLargeBase(owner) then
+                intendedDist = Convert_mm_igu(mm_largeBase/4)
+            else
+                intendedDist = Convert_mm_igu(mm_smallBase/4)
+            end
+            dir = Vect_Scale(dir, (dist-intendedDist)/dist)
+            local dest = Vect_Sum(token.getPosition(), dir)
+            dest[2] = 2
+            token.setPositionSmooth(dest)
+        else
+            local dir = Vect_Sum(token.getPosition(), Vect_Scale(finPos.pos, -1))
+            local dist = Vect_Length(dir)
+            dir = Vect_Scale(dir, ((maxShipReach+Convert_mm_igu(20))/dist))
+            local dest = Vect_Sum(finPos.pos, dir)
+            dest[2] = 2
+            token.setPositionSmooth(dest)
+        end
+    end
+
     finPos.pos[2] = finPos.pos[2] + 1
     ship.setPosition(finPos.pos)
     ship.setRotation(finPos.rot)
@@ -806,9 +892,9 @@ function getCorners(shipInfo)
     local srot = shipInfo.rot[2]
     local size = nil
     if DB_isLargeBase(shipInfo.ship) == true then
-        size = Convert_mm_igu(mm_largeBase/2)
+        size = Convert_mm_igu((mm_largeBase/2) + 0.2)
     else
-        size = Convert_mm_igu(mm_smallBase/2)
+        size = Convert_mm_igu((mm_smallBase/2) + 0.2)
     end
     local world_coords = {}
     world_coords[1] = {spos[1] - size, spos[3] + size}
