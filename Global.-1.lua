@@ -1,3 +1,5 @@
+-- TO_DO: If final position of moved token doesnt make its owner ship it moved with,
+--  move it on its base
 
 --------
 -- MEASUREMENT RELATED FUNCTIONS
@@ -199,8 +201,17 @@ XW_cmd.Process = function(obj, cmd)
     if type ~= nil then print('Caught: ' .. cmd .. ', type: ' .. type)
     else print('Not recognised: ' .. cmd) end
 
-    if type == 'move' or type == 'actionMove' then
+    if type == 'move' then
         MoveModule.PerformMove(cmd, obj)
+    elseif type == 'actionMove' then
+        MoveModule.PerformMove(cmd, obj, true)
+    elseif type == 'histHandle' then
+        if cmd == 'q' or cmd == 'undo' then
+            MoveModule.UndoMove(obj)
+        elseif cmd == 'z' or cmd == 'redo' then
+            MoveModule.RedoMove(obj)
+        end
+        MoveModule.PrintHistory(obj)
     end
     obj.setDescription('')
 end
@@ -610,6 +621,135 @@ MoveModule.GetPartialPos = function(move, ship, part)
     return {pos=finalPos, rot={0, finalRot, 0}}
 end
 
+-- moveHistory:{ship=shipRef, actKey=actHistoryKey, history=history}
+-- history: {entry1, entry2, entry3 .. etc}
+-- entry: {pos=postion, rot=rotation, move=lastMove}
+
+MoveModule.moveHistory = {}
+XW_cmd.AddCommand('[qz]', 'histHandle')
+XW_cmd.AddCommand('undo', 'histHandle')
+XW_cmd.AddCommand('redo', 'histhandle')
+
+MoveModule.GetHistory = function(ship)
+    for k,hist in pairs(MoveModule.moveHistory) do
+        if hist.ship == ship then
+            return hist
+        end
+    end
+    table.insert(MoveModule.moveHistory, {ship=ship, actKey=0, history={}})
+    return MoveModule.GetHistory(ship)
+end
+
+MoveModule.ErasePastCurrent = function(ship)
+    local histData = MoveModule.GetHistory(ship)
+    local k=1
+    while histData.history[histData.actKey + k] ~= nil do
+        histData.history[histData.actKey + k] = nil
+    end
+end
+
+undoPosCutoff = Convert_mm_igu(1)
+undoRotCutoffDeg = 1
+
+MoveModule.PrintHistory = function(ship)
+    local histData = MoveModule.GetHistory(ship)
+    if histData.actKey == 0 then
+        print(ship.getName() .. ': NO HISTORY')
+    else
+        print(ship.getName() .. '\'s HISTORY:')
+        local k=1
+        while histData.history[k] ~= nil do
+            local entry = histData.history[k]
+            if k == histData.actKey then
+                print(' >> ' .. entry.move)
+            else
+                print(' -- ' .. entry.move)
+            end
+            k = k+1
+        end
+        print(' -- -- -- -- ')
+    end
+end
+
+MoveModule.AddHistoryEntry = function(ship, entry)
+    local histData = MoveModule.GetHistory(ship)
+    if histData.actKey > 0 then
+        local currEntry = histData.history[histData.actKey]
+        --print(currEntry.pos[1])
+        --print(currEntry.rot[2])
+        --print(currEntry.move)
+        if Dist_Pos(ship.getPosition(), currEntry.pos) < undoPosCutoff
+        and math.abs(ship.getRotation()[2] - currEntry.rot[2]) < undoRotCutoffDeg then
+            print('pos already saved')
+            return
+        end
+    end
+    histData.history[histData.actKey+1] = entry
+    --print(entry.pos[1])
+    --print(entry.rot[2])
+    --print(entry.move)
+    histData.actKey = histData.actKey+1
+    MoveModule.ErasePastCurrent(ship)
+    MoveModule.PrintHistory(ship)
+end
+
+
+
+MoveModule.UndoMove = function(ship)
+    local histData = MoveModule.GetHistory(ship)
+    if histData.actKey == 0 then
+        print('no histtory')
+        return
+    else
+        local currEntry = histData.history[histData.actKey]
+        --print(currEntry.pos[1])
+        --print(currEntry.rot[2])
+        --print(currEntry.move)
+        local rotDiff = math.abs(ship.getRotation()[2] - currEntry.rot[2])
+        if rotDiff > 180 then rotDiff = 360 - rotDiff end
+        if Dist_Pos(ship.getPosition(), currEntry.pos) > undoPosCutoff
+        or rotDiff > undoRotCutoffDeg then
+            print('moved to last known pos, lastmove: ' .. currEntry.move)
+            print('pmarg: ' .. Dist_Pos(ship.getPosition(), currEntry.pos) .. ' rmarg: ' .. rotDiff)
+            ship.setPosition(currEntry.pos)
+            ship.setRotation(currEntry.rot)
+            ship.lock()
+        else
+            if histData.actKey > 1 then
+                print('undid ' .. currEntry.move)
+                histData.actKey = histData.actKey - 1
+                currEntry = histData.history[histData.actKey]
+                ship.setPosition(currEntry.pos)
+                ship.setRotation(currEntry.rot)
+                ship.lock()
+            else
+                print('already at last known')
+            end
+        end
+    end
+end
+
+MoveModule.RedoMove = function(ship)
+    local histData = MoveModule.GetHistory(ship)
+    if histData.actKey == 0 then
+        print('no histtory')
+        return
+    else
+        if histData.history[histData.actKey+1] == nil then
+            print('no more to redo')
+        else
+            histData.actKey = histData.actKey+1
+            local currEntry = histData.history[histData.actKey]
+            ship.setPosition(currEntry.pos)
+            ship.setRotation(currEntry.rot)
+            ship.lock()
+            print('redid ' .. currEntry.move)
+        end
+    end
+end
+
+--TO_DO: dont add an entry if its same as last
+
 
 -- This tidbit lets us wait till ships lands WITHOUT checking for this condition
 --  on everything all the time
@@ -622,7 +762,8 @@ MoveModule.tokenWaitQueue = {}
 -- also yanks it down if TTS decides it should just hang out resting midair
 function restWaitCoroutine()
     if MoveModule.restWaitQueue[1] == nil then print('EMPTY') return 0 end
-    local actShip = MoveModule.restWaitQueue[#MoveModule.restWaitQueue]
+    local waitData = MoveModule.restWaitQueue[#MoveModule.restWaitQueue]
+    local actShip = waitData.ship
     local yank = false
     table.remove(MoveModule.restWaitQueue, #MoveModule.restWaitQueue)
     repeat
@@ -644,6 +785,7 @@ function restWaitCoroutine()
     end
     print('MF: ' .. actShip.getName())
     actShip.lock()
+    MoveModule.AddHistoryEntry(actShip, {pos=actShip.getPosition(), rot=actShip.getRotation(), move=waitData.lastMove})
 
     return 1
 end
@@ -701,65 +843,79 @@ function test(table)
     return MoveModule.CheckCollisions(table[1], table[2], table[3])
 end
 
-MoveModule.PerformMove = function(move_code, ship)
+MoveModule.PerformMove = function(move_code, ship, ignoreCollisions)
 
-    local info = MoveData.DecodeInfo(move_code, ship)
-    local moveLength = MoveData[info.type].length[info.speed]
-    moveLength = moveLength + Vect_Length(MoveData[info.type][info.size .. 'BaseOffsetInit'])
-    moveLength = moveLength + Vect_Length(MoveData[info.type][info.size .. 'BaseOffsetFinal'])
-    moveLength = Convert_mm_igu(moveLength)
+    local finPos = nil
+
+    if ignoreCollisions ~= true then
+        local info = MoveData.DecodeInfo(move_code, ship)
+        local moveLength = MoveData[info.type].length[info.speed]
+        moveLength = moveLength + Vect_Length(MoveData[info.type][info.size .. 'BaseOffsetInit'])
+        moveLength = moveLength + Vect_Length(MoveData[info.type][info.size .. 'BaseOffsetFinal'])
+        moveLength = Convert_mm_igu(moveLength)
+        local isShipLargeBase = DB_isLargeBase(ship)
+        local certShipReach = nil
+        local maxShipReach = nil
+        if isShipLargeBase == true then
+            certShipReach = Convert_mm_igu(mm_largeBase/2)
+            maxShipReach = Convert_mm_igu(mm_largeBase*math.sqrt(2)/2)
+        else
+            certShipReach = Convert_mm_igu(mm_smallBase/2)
+            maxShipReach = Convert_mm_igu(mm_smallBase*math.sqrt(2)/2)
+        end
+        --print(maxShipReach)
+        local ships = XW_ObjWithinDist(MoveModule.GetPartialPos(move_code, ship, PartMax/2).pos, moveLength+(2*maxShipReach), 'ship')
+        for k, collShip in pairs(ships) do if collShip == ship then table.remove(ships, k) end end
+
+        local finalInfo = MoveModule.CheckCollisions(ship, MoveModule.GetFinalPos(move_code, ship), ships)
+        local actPart = PartMax
+        if finalInfo.coll ~= nil then
+            local checkNum = 0
+
+            local collision = false
+            --print(actPart)
+            local partDelta = -10
+            repeat
+                local nPos = MoveModule.GetPartialPos(move_code, ship, actPart)
+                local collInfo = MoveModule.CheckCollisions(ship, nPos, ships)
+                local distToSkip = nil
+                if collInfo.coll ~= nil then
+                    collision = true
+                    distToSkip = collInfo.minMargin
+                    if distToSkip > 0 then
+                        partDelta = -1*((distToSkip * PartMax)/moveLength)
+                        if partDelta > -10 then partDelta = -10 end
+                        --print('skip: ' .. partDelta*-1)
+                    else partDelta = -10 end
+                else collision = false end
+                actPart = actPart + partDelta
+                checkNum = checkNum + collInfo.numCheck
+            until collision == false or actPart < 0
+            partDelta = 1
+            repeat
+                local nPos = MoveModule.GetPartialPos(move_code, ship, actPart)
+                local collInfo = MoveModule.CheckCollisions(ship, nPos, ships)
+                if collInfo.coll ~= nil then collision = true
+                else collision = false end
+                actPart = actPart + partDelta
+                checkNum = checkNum + collInfo.numCheck
+            until collision == true or actPart > PartMax
+            actPart = actPart - 1
+
+            --print('CN: ' .. checkNum)
+        end
+        finPos = MoveModule.GetPartialPos(move_code, ship, actPart)
+    else
+        finPos = MoveModule.GetFinalPos(move_code, ship)
+    end
+
     local isShipLargeBase = DB_isLargeBase(ship)
-    local certShipReach = nil
     local maxShipReach = nil
     if isShipLargeBase == true then
-        certShipReach = Convert_mm_igu(mm_largeBase/2)
         maxShipReach = Convert_mm_igu(mm_largeBase*math.sqrt(2)/2)
     else
-        certShipReach = Convert_mm_igu(mm_smallBase/2)
         maxShipReach = Convert_mm_igu(mm_smallBase*math.sqrt(2)/2)
     end
-    --print(maxShipReach)
-    local ships = XW_ObjWithinDist(MoveModule.GetPartialPos(move_code, ship, PartMax/2).pos, moveLength+(2*maxShipReach), 'ship')
-    for k, collShip in pairs(ships) do if collShip == ship then table.remove(ships, k) end end
-
-    local finalInfo = MoveModule.CheckCollisions(ship, MoveModule.GetFinalPos(move_code, ship), ships)
-    local actPart = PartMax
-    if finalInfo.coll ~= nil then
-        local checkNum = 0
-
-        local collision = false
-        --print(actPart)
-        local partDelta = -10
-        repeat
-            local nPos = MoveModule.GetPartialPos(move_code, ship, actPart)
-            local collInfo = MoveModule.CheckCollisions(ship, nPos, ships)
-            local distToSkip = nil
-            if collInfo.coll ~= nil then
-                collision = true
-                distToSkip = collInfo.minMargin
-                if distToSkip > 0 then
-                    partDelta = -1*((distToSkip * PartMax)/moveLength)
-                    if partDelta > -10 then partDelta = -10 end
-                    --print('skip: ' .. partDelta*-1)
-                else partDelta = -10 end
-            else collision = false end
-            actPart = actPart + partDelta
-            checkNum = checkNum + collInfo.numCheck
-        until collision == false or actPart < 0
-        partDelta = 1
-        repeat
-            local nPos = MoveModule.GetPartialPos(move_code, ship, actPart)
-            local collInfo = MoveModule.CheckCollisions(ship, nPos, ships)
-            if collInfo.coll ~= nil then collision = true
-            else collision = false end
-            actPart = actPart + partDelta
-            checkNum = checkNum + collInfo.numCheck
-        until collision == true or actPart > PartMax
-        actPart = actPart - 1
-
-        --print('CN: ' .. checkNum)
-    end
-    local finPos = MoveModule.GetPartialPos(move_code, ship, actPart)
 
     local selfTokens = XW_ObjWithinDist(ship.getPosition(), maxShipReach+Convert_mm_igu(50), 'token')
     for k, token in pairs(selfTokens) do
@@ -805,7 +961,7 @@ MoveModule.PerformMove = function(move_code, ship)
     ship.setPosition(finPos.pos)
     ship.setRotation(finPos.rot)
     ship.setDescription('')
-    table.insert(MoveModule.restWaitQueue, ship)
+    table.insert(MoveModule.restWaitQueue, {ship=ship, lastMove=move_code})
     startLuaCoroutine(Global, 'restWaitCoroutine')
 
 end
@@ -971,22 +1127,18 @@ function DB_isLargeBase(shipRef)
             return typeTable[2]
         end
     end
-    return 'Unknown'
+    if shipRef.getName():find('LGS') ~= nil then return true
+    else
+        print(shipRef.getName() .. '\'s model not recognized - use LGS in name if large base and contact author about the issue')
+        return false
+    end
 end
 
 function DB_getBaseSize(shipRef)
-    if shipRef.getVar('DB_isLargeBase') ~= nil then
-        if shipRef.getVar('DB_isLargeBase') == true then return 'large'
-        elseif shipRef.getVar('DB_isLargeBase') == false then return 'small' end
-    end
-    local shipType = DB_getShipType(shipRef)
-    for k,typeTable in pairs(shipTypeDatabase) do
-        if typeTable[1] == shipType then
-            if typeTable[2] == true then shipRef.setVar('DB_isLargeBase', typeTable[2]) return 'large'
-            else shipRef.setVar('DB_isLargeBase', typeTable[2]) return 'small' end
-        end
-    end
-    return 'Unknown'
+    local isLargeBase = DB_isLargeBase(shipRef)
+    if isLargeBase == true then return 'large'
+    elseif isLargeBase == false then return 'small'
+    else return 'Unknown' end
 end
 
 -- Type <=> Model (mesh) database
