@@ -1,5 +1,14 @@
 -- TO_DO: If final position of moved token doesnt make its owner ship it moved with,
 --  move it on its base
+-- TO_DO: keep command
+--TO_DO: dont lock ship after completeing if it;s not level
+-- TO_DO: rulers, bomb ranges
+
+-- TO_DO: Dials: Assign -> change state -> lay out -> confirm position ->
+-- -> call Global for each dialling -> self destruct
+-- Intercept remove, eemove all physically and from Global on one removed
+-- Think about twhen to spawn active dial buttons
+-- On drop among dials, return to origin
 
 --------
 -- MEASUREMENT RELATED FUNCTIONS
