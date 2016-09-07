@@ -10,260 +10,422 @@
 -- Think about twhen to spawn active dial buttons
 -- On drop among dials, return to origin
 
---------
--- MEASUREMENT RELATED FUNCTIONS
-
--- 40mm = 1.445igu
--- (s1 length / small base size)
-
--- 1mm = 0.36125igu
-mm_igu_ratio = 0.036125
-
--- Milimeter dimensions of ship bases
-mm_smallBase = 40
-mm_largeBase = 80
-
--- Convert argument from MILIMETERS to IN-GAME UNITS
-function Convert_mm_igu(milimeters)
-    return milimeters*mm_igu_ratio
+function onLoad(save_state)
+    DialModule.onLoad()
 end
 
--- Convert argument from MILIMETERS to IN-GAME UNITS
-function Convert_igu_mm(in_game_units)
-    return in_game_units/mm_igu_ratio
+DialModule = {}
+
+function DialPickedUp(dialTable)
+    print('dang')
 end
 
-function Dist_Pos(pos1, pos2)
-    return math.sqrt( math.pow(pos1[1]-pos2[1], 2) + math.pow(pos1[3]-pos2[3], 2) )
+function DialDropped(dialTable)
+    print('bang')
 end
 
-function Dist_Obj(obj1, obj2)
-    local pos1 = obj1.getPosition()
-    local pos2 = obj2.getPosition()
-    return Dist_Pos(pos1, pos2)
+function DialClick_Delete(dial) DialModule.RestoreActive(dial) end
+function DialClick_Move(dial)
+    XW_cmd.Process(dial.getVar('assignedShip'), dial.getDescription())
+    DialModule.SwitchMainButton(dial)
 end
-
--- END MEASUREMENT RELATED FUNCTIONS
---------
-
---------
--- VECTOR RELATED FUNCTIONS
-
--- Sum of two vectors (of any size)
-function Vect_Sum(vec1, vec2)
-    local out = {}
-    local k = 1
-    while vec1[k] ~= nil and vec2[k] ~= nil do
-        out[k] = vec1[k]+vec2[k]
-        k = k+1
-    end
-    return out
+function DialClick_Focus(dial)
+    DialModule.PerformAction(dial, 'focus')
 end
-
-function Vect_Inverse(vector)
-    local out = {}
-    local k = 1
-    while vector[k] ~= nil do
-        out[k] = -1*vector[k]
-        k = k+1
-    end
-    return out
+function DialClick_Evade(dial)
+    DialModule.PerformAction(dial, 'evade')
 end
-
-function Vect_Scale(vector, factor)
-    local out = {}
-    local k = 1
-    while vector[k] ~= nil do
-        out[k] = vector[k]*factor
-        k = k+1
-    end
-    return out
+function DialClick_Stress(dial)
+    DialModule.PerformAction(dial, 'stress')
 end
-
-function Vect_Length(vector)
-    return math.sqrt(vector[1]*vector[1] + vector[3]*vector[3])
+function DialClick_TargetLock(dial)
+    DialModule.PerformAction(dial, 'targetLock')
 end
-
--- Offset self vector by first and third element of vec2 (second el ignored)
--- Useful for TTS positioning offsets
-function Vect_Offset(self, vec2)
-    return {self[1]+vec2[1], self[2], self[3]+vec2[3]}
+function DialClick_Template(dial)
+    DialModule.PerformAction(dial, 'spawnTemplate')
 end
-
--- Euclidean norm of a 3D vector, second element is ignored
-function Vect_Norm(vector)
-    return math.sqrt((vector[1]*vector[1])+(vector[3]*vector[3]))
+function DialClick_Undo(dial)
+    DialModule.PerformAction(dial, 'undo')
 end
-
--- Rotation of a 3D vector over its second element axis, arg in degrees
-function Vect_RotateDeg(vector, degRotation)
-    local radRotation = math.rad(degRotation)
-    return Vect_RotateRad(vector, radRotation)
+function DialClick_BoostF(dial)
+    XW_cmd.Process(dial.getVar('assignedShip'), 's1')
 end
-
--- Rotation of a 3D vector over its second element axis, arg in radians
-function Vect_RotateRad(vector, radRotation)
-    local newX = math.cos(radRotation) * vector[1] + math.sin(radRotation) * vector[3]
-    local newZ = math.sin(radRotation) * vector[1] * -1 + math.cos(radRotation) * vector[3]
-    return {newX, vector[2], newZ}
+function DialClick_BoostR(dial)
+    XW_cmd.Process(dial.getVar('assignedShip'), 'br1')
 end
-
-
--- END VECTOR RELATED FUNCTIONS
---------
-
---------
--- MISC FUNCTIONS
-
-function XW_ObjMatchType(obj, type)
-    if type == 'any' then
-        return true
-    elseif type == 'ship' then
-        if obj.tag == 'Figurine' then return true end
-    elseif type == 'token' then
-        if obj.tag == 'Chip' or obj.getVar('XW_lockSet') ~= nil then return true end
-    elseif type == 'lock' then
-        if obj.getVar('XW_lockSet') ~= nil then return true end
-    end
-    return false
+function DialClick_BoosL(dial)
+    XW_cmd.Process(dial.getVar('assignedShip'), 'be1')
 end
+function DialClick_RollR(dial)
+    XW_cmd.Process(dial.getVar('assignedShip'), 'xr')
+end
+function DialClick_RollRF(dial)
+    XW_cmd.Process(dial.getVar('assignedShip'), 'xrf')
+end
+function DialClick_RollRB(dial)
+    XW_cmd.Process(dial.getVar('assignedShip'), 'xrb')
+end
+function DialClick_RollL(dial)
+    XW_cmd.Process(dial.getVar('assignedShip'), 'xe')
+end
+function DialClick_RollLF(dial)
+    XW_cmd.Process(dial.getVar('assignedShip'), 'xef')
+end
+function DialClick_RollLB(dial)
+    XW_cmd.Process(dial.getVar('assignedShip'), 'xeb')
+end
+function DialClick_Ruler(dial)
+    DialModule.PerformAction(dial, 'spawnRuler')
+end
+function DialClick_ToggleExpanded(dial)
+    DialModule.ToggleButtonSet(dial)
+end
+-- set: {ship=shipRef, activeDial=actDialInfo, dials=dialData}
+-- dialData: {dial1Info, dial2Info, dial3Info ...}
+-- dialInfo: {dial=dialRef, originPos=origin}
+DialModule.ActiveSets = {}
 
-function XW_ClosestWithinDist(centralObj, maxDist, type)
-    local closest = nil
-    local minDist = maxDist+1
-    for k,obj in pairs(getAllObjects()) do
-        if XW_ObjMatchType(obj, type) == true and obj ~= centralObj then
-            local dist = Dist_Pos(centralObj.getPosition(), obj.getPosition())
-            if dist < maxDist and dist < minDist then
-                minDist = dist
-                closest = obj
+DialModule.TokenSources = {}
+
+DialModule.onLoad = function()
+    for k, obj in pairs(getAllObjects()) do
+        if obj.tag == 'Infinite' then
+            if obj.getName() == 'Focus' then DialModule.TokenSources['focus'] = obj
+            elseif obj.getName() == 'Evade' then DialModule.TokenSources['evade'] = obj
+            elseif obj.getName() == 'Stress' then DialModule.TokenSources['stress'] = obj
+            elseif obj.getName() == 'Target Locks' then DialModule.TokenSources['targetLock'] = obj
+            elseif obj.getName():find('Templates') ~= nil then
+                if obj.getName():find('Straight') ~= nil then
+                    DialModule.TokenSources['s' .. obj.getName():sub(1,1)] = obj
+                elseif obj.getName():find('Turn') ~= nil then
+                    DialModule.TokenSources['t' .. obj.getName():sub(1,1)] = obj
+                elseif obj.getName():find('Bank') ~= nil then
+                    DialModule.TokenSources['b' .. obj.getName():sub(1,1)] = obj
+                end
             end
+
         end
     end
-    return {obj=closest, dist=minDist}
+    --[[for k,source in pairs(DialModule.TokenSources) do
+        print(k .. ' : ' .. source.getName())
+    end]]--
 end
 
-function XW_ObjWithinDist(position, maxDist, type)
-    local ships = {}
-    --print(position[1] .. position[2] .. position[3])
-    for k,obj in pairs(getAllObjects()) do
-        if XW_ObjMatchType(obj, type) == true then
-            if Dist_Pos(position, obj.getPosition()) < maxDist then
-                table.insert(ships, obj)
+DialModule.RemoveSet = function(ship)
+    for k, set in pairs(DialModule.ActiveSets) do
+        if set.ship == ship then
+            if set.activeDial ~= nil then
+                DialModule.RestoreActive(set.activeDial)
             end
-        end
-    end
-    return ships
-end
-
-function XW_RemoveDuplicateObj(objTable)
-    local guidTable = {}
-    for k,obj in pairs(objTable) do
-        guidTable[obj.getGUID()] = obj
-    end
-    local uniqueObjTable = {}
-    for k,obj in pairs(guidTable) do
-        table.insert(uniqueObjTable, obj)
-    end
-    return uniqueObjTable
-end
-
--- Simple shallow copy to cope with Lua reference handling
-function Lua_ShallowCopy(orig)
-    local orig_type = type(orig)
-    local copy
-    if orig_type == 'table' then
-        copy = {}
-        for orig_key, orig_value in pairs(orig) do
-            copy[orig_key] = orig_value
-        end
-    else
-        copy = orig
-    end
-    return copy
-end
-
--- END MISC FUNCTIONS
---------
-
--- This takes care of hadnling description-based commands
-XW_cmd = {}
-
--- Table of valid commands: their patterns and general types
-XW_cmd.ValidCommands = {}
-XW_cmd.AddCommand = function(cmdRegex, type)
-    if cmdRegex:sub(1,1) ~= '^' then cmdRegex = '^' .. cmdRegex end
-    if cmdRegex:sub(-1,-1) ~= '$' then cmdRegex = cmdRegex .. '$' end
-    table.insert(XW_cmd.ValidCommands, {cmdRegex, type})
-end
-
--- Process provided command on a provided object
-XW_cmd.Process = function(obj, cmd)
-    cmd = cmd:match( "^%s*(.-)%s*$" )
-    local type = nil
-    for k,pat in pairs(XW_cmd.ValidCommands) do
-        if cmd:match(pat[1]) ~= nil then
-            type = pat[2]
+            for k,dialData in pairs(set.dialSet) do
+                dialData.dial.flip()
+            end
+            table.remove(DialModule.ActiveSets, k)
             break
         end
     end
-    if type ~= nil then print('Caught: ' .. cmd .. ', type: ' .. type)
-    else print('Not recognised: ' .. cmd) end
-
-    if type == 'move' then
-        MoveModule.PerformMove(cmd, obj)
-    elseif type == 'actionMove' then
-        MoveModule.PerformMove(cmd, obj, true)
-    elseif type == 'histHandle' then
-        if cmd == 'q' or cmd == 'undo' then
-            MoveModule.UndoMove(obj)
-        elseif cmd == 'z' or cmd == 'redo' then
-            MoveModule.RedoMove(obj)
-        end
-        MoveModule.PrintHistory(obj)
-    end
-    obj.setDescription('')
 end
 
---------
--- MAIN MOVEMENT MODULE
+DialModule.GetSet = function(ship)
+    for k, set in pairs(DialModule.ActiveSets) do
+        if set.ship == ship then
+            return set
+        end
+    end
+end
 
--- ~~~~~~
--- CONFIGURATION:
+DialModule.AddSet = function(ship, set)
+    local actSet = DialModule.GetSet(set_ship.ship)
+    if actSet ~= nil then
+        for k, newDialData in pairs(set) do
+            table.insert(actSet.dialSet, newDialData)
+        end
+    else
+        table.insert(DialModule.ActiveSets, {ship=ship, activeDial=nil, dialSet=set})
+    end
+end
 
--- How many milimeters forward with straight move {speed 1, speed 2, etc}
-str_mm = {40, 80, 120, 160, 200}
+DialModule.RestoreActive = function(dial)
+    for k, set in pairs(DialModule.ActiveSets) do
+        if set.activeDial ~= nil then
+            if set.activeDial.dial == dial then
+                dial.setPosition(set.activeDial.originPos)
+                dial.setRotation(Dial_FaceupRot(dial))
+            end
+        end
+    end
+end
 
--- How big (radius) is the bank template circle {speed 1, speed 2, speed 3}
-bankRad_mm = {80, 130, 180}
+function DialAPI_AssignSet(set_ship)
+    local actSet = DialModule.GetSet(set_ship.ship)
+    if actSet ~= nil then
+        DialModule.RemoveSet(set_ship.ship)
+    end
+end
 
--- How big (radius) is the turn template circle {speed 1, speed 2, speed 3}
-turnRad_mm = {35, 62.5, 90}
--- ~~~~~~
+function Dial_FaceupRot(dial)
+    local z_half = nil
+    if(dial.getPosition()[3] < 0) then z_half = -1 else z_half = 1 end
+    if z_half > 0 then
+        return {x=0, y=0, z=0}
+    else
+        return {x=0, y=180, z=0}
+    end
+end
+    --------
+    -- MEASUREMENT RELATED FUNCTIONS
+
+    -- 40mm = 1.445igu
+    -- (s1 length / small base size)
+
+    -- 1mm = 0.36125igu
+    mm_igu_ratio = 0.036125
+
+    -- Milimeter dimensions of ship bases
+    mm_smallBase = 40
+    mm_largeBase = 80
+
+    -- Convert argument from MILIMETERS to IN-GAME UNITS
+    function Convert_mm_igu(milimeters)
+        return milimeters*mm_igu_ratio
+    end
+
+    -- Convert argument from MILIMETERS to IN-GAME UNITS
+    function Convert_igu_mm(in_game_units)
+        return in_game_units/mm_igu_ratio
+    end
+
+    function Dist_Pos(pos1, pos2)
+        return math.sqrt( math.pow(pos1[1]-pos2[1], 2) + math.pow(pos1[3]-pos2[3], 2) )
+    end
+
+    function Dist_Obj(obj1, obj2)
+        local pos1 = obj1.getPosition()
+        local pos2 = obj2.getPosition()
+        return Dist_Pos(pos1, pos2)
+    end
+
+    -- END MEASUREMENT RELATED FUNCTIONS
+    --------
+
+    --------
+    -- VECTOR RELATED FUNCTIONS
+
+    -- Sum of two vectors (of any size)
+    function Vect_Sum(vec1, vec2)
+        local out = {}
+        local k = 1
+        while vec1[k] ~= nil and vec2[k] ~= nil do
+            out[k] = vec1[k]+vec2[k]
+            k = k+1
+        end
+        return out
+    end
+
+    function Vect_Inverse(vector)
+        local out = {}
+        local k = 1
+        while vector[k] ~= nil do
+            out[k] = -1*vector[k]
+            k = k+1
+        end
+        return out
+    end
+
+    function Vect_Scale(vector, factor)
+        local out = {}
+        local k = 1
+        while vector[k] ~= nil do
+            out[k] = vector[k]*factor
+            k = k+1
+        end
+        return out
+    end
+
+    function Vect_Length(vector)
+        return math.sqrt(vector[1]*vector[1] + vector[3]*vector[3])
+    end
+
+    -- Offset self vector by first and third element of vec2 (second el ignored)
+    -- Useful for TTS positioning offsets
+    function Vect_Offset(self, vec2)
+        return {self[1]+vec2[1], self[2], self[3]+vec2[3]}
+    end
+
+    -- Euclidean norm of a 3D vector, second element is ignored
+    function Vect_Norm(vector)
+        return math.sqrt((vector[1]*vector[1])+(vector[3]*vector[3]))
+    end
+
+    -- Rotation of a 3D vector over its second element axis, arg in degrees
+    function Vect_RotateDeg(vector, degRotation)
+        local radRotation = math.rad(degRotation)
+        return Vect_RotateRad(vector, radRotation)
+    end
+
+    -- Rotation of a 3D vector over its second element axis, arg in radians
+    function Vect_RotateRad(vector, radRotation)
+        local newX = math.cos(radRotation) * vector[1] + math.sin(radRotation) * vector[3]
+        local newZ = math.sin(radRotation) * vector[1] * -1 + math.cos(radRotation) * vector[3]
+        return {newX, vector[2], newZ}
+    end
+
+
+    -- END VECTOR RELATED FUNCTIONS
+    --------
+
+    --------
+    -- MISC FUNCTIONS
+
+    function XW_ObjMatchType(obj, type)
+        if type == 'any' then
+            return true
+        elseif type == 'ship' then
+            if obj.tag == 'Figurine' then return true end
+        elseif type == 'token' then
+            if obj.tag == 'Chip' or obj.getVar('XW_lockSet') ~= nil then return true end
+        elseif type == 'lock' then
+            if obj.getVar('XW_lockSet') ~= nil then return true end
+        end
+        return false
+    end
+
+    function XW_ClosestWithinDist(centralObj, maxDist, type)
+        local closest = nil
+        local minDist = maxDist+1
+        for k,obj in pairs(getAllObjects()) do
+            if XW_ObjMatchType(obj, type) == true and obj ~= centralObj then
+                local dist = Dist_Pos(centralObj.getPosition(), obj.getPosition())
+                if dist < maxDist and dist < minDist then
+                    minDist = dist
+                    closest = obj
+                end
+            end
+        end
+        return {obj=closest, dist=minDist}
+    end
+
+    function XW_ObjWithinDist(position, maxDist, type)
+        local ships = {}
+        --print(position[1] .. position[2] .. position[3])
+        for k,obj in pairs(getAllObjects()) do
+            if XW_ObjMatchType(obj, type) == true then
+                if Dist_Pos(position, obj.getPosition()) < maxDist then
+                    table.insert(ships, obj)
+                end
+            end
+        end
+        return ships
+    end
+
+    function XW_RemoveDuplicateObj(objTable)
+        local guidTable = {}
+        for k,obj in pairs(objTable) do
+            guidTable[obj.getGUID()] = obj
+        end
+        local uniqueObjTable = {}
+        for k,obj in pairs(guidTable) do
+            table.insert(uniqueObjTable, obj)
+        end
+        return uniqueObjTable
+    end
+
+    -- Simple shallow copy to cope with Lua reference handling
+    function Lua_ShallowCopy(orig)
+        local orig_type = type(orig)
+        local copy
+        if orig_type == 'table' then
+            copy = {}
+            for orig_key, orig_value in pairs(orig) do
+                copy[orig_key] = orig_value
+            end
+        else
+            copy = orig
+        end
+        return copy
+    end
+
+    -- END MISC FUNCTIONS
+    --------
+
+    -- This takes care of hadnling description-based commands
+    XW_cmd = {}
+
+    -- Table of valid commands: their patterns and general types
+    XW_cmd.ValidCommands = {}
+    XW_cmd.AddCommand = function(cmdRegex, type)
+        if cmdRegex:sub(1,1) ~= '^' then cmdRegex = '^' .. cmdRegex end
+        if cmdRegex:sub(-1,-1) ~= '$' then cmdRegex = cmdRegex .. '$' end
+        table.insert(XW_cmd.ValidCommands, {cmdRegex, type})
+    end
+
+    -- Process provided command on a provided object
+    XW_cmd.Process = function(obj, cmd)
+        cmd = cmd:match( "^%s*(.-)%s*$" )
+        local type = nil
+        for k,pat in pairs(XW_cmd.ValidCommands) do
+            if cmd:match(pat[1]) ~= nil then
+                type = pat[2]
+                break
+            end
+        end
+        if type ~= nil then print('Caught: ' .. cmd .. ', type: ' .. type)
+        else print('Not recognised: ' .. cmd) end
+
+        if type == 'move' then
+            MoveModule.PerformMove(cmd, obj)
+        elseif type == 'actionMove' then
+            MoveModule.PerformMove(cmd, obj, true)
+        elseif type == 'histHandle' then
+            if cmd == 'q' or cmd == 'undo' then
+                MoveModule.UndoMove(obj)
+            elseif cmd == 'z' or cmd == 'redo' then
+                MoveModule.RedoMove(obj)
+            end
+            MoveModule.PrintHistory(obj)
+        end
+        obj.setDescription('')
+    end
+
+    --------
+    -- MAIN MOVEMENT MODULE
+
+    -- ~~~~~~
+    -- CONFIGURATION:
+
+    -- How many milimeters forward with straight move {speed 1, speed 2, etc}
+    str_mm = {40, 80, 120, 160, 200}
+
+    -- How big (radius) is the bank template circle {speed 1, speed 2, speed 3}
+    bankRad_mm = {80, 130, 180}
+
+    -- How big (radius) is the turn template circle {speed 1, speed 2, speed 3}
+    turnRad_mm = {35, 62.5, 90}
+    -- ~~~~~~
 
 
 
--- Table telling us how moves final position is determined
--- Format: {xOffset, yOffset, zOffset, rotOffset}
--- Axis' offsets are in milimeters, rotation offset is in degrees
--- Includes all member functions to process the data
-MoveData = {}
+    -- Table telling us how moves final position is determined
+    -- Format: {xOffset, yOffset, zOffset, rotOffset}
+    -- Axis' offsets are in milimeters, rotation offset is in degrees
+    -- Includes all member functions to process the data
+    MoveData = {}
 
--- Straights
--- Path is some distance (see CONFIGURATION) in one direction, no rotation
--- Base offset is base length in that direction
-MoveData.straight = {}
-MoveData.straight[1] = {0, 0, str_mm[1], 0}
-MoveData.straight[2] = {0, 0, str_mm[2], 0}
-MoveData.straight[3] = {0, 0, str_mm[3], 0}
-MoveData.straight[4] = {0, 0, str_mm[4], 0}
-MoveData.straight[5] = {0, 0, str_mm[5], 0}
---[[MoveData.straight.baseOffset = function(size, part)
-local baseSize = mm_smallBase
-if size == 'large' then baseSize = mm_largeBase end
-local offsetInit = {0, 0, baseSize/2, 0}
-local offsetFinal = {0, 0, baseSize/2, 0}
-if part == 'init' then return offsetInit
+    -- Straights
+    -- Path is some distance (see CONFIGURATION) in one direction, no rotation
+    -- Base offset is base length in that direction
+    MoveData.straight = {}
+    MoveData.straight[1] = {0, 0, str_mm[1], 0}
+    MoveData.straight[2] = {0, 0, str_mm[2], 0}
+    MoveData.straight[3] = {0, 0, str_mm[3], 0}
+    MoveData.straight[4] = {0, 0, str_mm[4], 0}
+    MoveData.straight[5] = {0, 0, str_mm[5], 0}
+    --[[MoveData.straight.baseOffset = function(size, part)
+    local baseSize = mm_smallBase
+    if size == 'large' then baseSize = mm_largeBase end
+    local offsetInit = {0, 0, baseSize/2, 0}
+    local offsetFinal = {0, 0, baseSize/2, 0}
+    if part == 'init' then return offsetInit
 elseif part == 'final' then return offsetFinal
 else return Vect_Sum()
 end]]--
@@ -979,6 +1141,10 @@ end
 -- END MAIN MOVEMENT MODULE
 --------
 
+
+
+
+
 iter = 0
 spos = {}
 srot = {}
@@ -1123,6 +1289,10 @@ function DB_getShipType(shipRef)
         end
     end
     return 'Unknown'
+end
+
+function DB_getShipTypeCallable(table)
+    return DB_getShipType(table[1])
 end
 
 function DB_isLargeBase(shipRef)
