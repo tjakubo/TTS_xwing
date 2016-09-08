@@ -2,6 +2,7 @@ buttonsSpawned = false
 shipsWithButtons = {}
 dialSet = {}
 
+-- Script for child dials
 dialLuaScript = [[
 assignedShip = nil
 
@@ -19,6 +20,7 @@ end
 ]]
 
 function onLoad()
+    -- if just spawned out of the blue
     if self.getVar('proceedAssignment') ~= true then
         local button = {}
         button.click_function = 'toggleChoiceButtons'
@@ -31,6 +33,7 @@ function onLoad()
         button.font_size = 300
         self.createButton(button)
     else
+    -- if spawned because ship has been chosen and state changed
         local dialSpacing = (2/0.625)*(self.getScale()[1])
         self.setRotation(correctQuadrantRotation(false))
         local te0pos = self.getPosition()
@@ -60,15 +63,13 @@ function onLoad()
     end
 end
 
+-- Report all dials to be set to global
 function FinishSetup()
-    --for k,dial in pairs(dialSet) do
-        --dial.call('setShip', {self.getVar('setShip')})
-        --Global.call('Dial_AssignDial', {dial, self.getVar('setShip')})
-    --end
     Global.call('DialAPI_AssignSet', {set=dialSet, ship=self.getVar('setShip')})
     self.destruct()
 end
 
+-- Get correct dial position
 function decodePos(desc, te0pos, dialSpacing)
     dir = nil
     speed = nil
@@ -132,6 +133,8 @@ function decodePos(desc, te0pos, dialSpacing)
     return outPos
 end
 
+-- Choose a ship, check its type and adjust self state
+-- Prepare next state object to continue
 function AssignAndProceed(ship)
     print(ship.getName())
     local type = Global.call('DB_getShipTypeCallable', {ship})
@@ -141,17 +144,22 @@ function AssignAndProceed(ship)
         newObj.setLuaScript(self.getLuaScript())
         newObj.setVar('proceedAssignment', true)
         newObj.setVar('setShip', ship)
+    else
+        printToAll('This ship model has been not recognized (contact author about it)', {1, 0.1, 0.1})
     end
 end
 
+-- Get which table half an object is
 function z_half(obj) if(obj.getPosition()[3] < 0) then return -1 else return 1 end end
 function x_half(obj) if(obj.getPosition()[1] < 0) then return -1 else return 1 end end
 
+-- Is this object in the same quadrant as me?
 function sameQuadrant(obj)
     if z_half(obj) == z_half(self) and x_half(obj) == x_half(self) then return true
     else return false end
 end
 
+-- (._.)
 function correctQuadrantRotation(faceup)
     if z_half(self) > 0 then
         if faceup == false then return {x=180, y=180, z=0}
@@ -162,12 +170,15 @@ function correctQuadrantRotation(faceup)
     end
 end
 
+
 function toggleChoiceButtons()
     if buttonsSpawned ~= true then
         self.setRotation(correctQuadrantRotation(false))
         local ships = {}
         for k,obj in pairs(getAllObjects()) do
-            if obj.tag == 'Figurine' and sameQuadrant(obj, self) then table.insert(ships, obj) end
+            if obj.tag == 'Figurine' and sameQuadrant(obj, self) and obj.getVar('DialModule_hasDials') ~= true then
+                table.insert(ships, obj)
+            end
         end
         for k,obj in pairs(ships) do
             local button = {}

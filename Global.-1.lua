@@ -10,7 +10,11 @@
 -- Think about twhen to spawn active dial buttons
 -- On drop among dials, return to origin
 
+-- TO_DO announce
+
 -- TO_DO onload
+
+-- TO_DO: TL action
 
 -- TO_DO: Small ship getting tokens has trouble checking who would be closest to the token
 
@@ -731,7 +735,8 @@ MoveModule.AddHistoryEntry = function(ship, entry, andBeQuiet)
     histData.actKey = histData.actKey+1
     MoveModule.ErasePastCurrent(ship)
     MoveModule.PrintHistory(ship)
-    if andBeQuiet ~= true then MoveModule.Announce({ship=ship, info={type='historyHandle', note='stored his position'}}) end
+    if andBeQuiet ~= true then --[[MoveModule.Announce({ship=ship, info={type='historyHandle', note='stored his position'}})]]--
+     end
 end
 
 -- Move a ship to a previous state from the history
@@ -764,7 +769,7 @@ MoveModule.UndoMove = function(ship)
             end
         end
     end
-    MoveModule.Announce(announce)
+    --MoveModule.Announce(announce)
 end
 
 -- Move a ship to next state from the history
@@ -786,7 +791,7 @@ MoveModule.RedoMove = function(ship)
             announce.info.note = 'performed an redo of (' .. currEntry.move .. ')'
         end
     end
-    MoveModule.Announce(announce)
+    --MoveModule.Announce(announce)
 end
 
 
@@ -1023,7 +1028,7 @@ MoveModule.PerformMove = function(move_code, ship, ignoreCollisions)
     ship.setRotation(finPos.rot)
     ship.setDescription('')
     -- Notification
-    MoveModule.AnnounceMove({ship=ship, moveInfo=info, collShip=collidedShip})
+    --MoveModule.AnnounceMove({ship=ship, moveInfo=info, collShip=collidedShip})
     -- Get the ship in a queue to do stuff once resting
     table.insert(MoveModule.restWaitQueue, {ship=ship, lastMove=move_code})
     startLuaCoroutine(Global, 'restWaitCoroutine')
@@ -1078,7 +1083,7 @@ end
 
 DialModule = {}
 
--- set: {ship=shipRef, activeDial=actDialInfo, dials=dialData}
+-- set: {ship=shipRef, activeDial=actDialInfo, dialSet=dialData}
 -- dialData: {dial1Info, dial2Info, dial3Info ...}
 -- dialInfo (and actDialInfo): {dial=dialRef, originPos=origin}
 DialModule.ActiveSets = {}
@@ -1118,7 +1123,7 @@ DialModule.PrintSets = function()
         end
         local allDialsStr = ''
         for k, dialInfo in pairs(set.dialSet) do
-            allDialsStr = allDialsStr .. ' ' .. dialInfo.dial.getDescription()
+            allDialsStr = allDialsStr .. ' ' .. k .. ':' .. dialInfo.dial.getDescription()
         end
         if allDialStr ~= '' then
             print(' - allDials: ' .. allDialsStr)
@@ -1133,6 +1138,7 @@ end
 DialModule.RemoveSet = function(ship)
     for k, set in pairs(DialModule.ActiveSets) do
         if set.ship == ship then
+            ship.setVar('DialModule_hasDials', false)
             if set.activeDial ~= nil then
                 DialModule.RestoreActive(set.ship)
             end
@@ -1166,6 +1172,7 @@ DialModule.AddSet = function(ship, set)
         end
     else
         table.insert(DialModule.ActiveSets, {ship=ship, activeDial=nil, dialSet=set})
+        ship.setVar('DialModule_hasDials', true)
     end
 end
 
@@ -1191,7 +1198,8 @@ DialModule.TokenSources = {}
 
 -- Update token sources on each load
 -- Restore sets if data is loaded
-DialModule.onLoad = function()
+DialModule.onLoad = function(saveTable)
+
     for k, obj in pairs(getAllObjects()) do
         if obj.tag == 'Infinite' then
             if obj.getName() == 'Focus' then DialModule.TokenSources['focus'] = obj
@@ -1210,13 +1218,72 @@ DialModule.onLoad = function()
 
         end
     end
+
+    DialModule.RestoreSaveData(saveTable)
+end
+
+-- Restore active sets from provided table (already decoded)
+-- Table should come from DialModule.GetSaveData
+DialModule.RestoreSaveData = function(saveTable)
+    if saveTable[1] == 'empty' then return end
+    for k,set in pairs(DialModule.ActiveSets) do
+        DialModule.RemoveSet(set.ship)
+    end
+    for k,set in pairs(saveTable) do
+        if getObjectFromGUID(set.ship) == nil then
+            print('wut')
+            -- TO_DO: exception handling?
+        else
+            DialModule.ActiveSets[k] = {ship=getObjectFromGUID(set.ship), dialSet={}}
+            for k2,dialInfo in pairs(set.dialSet) do
+                if getObjectFromGUID(dialInfo.dial) == nil then
+                    print('wot')
+                    -- TO_DO: exception handling?
+                else
+                    DialModule.ActiveSets[k].dialSet[k2] = {dial=getObjectFromGUID(dialInfo.dial), originPos=dialInfo.originPos}
+                    getObjectFromGUID(dialInfo.dial).call('setShip', {getObjectFromGUID(set.ship)})
+                end
+            end
+            getObjectFromGUID(set.ship).setVar('DialModule_hasDials', false)
+            if set.activeDialGUID ~= nil then
+                local actDial = getObjectFromGUID(set.activeDialGUID)
+                DialModule.RestoreDial(actDial)
+            end
+        end
+    end
+
+end
+
+-- Dumbest TTS issue ever workaround
+DialModule.PosSerialize = function(pos)
+    return {pos[1], pos[2], pos[3]}
+end
+
+-- Retrieve all sets data with serialize-able guids instead of objects references
+DialModule.GetSaveData = function()
+    local saveTable = {}
+    for k,set in pairs(DialModule.ActiveSets) do
+        saveTable[k] = {ship=set.ship.getGUID(), dialSet={}}
+        if set.activeDial ~= nil then saveTable[k].activeDialGUID = set.activeDial.dial.getGUID() end
+        for k2,dialInfo in pairs(set.dialSet) do
+            --table.insert(saveTable[k].dialSet, {dial=dialInfo.dial.getGUID(), originPos=dialInfo.originPos})
+            saveTable[k].dialSet[k2] = {dial=dialInfo.dial.getGUID(), originPos=DialModule.PosSerialize(dialInfo.originPos)}
+        end
+    end
+    if saveTable[1] == nil then return {'empty'}
+    else return saveTable end
+end
+
+-- Return table to be saved
+DialModule.onSave = function()
+    return DialModule.GetSaveData()
 end
 
 -- Perform an automated action
 -- Can be called externally for stuff like range ruler spawning
 XW_cmd.AddCommand('r', 'action')
-DialModule.PerformAction = function(ship, type)
-    local tokenActions = 'focus evade stress'
+DialModule.PerformAction = function(ship, type, extra)
+    local tokenActions = 'focus evade stress targetLock'
     if type == 'ruler' then
         local rulerExisted = false
         for k,info in pairs(DialModule.SpawnedRulers) do
@@ -1247,25 +1314,35 @@ DialModule.PerformAction = function(ship, type)
             newRuler.setScale(scale)
             local button = {['click_function'] = 'Ruler_SelfDestruct', ['label'] = 'DEL', ['position'] = {0, 0.5, 0}, ['rotation'] =  {0, 0, 0}, ['width'] = 900, ['height'] = 900, ['font_size'] = 250}
             newRuler.createButton(button)
+            table.insert(DialModule.SpawnedRulers, {ruler=newRuler, ship=ship})
         end
-    elseif type == 'targetLock' then
-        -- TO_DO target lock
     elseif tokenActions:find(type) ~= nil then
         local baseSize
         if DB_isLargeBase(ship) == true then baseSize = Convert_mm_igu(mm_largeBase/2)
         else baseSize = Convert_mm_igu(mm_smallBase/2) end
         local dest = {baseSize+Convert_mm_igu(20), 1.5, 0}
         if type == 'stress' then dest[3] = dest[3] - (Convert_mm_igu(40)/math.sqrt(3))
-        elseif type == 'focus' then dest[3] = dest[3] + (Convert_mm_igu(40)/math.sqrt(3)) end
+        elseif type == 'focus' then dest[3] = dest[3] + (Convert_mm_igu(40)/math.sqrt(3))
+        elseif type == 'targetLock' then
+            dest[3] = dest[3] + (Convert_mm_igu(40)/math.sqrt(3))
+            dest[1] = dest[1] - 1
+        end
         local tempDest = Vect_Sum(Vect_RotateDeg(dest, ship.getRotation()[2]+180), ship.getPosition())
         closest = XW_ClosestToPosWithinDist(tempDest, Convert_mm_igu(150), 'ship').obj
         if closest == nil or closest ~= ship then
-            if closest ~= nil then print(closest.getName()) end
             dest[1] = dest[1]/2
         end
         dest = Vect_RotateDeg(dest, ship.getRotation()[2]+180)
         dest = Vect_Sum(dest, ship.getPosition())
-        DialModule.TokenSources[type].takeObject({position=dest})
+        local newToken = DialModule.TokenSources[type].takeObject({position=dest, callback='Dial_SetLocks', callback_owner=Global})
+        table.insert(DialModule.LocksToBeSet, {lock=newToken, name=ship.getName(), color=extra})
+    end
+end
+
+DialModule.LocksToBeSet = {}
+function Dial_SetLocks()
+    for k,info in pairs(DialModule.LocksToBeSet) do
+        info.lock.call('manualSet', {info.color, info.name})
     end
 end
 
@@ -1308,8 +1385,8 @@ end
 function DialClick_Stress(dial)
     DialModule.PerformAction(dial.getVar('assignedShip'), 'stress')
 end
-function DialClick_TargetLock(dial)
-    DialModule.PerformAction(dial.getVar('assignedShip'), 'targetLock')
+function DialClick_TargetLock(dial, playerColor)
+    DialModule.PerformAction(dial.getVar('assignedShip'), 'targetLock', playerColor)
 end
 function DialClick_Template(dial)
     DialModule.PerformAction(dial.getVar('assignedShip'), 'spawnTemplate')
@@ -1384,7 +1461,6 @@ DialModule.Buttons.toggleExpanded = {label = 'A', click_function='DialClick_Togg
 DialModule.Buttons.undo = {label = 'Q', click_function='DialClick_Undo', height=500, width=200, position={-0.9, 0.5, -1}, font_size=250}
 DialModule.Buttons.nameButton = function(ship)
     local shortName = DialModule.GetShortName(ship)
-    print(string.len(shortName)*120)
     return {label=shortName, click_function='dummy', height=300, width=string.len(shortName)*140, position={0, -0.5, -1}, rotation={180, 180, 0}, font_size=250}
 end
 DialModule.Buttons.boostS = {label='B', click_function='DialClick_BoostS', height=500, width=365, position={0, 0.5, -2.2}, font_size=250}
@@ -1616,14 +1692,21 @@ end
 -- When table is loaded up, this is called
 -- save_state contains everything separate modules saved before to restore table state
 function onLoad(save_state)
+    if save_state ~= '' and save_state ~= nil then
+        local savedData = JSON.decode(save_state)
+        DialModule.onLoad(savedData['DialModule'])
+    end
     -- Restore dial sets
-    DialModule.onLoad(save_state)
+    --DialModule.onLoad(save_state)
     -- Restore undo data
-    MoveModule.onLoad(save_state)
+    --MoveModule.onLoad(save_state)
 end
 
 function onSave()
-    dummy()
+    local tableToSave = {}
+    tableToSave['DialModule'] = {}
+    tableToSave['DialModule'] = DialModule.onSave()
+    return JSON.encode_pretty(tableToSave)
 end
 
 -- END DIRECT TTS EVENT HANDLING
