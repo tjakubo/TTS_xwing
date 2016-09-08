@@ -10,6 +10,15 @@
 -- Think about twhen to spawn active dial buttons
 -- On drop among dials, return to origin
 
+function ClearButtonsPatch(obj)
+    local buttons = obj.getButtons()
+    if buttons ~= nil then
+        for k,but in pairs(buttons) do
+            obj.removeButton(but.index)
+        end
+    end
+end
+
 function onLoad(save_state)
     DialModule.onLoad()
 end
@@ -17,75 +26,268 @@ end
 DialModule = {}
 
 function DialPickedUp(dialTable)
-    print('dang')
+    DialModule.MakeNewActive(dialTable.ship, dialTable.dial)
 end
 
 function DialDropped(dialTable)
-    print('bang')
+    local actSet = DialModule.GetSet(dialTable.ship)
+    if actSet.activeDial.dial == dialTable.dial then
+        DialModule.SpawnFirstActiveButtons(dialTable)
+    else
+        DialModule.RestoreDial(dialTable.dial)
+    end
 end
 
-function DialClick_Delete(dial) DialModule.RestoreActive(dial) end
+function DialClick_Delete(dial)
+    dial.clearButtons()
+    ClearButtonsPatch(dial)
+    DialModule.RestoreActive(dial.getVar('assignedShip'))
+end
+function DialClick_Flip(dial)
+    dial.flip()
+    dial.clearButtons()
+    ClearButtonsPatch(dial)
+    DialModule.SpawnMainActiveButtons({dial=dial, ship=dial.getVar('assignedShip')})
+end
 function DialClick_Move(dial)
-    XW_cmd.Process(dial.getVar('assignedShip'), dial.getDescription())
-    DialModule.SwitchMainButton(dial)
+    local actShip = dial.getVar('assignedShip')
+    MoveModule.AddHistoryEntry(actShip, {pos=actShip.getPosition(), rot=actShip.getRotation(), move='manual reposition'})
+    XW_cmd.Process(actShip, dial.getDescription())
+    DialModule.SwitchMainButton(dial, 'undo')
 end
 function DialClick_Focus(dial)
-    DialModule.PerformAction(dial, 'focus')
+    DialModule.PerformAction(dial.getVar('assignedShip'), 'focus')
 end
 function DialClick_Evade(dial)
-    DialModule.PerformAction(dial, 'evade')
+    DialModule.PerformAction(dial.getVar('assignedShip'), 'evade')
 end
 function DialClick_Stress(dial)
-    DialModule.PerformAction(dial, 'stress')
+    DialModule.PerformAction(dial.getVar('assignedShip'), 'stress')
 end
 function DialClick_TargetLock(dial)
-    DialModule.PerformAction(dial, 'targetLock')
+    DialModule.PerformAction(dial.getVar('assignedShip'), 'targetLock')
 end
 function DialClick_Template(dial)
-    DialModule.PerformAction(dial, 'spawnTemplate')
+    DialModule.PerformAction(dial.getVar('assignedShip'), 'spawnTemplate')
 end
 function DialClick_Undo(dial)
-    DialModule.PerformAction(dial, 'undo')
+    XW_cmd.Process(dial.getVar('assignedShip'), 'q')
+    DialModule.SwitchMainButton(dial, 'move')
 end
-function DialClick_BoostF(dial)
+function DialClick_BoostS(dial)
     XW_cmd.Process(dial.getVar('assignedShip'), 's1')
+    DialModule.SwitchMainButton(dial, 'none')
 end
 function DialClick_BoostR(dial)
     XW_cmd.Process(dial.getVar('assignedShip'), 'br1')
+    DialModule.SwitchMainButton(dial, 'none')
 end
-function DialClick_BoosL(dial)
+function DialClick_BoostL(dial)
     XW_cmd.Process(dial.getVar('assignedShip'), 'be1')
+    DialModule.SwitchMainButton(dial, 'none')
 end
 function DialClick_RollR(dial)
     XW_cmd.Process(dial.getVar('assignedShip'), 'xr')
+    DialModule.SwitchMainButton(dial, 'none')
 end
 function DialClick_RollRF(dial)
     XW_cmd.Process(dial.getVar('assignedShip'), 'xrf')
+    DialModule.SwitchMainButton(dial, 'none')
 end
 function DialClick_RollRB(dial)
     XW_cmd.Process(dial.getVar('assignedShip'), 'xrb')
+    DialModule.SwitchMainButton(dial, 'none')
 end
 function DialClick_RollL(dial)
     XW_cmd.Process(dial.getVar('assignedShip'), 'xe')
+    DialModule.SwitchMainButton(dial, 'none')
 end
 function DialClick_RollLF(dial)
     XW_cmd.Process(dial.getVar('assignedShip'), 'xef')
+    DialModule.SwitchMainButton(dial, 'none')
 end
 function DialClick_RollLB(dial)
     XW_cmd.Process(dial.getVar('assignedShip'), 'xeb')
+    DialModule.SwitchMainButton(dial, 'none')
 end
 function DialClick_Ruler(dial)
-    DialModule.PerformAction(dial, 'spawnRuler')
+    DialModule.PerformAction(dial.getVar('assignedShip'), 'ruler')
 end
+
 function DialClick_ToggleExpanded(dial)
-    DialModule.ToggleButtonSet(dial)
+    local befMove = false
+    for k,but in pairs(dial.getButtons()) do
+        if but.label == 'Move' then befMove = true end
+    end
+    if DialModule.GetButtonsState(dial) ~= 2 then
+        DialModule.SetButtonsState(dial, 2)
+    else
+        if befMove == true then DialModule.SetButtonsState(dial, 0)
+        else DialModule.SetButtonsState(dial, 1) end
+    end
 end
+
+
+DialModule.PerformAction = function(ship, type)
+    local tokenActions = 'focus evade stress targetLock'
+    if type == 'ruler' then
+        print('ding')
+    elseif type == 'targetLock' then
+        print('dang')
+    elseif tokenActions:find(type) ~= nil then
+        print('dong')
+    end
+end
+
 -- set: {ship=shipRef, activeDial=actDialInfo, dials=dialData}
 -- dialData: {dial1Info, dial2Info, dial3Info ...}
 -- dialInfo: {dial=dialRef, originPos=origin}
 DialModule.ActiveSets = {}
 
 DialModule.TokenSources = {}
+
+DialModule.Buttons = {}
+DialModule.Buttons.deleteFacedown = {label='Delete', click_function='DialClick_Delete', height = 400, width=1000, position={0, -0.5, 2}, rotation={180, 180, 0}, font_size=300}
+DialModule.Buttons.deleteFaceup = {label='Delete', click_function='DialClick_Delete', height = 400, width=1000, position={0, 0.5, 2}, font_size=300}
+DialModule.Buttons.flip = {label='Flip', click_function='DialClick_Flip', height = 400, width=600, position={0, -0.5, 0.2}, rotation={180, 180, 0}, font_size=300}
+DialModule.Buttons.move = {label='Move', click_function='DialClick_Move', height = 500, width=750, position={-0.32, 0.5, 1}, font_size=300}
+DialModule.Buttons.undoMove = {label='Undo', click_function='DialClick_Undo', height = 500, width=750, position={-0.32, 0.5, 1}, font_size=300}
+DialModule.Buttons.focus = {label = 'F', click_function='DialClick_Focus', height=500, width=200, position={0.9, 0.5, -1}, font_size=250}
+DialModule.Buttons.stress = {label = 'S', click_function='DialClick_Stress', height=500, width=200, position={0.9, 0.5, 0}, font_size=250}
+DialModule.Buttons.evade = {label = 'E', click_function='DialClick_Evade', height=500, width=200, position={0.9, 0.5, 1}, font_size=250}
+DialModule.Buttons.toggleExpanded = {label = 'A', click_function='DialClick_ToggleExpanded', height=500, width=200, position={-0.9, 0.5, 0}, font_size=250}
+DialModule.Buttons.undo = {label = 'Q', click_function='DialClick_Undo', height=500, width=200, position={-0.9, 0.5, -1}, font_size=250}
+DialModule.Buttons.nameButton = function(ship)
+    local shortName = DialModule.GetShortName(ship)
+    print(string.len(shortName)*120)
+    return {label=shortName, click_function='dummy', height=300, width=string.len(shortName)*140, position={0, -0.5, -1}, rotation={180, 180, 0}, font_size=250}
+end
+DialModule.Buttons.boostS = {label='B', click_function='DialClick_BoostS', height=500, width=365, position={0, 0.5, -2.2}, font_size=250}
+DialModule.Buttons.boostR = {label='Br', click_function='DialClick_BoostR', height=500, width=365, position={0.75, 0.5, -2.2}, font_size=250}
+DialModule.Buttons.boostL = {label='Bl', click_function='DialClick_BoostL', height=500, width=365, position={-0.75, 0.5, -2.2}, font_size=250}
+DialModule.Buttons.rollR = {label='X', click_function='DialClick_RollR', height=500, width=365, position={1.5, 0.5, 0}, font_size=250}
+DialModule.Buttons.rollRF = {label='Xf', click_function='DialClick_RollRF', height=500, width=365, position={1.5, 0.5, -1}, font_size=250}
+DialModule.Buttons.rollRB = {label='Xb', click_function='DialClick_RollRB', height=500, width=365, position={1.5, 0.5, 1}, font_size=250}
+DialModule.Buttons.rollL = {label='X', click_function='DialClick_RollL', height=500, width=365, position={-1.5, 0.5, 0}, font_size=250}
+DialModule.Buttons.rollLF = {label='Xf', click_function='DialClick_RollLF', height=500, width=365, position={-1.5, 0.5, -1}, font_size=250}
+DialModule.Buttons.rollLB = {label='Xb', click_function='DialClick_rollLB', height=500, width=365, position={-1.5, 0.5, 1}, font_size=250}
+DialModule.Buttons.ruler = {label='R', click_function='DialClick_Ruler', height=500, width=365, font_size=250}
+DialModule.Buttons.targetLock = {label='TL', click_function='DialClick_TargetLock', height=500, width=365, font_size=250}
+
+DialModule.GetShortName = function(ship)
+    local shipNameWords = {}
+    local numWords = 0
+    for word in ship.getName():gmatch('%w+') do table.insert(shipNameWords, word) numWords = numWords+1 end
+    for k,w in pairs(shipNameWords) do if w == 'LGS' then table.remove(shipNameWords, k) numWords = numWords-1 end end
+    local shipShortName = shipNameWords[1]
+    if shipShortName:sub(1,1) == '\'' or shipShortName:sub(1,1) == '\"' then shipShortName = shipShortName:sub(2, -1) end
+    if shipNameWords[numWords]:sub(1,1) == shipNameWords[numWords]:sub(-1,-1) then shipShortName = shipShortName .. ' ' .. shipNameWords[numWords]:sub(1,1) end
+    return shipShortName
+end
+
+DialModule.SpawnFirstActiveButtons = function(dialTable)
+    dialTable.dial.clearButtons()
+    ClearButtonsPatch(dialTable.dial)
+    dialTable.dial.createButton(DialModule.Buttons.deleteFacedown)
+    dialTable.dial.createButton(DialModule.Buttons.flip)
+    dialTable.dial.createButton(DialModule.Buttons.nameButton(dialTable.ship))
+end
+
+DialModule.SpawnMainActiveButtons = function (dialTable)
+    dialTable.dial.clearButtons()
+    ClearButtonsPatch(dialTable.dial)
+    dialTable.dial.createButton(DialModule.Buttons.deleteFaceup)
+    dialTable.dial.createButton(DialModule.Buttons.move)
+    dialTable.dial.createButton(DialModule.Buttons.toggleExpanded)
+end
+
+--[[
+activeDial.createButton(button)
+button.click_function = 'spawnMoveTemplate'
+button.width = 450
+button.height = 200
+button.font_size = 150
+button.label = 'temp'
+button.position = {-0.3, 0.5, 0.3}
+activeDial.createButton(button)]]--
+
+DialModule.GetButtonsState = function(dial)
+    local state = 0
+    local buttons = dial.getButtons()
+    for k,but in pairs(buttons) do
+        if but.label == 'F' then if state == 0 then state = 1 end end
+        if but.label == 'B' then state = 2 end
+    end
+    return state
+end
+
+DialModule.SetButtonsState = function(dial, newState)
+    local standardActionsMatch = 'F S E Q'           -- labels for buttons of STANDARD set
+    local extActionsMatch = 'Br B Bl Xf X Xb TL R'  -- labels for buttons of EXTENDED set
+
+    local currentState = DialModule.GetButtonsState(dial)
+    if newState > currentState then
+        if currentState == 0 then -- BASIC -> STANDARD
+            dial.createButton(DialModule.Buttons.focus)
+            dial.createButton(DialModule.Buttons.stress)
+            dial.createButton(DialModule.Buttons.evade)
+            dial.createButton(DialModule.Buttons.undo)
+        end
+        if newState == 2 then -- STANDARD -> EXTENDED
+            dial.createButton(DialModule.Buttons.boostS)
+            dial.createButton(DialModule.Buttons.boostR)
+            dial.createButton(DialModule.Buttons.boostL)
+            dial.createButton(DialModule.Buttons.rollR)
+            dial.createButton(DialModule.Buttons.rollRF)
+            dial.createButton(DialModule.Buttons.rollRB)
+            dial.createButton(DialModule.Buttons.rollL)
+            dial.createButton(DialModule.Buttons.rollLF)
+            dial.createButton(DialModule.Buttons.rollLB)
+            dial.createButton(DialModule.Buttons.ruler)
+            dial.createButton(DialModule.Buttons.targetLock)
+        end
+        -- if REMOVING buttons
+    elseif newState < currentState then
+        local buttons = dial.getButtons()
+        if currentState == 2 then -- remove EXTENDED set ones
+            for k,but in pairs(buttons) do
+                if extActionsMatch:find(but.label) ~= nil then dial.removeButton(but.index) end
+            end
+        end
+        if newState == 0 then -- remove STANDARD set ones
+            for k,but in pairs(buttons) do
+                if standardActionsMatch:find(but.label) ~= nil then dial.removeButton(but.index) end
+            end
+        end
+    end
+end
+
+DialModule.SwitchMainButton = function(dial, type)
+    local buttons = dial.getButtons()
+    for k,but in pairs(buttons) do
+        if type=='none' then
+            if but.label == 'Undo' then
+                dial.removeButton(but.index)
+            end
+        elseif type == 'undo' then
+            if but.label == 'Move' then
+                dial.removeButton(but.index)
+                dial.createButton(DialModule.Buttons.undoMove)
+                if DialModule.GetButtonsState(dial) == 0 then
+                    DialModule.SetButtonsState(dial, 1)
+                end
+            end
+        elseif type == 'move' then
+            if but.label == 'Undo' then
+                dial.removeButton(but.index)
+                dial.createButton(DialModule.Buttons.move)
+                if DialModule.GetButtonsState(dial) == 1 then
+                    DialModule.SetButtonsState(dial, 0)
+                end
+            end
+        end
+    end
+end
 
 DialModule.onLoad = function()
     for k, obj in pairs(getAllObjects()) do
@@ -111,14 +313,45 @@ DialModule.onLoad = function()
     end]]--
 end
 
+DialModule.SpawnActiveButtons = function(ship)
+    local dial = DialModule.GetSet(ship).activeDial.dial
+    if dial == nil then
+        print('wtf')
+    else
+        local button = {position = {0, -0.3, 0}, rotation = {180, 180, 0}, label='DEL', click_function='DialClick_Delete'}
+        dial.createButton(button)
+    end
+end
+
+DialModule.PrintSets = function()
+    for k, set in pairs(DialModule.ActiveSets) do
+        print('SET: ' .. set.ship.getName())
+        if set.activeDial ~= nil then
+            print(' - actDial: ' .. set.activeDial.dial.getDescription())
+        else
+            print(' - actDial: nil')
+        end
+        local allDialsStr = ''
+        for k, dialInfo in pairs(set.dialSet) do
+            allDialsStr = allDialsStr .. ' ' .. dialInfo.dial.getDescription()
+        end
+        if allDialStr ~= '' then
+            print(' - allDials: ' .. allDialsStr)
+        else
+            print(' - allDials: nil')
+        end
+    end
+end
+
 DialModule.RemoveSet = function(ship)
     for k, set in pairs(DialModule.ActiveSets) do
         if set.ship == ship then
             if set.activeDial ~= nil then
-                DialModule.RestoreActive(set.activeDial)
+                DialModule.RestoreActive(set.ship)
             end
             for k,dialData in pairs(set.dialSet) do
                 dialData.dial.flip()
+                dialData.dial.call('setShip', {nil})
             end
             table.remove(DialModule.ActiveSets, k)
             break
@@ -135,7 +368,7 @@ DialModule.GetSet = function(ship)
 end
 
 DialModule.AddSet = function(ship, set)
-    local actSet = DialModule.GetSet(set_ship.ship)
+    local actSet = DialModule.GetSet(ship)
     if actSet ~= nil then
         for k, newDialData in pairs(set) do
             table.insert(actSet.dialSet, newDialData)
@@ -145,11 +378,32 @@ DialModule.AddSet = function(ship, set)
     end
 end
 
-DialModule.RestoreActive = function(dial)
+DialModule.MakeNewActive = function(ship, dial)
+    local actSet = DialModule.GetSet(ship)
+    if actSet.dialSet[dial.getDescription()].dial == dial then
+        if actSet.activeDial ~= nil then
+            DialModule.RestoreActive(ship)
+        end
+        actSet.activeDial = actSet.dialSet[dial.getDescription()]
+    end
+end
+
+DialModule.RestoreActive = function(ship)
+    local actSet = DialModule.GetSet(ship)
+    if actSet.ship == ship and actSet.activeDial ~= nil then
+        actSet.activeDial.dial.setPosition(actSet.activeDial.originPos)
+        actSet.activeDial.dial.setRotation(Dial_FaceupRot(actSet.activeDial.dial))
+        actSet.activeDial = nil
+    end
+end
+
+DialModule.RestoreDial = function(dial)
     for k, set in pairs(DialModule.ActiveSets) do
-        if set.activeDial ~= nil then
+        if set.dialSet[dial.getDescription()].dial == dial then
             if set.activeDial.dial == dial then
-                dial.setPosition(set.activeDial.originPos)
+                DialModule.RestoreActive(set.ship)
+            else
+                dial.setPosition(set.dialSet[dial.getDescription()].originPos)
                 dial.setRotation(Dial_FaceupRot(dial))
             end
         end
@@ -161,6 +415,19 @@ function DialAPI_AssignSet(set_ship)
     if actSet ~= nil then
         DialModule.RemoveSet(set_ship.ship)
     end
+    local validSet = {}
+    for k,dial in pairs(set_ship[1]) do
+        --table.insert(validSet, {dial=dial, originPos=dial.getPosition()})
+        if validSet[dial.getDescription()] ~= nil then
+            print('o fuck')
+        else
+            validSet[dial.getDescription()] = {dial=dial, originPos=dial.getPosition()}
+        end
+        if dial.getVar('assignedShip') == nil then
+            dial.call('setShip', {set_ship[2]})
+        end
+    end
+    DialModule.AddSet(set_ship[2], validSet)
 end
 
 function Dial_FaceupRot(dial)
@@ -601,7 +868,7 @@ MoveData.DecodeInfo = function (move_code, ship)
             info.note = 'decloaked forward'
         end
 
-        if info.speed > 2 or (info.size == 'large' and info.speed > 1) then info.type = 'invalid' end
+        if  (info.size == 'small' and info.speed > 2) or (info.size == 'large' and info.speed ~= 6) then info.type = 'invalid' end
 
     end
     -- check database
