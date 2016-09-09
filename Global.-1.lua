@@ -473,19 +473,26 @@ MoveData.DecodeInfo = function (move_code, ship)
             info.dir = 'left'
         end
         info.note = 'barrel rolled'
+        -- (fucking decloak) is treated as a roll before, now just return straight 2 data
+        if move_code:sub(2,2) == 's' then
+            info.speed = 2
+            info.extra = 'straight'
+            info.note = 'decloaked forward'
+            if info.size == 'large' then return MoveData.DecodeInfo('s2', ship) end
+        elseif move_code:sub(1,1) == 'c' then
+            info.note = 'decloaked'
+            info.speed = 2
+            if info.size == 'large' then return MoveData.DecodeInfo(move_code:gsub('c', 'x'), ship) end
+        end
+
         if move_code:sub(-1,-1) == 'f' then
             info.extra = 'forward'
             info.note = info.note .. ' forward ' .. info.dir
         elseif move_code:sub(-1,-1) == 'b' then
             info.extra = 'backward'
             info.note = info.note .. ' backward' .. info.dir
-        end
-
-        -- (fucking decloak) is treated as a roll before, now just return straight 2 data
-        if move_code:sub(2,2) == 's' then
-            info.speed = 2
-            info.extra = 'straight'
-            info.note = 'decloaked forward'
+        else
+            info.note = info.note .. ' ' .. info.dir
         end
 
         -- Assert trying to roll at weird speeds (speeds determine which entry will be taken)
@@ -784,6 +791,7 @@ MoveModule.UndoMove = function(ship)
         if rotDiff > 180 then rotDiff = 360 - rotDiff end
         if Dist_Pos(ship.getPosition(), currEntry.pos) > undoPosCutoff
         or rotDiff > undoRotCutoffDeg then
+            MoveModule.QueueShipTokensMove(ship, 'none')
             ship.setPosition(currEntry.pos)
             ship.setRotation(currEntry.rot)
             ship.lock()
@@ -792,6 +800,7 @@ MoveModule.UndoMove = function(ship)
             if histData.actKey > 1 then
                 histData.actKey = histData.actKey - 1
                 currEntry = histData.history[histData.actKey]
+                MoveModule.QueueShipTokensMove(ship, 'none')
                 ship.setPosition(currEntry.pos)
                 ship.setRotation(currEntry.rot)
                 ship.lock()
@@ -817,6 +826,7 @@ MoveModule.RedoMove = function(ship)
         else
             histData.actKey = histData.actKey+1
             local currEntry = histData.history[histData.actKey]
+            MoveModule.QueueShipTokensMove(ship, 'none')
             ship.setPosition(currEntry.pos)
             ship.setRotation(currEntry.rot)
             ship.lock()
@@ -841,9 +851,10 @@ MoveModule.tokenWaitQueue = {} -- elements wait here until ships are ready
 function restWaitCoroutine()
     if MoveModule.restWaitQueue[1] == nil then
         dummy()
-        --TO_DO: Exception handling?
+        print('coroutine table empty') --TO_DO: Exception handling?
         return 0
     end
+
     local waitData = MoveModule.restWaitQueue[#MoveModule.restWaitQueue]
     local actShip = waitData.ship
     local yank = false
@@ -854,17 +865,21 @@ function restWaitCoroutine()
         end
         coroutine.yield(0)
     until actShip.resting == true and actShip.held_by_color == nil and actShip.getPosition()[2] < 1.5
+    local newTokenTable = {}
     for k,tokenInfo in pairs(MoveModule.tokenWaitQueue) do
         if tokenInfo.ship == actShip then
             local offset = Vect_RotateDeg(tokenInfo.offset, actShip.getRotation()[2])
             local dest = Vect_Sum(offset, actShip.getPosition())
             dest[2] = dest[2] + 1.5
             tokenInfo.token.setPositionSmooth(dest)
-            table.remove(MoveModule.tokenWaitQueue, k)
+        else
+            table.insert(newTokenTable, tokenInfo)
         end
+
     end
+    MoveModule.tokenWaitQueue = newTokenTable
     actShip.lock()
-    MoveModule.AddHistoryEntry(actShip, {pos=actShip.getPosition(), rot=actShip.getRotation(), move=waitData.lastMove}, true)
+    if waitData.lastMove ~= nil then MoveModule.AddHistoryEntry(actShip, {pos=actShip.getPosition(), rot=actShip.getRotation(), move=waitData.lastMove}, true) end
     return 1
 end
 
@@ -1013,7 +1028,7 @@ MoveModule.PerformMove = function(move_code, ship, ignoreCollisions)
         maxShipReach = Convert_mm_igu(mm_smallBase*math.sqrt(2)/2)
     end
 
-    -- Check for nearby tokens
+    --[[-- Check for nearby tokens
     local selfTokens = XW_ObjWithinDist(ship.getPosition(), maxShipReach+Convert_mm_igu(50), 'token')
     -- Check which ones have our ship nearest, put them in a queue to be moved after ship rests
     for k, token in pairs(selfTokens) do
@@ -1026,7 +1041,8 @@ MoveModule.PerformMove = function(move_code, ship, ignoreCollisions)
             infoTable.offset = Vect_RotateDeg(offset, -1*ship.getRotation()[2])
             table.insert(MoveModule.tokenWaitQueue, infoTable)
         end
-    end
+    end]]--
+    MoveModule.QueueShipTokensMove(ship)
 
     -- Check which tokens could obstruct final position
     local obstrTokens = XW_ObjWithinDist(finPos.pos, maxShipReach+Convert_mm_igu(20), 'token')
@@ -1069,6 +1085,40 @@ MoveModule.PerformMove = function(move_code, ship, ignoreCollisions)
     -- Get the ship in a queue to do stuff once resting
     table.insert(MoveModule.restWaitQueue, {ship=ship, lastMove=move_code})
     startLuaCoroutine(Global, 'restWaitCoroutine')
+end
+
+MoveModule.QueueShipTokensMove = function(ship, queueShipMove)
+    -- This is because token next to a large ship is MUCH FARTHER from it than token near a small ship
+    local isShipLargeBase = DB_isLargeBase(ship)
+    local maxShipReach = nil
+    if isShipLargeBase == true then
+        maxShipReach = Convert_mm_igu(mm_largeBase*math.sqrt(2)/2)
+    else
+        maxShipReach = Convert_mm_igu(mm_smallBase*math.sqrt(2)/2)
+    end
+
+    -- Check for nearby tokens
+    local selfTokens = XW_ObjWithinDist(ship.getPosition(), maxShipReach+Convert_mm_igu(50), 'token')
+    -- Check which ones have our ship nearest, put them in a queue to be moved after ship rests
+    for k, token in pairs(selfTokens) do
+        local owner = XW_ClosestWithinDist(token, Convert_mm_igu(80), 'ship').obj
+        if owner == ship then
+            local infoTable = {}
+            infoTable.token = token
+            infoTable.ship = ship
+            local offset = Vect_Sum(token.getPosition(), Vect_Scale(ship.getPosition(), -1))
+            infoTable.offset = Vect_RotateDeg(offset, -1*ship.getRotation()[2])
+            table.insert(MoveModule.tokenWaitQueue, infoTable)
+        end
+    end
+
+    if queueShipMove ~= nil then
+         table.insert(MoveModule.restWaitQueue, {ship=ship, lastMove=queueShipMove})
+         startLuaCoroutine(Global, 'restWaitCoroutine')
+     elseif queueShipMove == 'none' then
+          table.insert(MoveModule.restWaitQueue, {ship=ship})
+          startLuaCoroutine(Global, 'restWaitCoroutine')
+     end
 end
 
 -- COLOR CONFIGURATION FOR ANNOUNCEMENTS
@@ -1387,7 +1437,6 @@ DialModule.TokenSources = {}
 -- Update token sources on each load
 -- Restore sets if data is loaded
 DialModule.onLoad = function(saveTable)
-    print('hi')
     for k, obj in pairs(getAllObjects()) do
         if obj.tag == 'Infinite' then
             if obj.getName() == 'Focus' then DialModule.TokenSources['focus'] = obj
