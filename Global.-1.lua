@@ -5,7 +5,22 @@
 -- TO_DO: Dials:o n drop among dials, return to origin (maybe)
 -- TO_DO onload (dials done, anything else?)
 -- TO_DO: Small ship getting tokens has trouble checking who would be closest to the token
+-- !!!
+-- TO_DO: Intercept deleted dial
+-- TO_DO: weirdness when playing with saving/deletin dials multiple times (testing?)
 
+-- Should the code execute print functions or skip them?
+-- This should be set to false on every release
+print_debug = false
+
+TTS_print = print
+function print(arg)
+    if print_debug == true then
+        TTS_print(arg)
+    end
+end
+
+-- Patch for clearing buttons since TTS broke obj.clearButtons()
 function ClearButtonsPatch(obj)
     local buttons = obj.getButtons()
     if buttons ~= nil then
@@ -131,6 +146,8 @@ function XW_ObjMatchType(obj, type)
         if obj.tag == 'Chip' or obj.getVar('XW_lockSet') ~= nil then return true end
     elseif type == 'lock' then
         if obj.getVar('XW_lockSet') ~= nil then return true end
+    elseif type == 'dial' then
+        if obj.tag == 'Card' and obj.getDescription() ~= '' then return true end
     end
     return false
 end
@@ -239,6 +256,12 @@ XW_cmd.Process = function(obj, cmd)
             MoveModule.RedoMove(obj)
         elseif cmd == 'keep' then
             MoveModule.SaveStateToHistory(obj, false)
+        end
+    elseif type == 'dialHandle' then
+        if cmd == 'sd' then
+            DialModule.SaveNearby(obj)
+        elseif cmd == 'rd' then
+            DialModule.RemoveSet(obj)
         end
     elseif type == 'action' then
         if cmd == 'r' then cmd = 'ruler' end
@@ -484,7 +507,8 @@ MoveData.DecodeFull = function(move_code, ship)
     if info.type == 'invalid' then
         dummy()
         --TO_DO: exception handling?
-        return {0, 0, 0, 0} end
+        return {0, 0, 0, 0}
+    end
     -- copy relevant offest
     data = Lua_ShallowCopy(MoveData[info.type][info.speed])
     -- apply modifiers
@@ -530,7 +554,8 @@ MoveData.DecodePartial = function(move_code, ship, part)
     if info.type == 'invalid' then
         dummy()
         --TO_DO: exception handling?
-        return {0, 0, 0, 0} end
+        return {0, 0, 0, 0}
+    end
 
     -- PARTIAL STRAIGHT
     -- Simply get a proportional part of a full straight move (oof)
@@ -817,7 +842,8 @@ function restWaitCoroutine()
     if MoveModule.restWaitQueue[1] == nil then
         dummy()
         --TO_DO: Exception handling?
-        return 0 end
+        return 0
+    end
     local waitData = MoveModule.restWaitQueue[#MoveModule.restWaitQueue]
     local actShip = waitData.ship
     local yank = false
@@ -835,7 +861,6 @@ function restWaitCoroutine()
             dest[2] = dest[2] + 1.5
             tokenInfo.token.setPositionSmooth(dest)
             table.remove(MoveModule.tokenWaitQueue, k)
-            k = k-1
         end
     end
     actShip.lock()
@@ -1053,6 +1078,7 @@ MoveModule.AnnounceColor.moveCollision = {1, 0.5, 0.1} -- Orange
 MoveModule.AnnounceColor.action = {0.1, 0.1, 1}        -- Blue
 MoveModule.AnnounceColor.historyHandle = {0.1, 1, 1}   -- Cyan
 MoveModule.AnnounceColor.error = {1, 0.1, 0.1}         -- Red
+MoveModule.AnnounceColor.info = {0.6, 0.1, 0.6}
 
 -- Notify color or all players of some event
 -- Info: {ship=shipRef, info=announceInfo, target=targetStr}
@@ -1077,6 +1103,9 @@ MoveModule.Announce = function(ship, info, target)
     elseif info.type:find('error') ~= nil then
         annString = ship.getName() .. ' ' .. info.note
         annColor = MoveModule.AnnounceColor.error
+    elseif info.type:find('info') ~= nil then
+        annString = ship.getName() .. ' ' .. info.note
+        annColor = MoveModule.AnnounceColor.info
     end
 
     if target == 'all' then
@@ -1094,8 +1123,6 @@ end
 
 -- This script must be on every dial that is assigned through this module
 dialLuaScript = [[
-assignedShip = nil
-
 function setShip(shipTable)
     assignedShip = shipTable[1]
 end
@@ -1112,6 +1139,7 @@ end
 -- This is called evey time a dialling is picked up
 -- Make this a new active dial or ignore if it already is
 function DialPickedUp(dialTable)
+    if dialTable.ship == nil then return end
     local actSet = DialModule.GetSet(dialTable.ship)
     if actSet.activeDial ~= nil then
         if actSet.activeDial.dial ~= dialTable.dial then
@@ -1125,6 +1153,7 @@ end
 -- This is called evey time a dialling is dropped
 -- Spawn first buttos if this is an active dial or return if it's not
 function DialDropped(dialTable)
+    if dialTable.ship == nil then return end
     local actSet = DialModule.GetSet(dialTable.ship)
     if actSet.activeDial ~= nil and actSet.activeDial.dial == dialTable.dial then
         if dialTable.dial.getButtons() == nil then DialModule.SpawnFirstActiveButtons(dialTable) end
@@ -1139,6 +1168,9 @@ DialModule = {}
 -- dialData: {dial1Info, dial2Info, dial3Info ...}
 -- dialInfo (and actDialInfo): {dial=dialRef, originPos=origin}
 DialModule.ActiveSets = {}
+XW_cmd.AddCommand('r', 'action')
+XW_cmd.AddCommand('rd', 'dialHandle')
+XW_cmd.AddCommand('sd', 'dialHandle')
 
 -- Assign a set of dials to a ship
 -- Fit for calling from outside, removes a set if it already exists for a ship
@@ -1152,7 +1184,7 @@ function DialAPI_AssignSet(set_ship)
     local validSet = {}
     for k,dial in pairs(set_ship.set) do
         if validSet[dial.getDescription()] ~= nil then
-            MoveModule.Announce(set_ship.ship, {type='error_DialModule', note='tried to assign a duplicate dial'}, 'all')
+            MoveModule.Announce(set_ship.ship, {type='error_DialModule', note='tried to assign few of same dials'}, 'all')
         else
             validSet[dial.getDescription()] = {dial=dial, originPos=dial.getPosition()}
         end
@@ -1188,7 +1220,9 @@ end
 -- If there is an active dial, restore it, flips all unassigned as an indicatior
 DialModule.RemoveSet = function(ship)
     for k, set in pairs(DialModule.ActiveSets) do
+        local hadDials = false
         if set.ship == ship then
+            hadDials = true
             ship.setVar('DialModule_hasDials', false)
             if set.activeDial ~= nil then
                 DialModule.RestoreActive(set.ship)
@@ -1196,10 +1230,13 @@ DialModule.RemoveSet = function(ship)
             for k,dialData in pairs(set.dialSet) do
                 dialData.dial.flip()
                 dialData.dial.call('setShip', {nil})
+                dialData.dial.setName('')
             end
             table.remove(DialModule.ActiveSets, k)
+            MoveModule.Announce(ship, {type='info_DialModule', note='had all his dials unassigned (and flipped)'}, 'all')
             break
         end
+        if hadDials == false then MoveModule.Announce(ship, {type='info_DialModule', note='had no assigned dials'}, 'all') end
     end
 end
 
@@ -1227,6 +1264,106 @@ DialModule.AddSet = function(ship, set)
     end
 end
 
+-- Distance (circle from ship) at wchich dials can be to be registered
+saveNearbyCircleDist = Convert_mm_igu(160)
+
+-- Save nearby dials
+-- If dials are already assigned to this ship, they are ignored
+-- If one of dials is assigned to other ship, unassign and proceed
+DialModule.SaveNearby = function(ship)
+    local nearbyDialsAll = XW_ObjWithinDist(ship.getPosition(), saveNearbyCircleDist, 'dial')
+    local nearbyDials = {}
+    if nearbyDialsAll[1] == nil then
+        MoveModule.Announce(ship, {type='info_DialModule', note=('has no valid dials nearby')}, 'all')
+        return
+    end
+    for k,dial in pairs(nearbyDialsAll) do
+        if DialModule.isAssigned(dial) == true then
+            if dial.getVar('assignedShip') ~= ship then
+                local prevOwner = dial.getVar('assignedShip').getName()
+                MoveModule.Announce(ship, {type='info_DialModule', note=('assigned a dial that previously was assigned to ' .. prevOwner)}, 'all')
+                DialModule.UnassignDial(dial)
+                table.insert(nearbyDials, dial)
+            end
+        else
+            table.insert(nearbyDials, dial)
+        end
+    end
+    if nearbyDials[1] == nil then
+        MoveModule.Announce(ship, {type='info_DialModule', note=('already has all nearby dials assigned to him')}, 'all')
+        return
+    end
+    local dialSet = {}
+    local actSet = DialModule.GetSet(ship)
+    if actSet ~= nil then
+        for k,dial in pairs(nearbyDials) do
+            if actSet.dialSet[dial.getDescription()] ~= nil and actSet.dialSet[dial.getDescription()] ~= dial then
+                MoveModule.Announce(ship, {type='error_DialModule', note='tried to assign a second dial of same move (' .. dial.getDescription() .. ')'}, 'all')
+                return
+            end
+        end
+    end
+    local dialCount = 0
+    -- TO_DO: Count and notify about dials saved
+    for k, dial in pairs(nearbyDials) do
+
+        local dialOK = nil
+        if dial.getLuaScript() ~= dialLuaScript then
+            local cloneDialPos = dial.getPosition()
+            dial.setPosition({0, -1, 0})
+            dialOK = dial.clone({position=cloneDialPos})
+            dial.destruct()
+            dialOK.setLuaScript(dialLuaScript)
+            dialOK.setPosition(cloneDialPos)
+        else
+            dialOK = dial
+        end
+        dialOK.setName(ship.getName())
+        dialOK.setVar('assignedShip', ship)
+        if dialSet[dialOK.getDescription()] == nil then
+            dialSet[dialOK.getDescription()] = {dial=dialOK, originPos=dialOK.getPosition()}
+        else
+            MoveModule.Announce(ship, {type='error_DialModule', note='tried to assign few dials with same move (' .. dialOK.getDescription() .. ')'}, 'all')
+            return
+        end
+        dialCount = dialCount + 1
+    end
+    DialModule.AddSet(ship, dialSet)
+    MoveModule.Announce(ship, {type='info_dialModule', note=' had ' .. dialCount .. ' dials assigned (' .. DialModule.DialCount(ship) .. ' total now)' }, 'all')
+end
+
+DialModule.UnassignDial = function(dial)
+    for k,set in pairs(DialModule.ActiveSets) do
+        for k2,dialInfo in pairs(set.dialSet) do
+            if dialInfo.dial == dial then
+                dialInfo.dial.setVar('assignedShip', nil)
+                dialInfo.dial.clearButtons()
+                ClearButtonsPatch(dialInfo.dial)
+                table.remove(set.dialSet, k2)
+            end
+        end
+        local empty = true
+        for k2,dialInfo in pairs(set.dialSet) do empty = false break end
+        if empty == true then DialModule.RemoveSet(set.ship) end
+    end
+    dial.setName('')
+end
+
+DialModule.DialCount = function(ship)
+    local count = 0
+    local actSet = DialModule.GetSet(ship)
+    if actSet ~= nil then
+        for k,dialInfo in pairs(actSet.dialSet) do count = count + 1 end
+    end
+    return count
+end
+
+-- Is this dial assigned to anyone?
+DialModule.isAssigned = function(dial)
+    if dial.getVar('assignedShip') ~= nil then return true
+    else return false end
+end
+
 -- Handle destroyed objects that may be of DialModule interest
 DialModule.ObjDestroyedHandle = function(obj)
     -- Remove dial set of destroyed ship
@@ -1250,7 +1387,7 @@ DialModule.TokenSources = {}
 -- Update token sources on each load
 -- Restore sets if data is loaded
 DialModule.onLoad = function(saveTable)
-
+    print('hi')
     for k, obj in pairs(getAllObjects()) do
         if obj.tag == 'Infinite' then
             if obj.getName() == 'Focus' then DialModule.TokenSources['focus'] = obj
@@ -1332,7 +1469,6 @@ end
 
 -- Perform an automated action
 -- Can be called externally for stuff like range ruler spawning
-XW_cmd.AddCommand('r', 'action')
 DialModule.PerformAction = function(ship, type, extra)
     local tokenActions = 'focus evade stress targetLock'
     announceInfo = {type='action'}
@@ -1730,7 +1866,7 @@ function update()
         watchedObj = {}
         -- Reset the list and add every figurine on the table
         for k,obj in pairs(getAllObjects()) do
-            if obj.tag == 'Figurine'then
+            if obj ~= nil and obj.tag == 'Figurine' then
                 table.insert(watchedObj, obj)
             end
         end
@@ -1739,7 +1875,7 @@ function update()
 
     -- If description is not blank, try processing it
     for k, obj in pairs(watchedObj) do
-        if obj.getDescription() ~= '' then XW_cmd.Process(obj, obj.getDescription()) end
+        if obj ~= nil and obj.getDescription() ~= '' then XW_cmd.Process(obj, obj.getDescription()) end
     end
 
     frameCounter = frameCounter + 1
@@ -1747,6 +1883,7 @@ end
 
 -- When something is destroyed, it is called as an argument here (with 1 more frame to live)
 function onObjectDestroyed(dying_object)
+    for k, obj in pairs(watchedObj) do if dying_object == obj then table.remove(watchedObj, k) end end
     -- Handle killing rulers and unassignment of dial sets
     DialModule.ObjDestroyedHandle(dying_object)
 end
