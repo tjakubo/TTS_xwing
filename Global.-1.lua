@@ -1,21 +1,9 @@
 -- TO_DO: If final position of moved token doesnt make its owner ship it moved with,
 --  move it on its base
--- TO_DO: keep command
---TO_DO: dont lock ship after completeing if it;s not level
+-- TO_DO: dont lock ship after completeing if it;s not level
 -- TO_DO: rulers, bomb ranges
-
--- TO_DO: Dials: Assign -> change state -> lay out -> confirm position ->
--- -> call Global for each dialling -> self destruct
--- Intercept remove, eemove all physically and from Global on one removed
--- Think about twhen to spawn active dial buttons
--- On drop among dials, return to origin
-
--- TO_DO announce
-
--- TO_DO onload
-
--- TO_DO: TL action
-
+-- TO_DO: Dials:o n drop among dials, return to origin (maybe)
+-- TO_DO onload (dials done, anything else?)
 -- TO_DO: Small ship getting tokens has trouble checking who would be closest to the token
 
 function ClearButtonsPatch(obj)
@@ -182,7 +170,6 @@ end
 -- Get objects within distance of some other object + optional X-Wing type filter
 function XW_ObjWithinDist(position, maxDist, type)
     local ships = {}
-    --print(position[1] .. position[2] .. position[3])
     for k,obj in pairs(getAllObjects()) do
         if XW_ObjMatchType(obj, type) == true then
             if Dist_Pos(position, obj.getPosition()) < maxDist then
@@ -245,11 +232,13 @@ XW_cmd.Process = function(obj, cmd)
         MoveModule.PerformMove(cmd, obj)
     elseif type == 'actionMove' then
         MoveModule.PerformMove(cmd, obj, true)
-    elseif type == 'histHandle' then
+    elseif type == 'historyHandle' then
         if cmd == 'q' or cmd == 'undo' then
             MoveModule.UndoMove(obj)
         elseif cmd == 'z' or cmd == 'redo' then
             MoveModule.RedoMove(obj)
+        elseif cmd == 'keep' then
+            MoveModule.SaveStateToHistory(obj, false)
         end
     elseif type == 'action' then
         if cmd == 'r' then cmd = 'ruler' end
@@ -395,7 +384,7 @@ end
 
 -- Decode a move command into table with type, direction, speed etc info
 MoveData.DecodeInfo = function (move_code, ship)
-    local info = {type='invalid', speed=nil, dir=nil, extra=nil, size=nil, note=nil}
+    local info = {type='invalid', speed=nil, dir=nil, extra=nil, size=nil, note=nil, collNote=nil, code=move_code}
 
     if DB_isLargeBase(ship) == true then info.size = 'large'
     else info.size = 'small' end
@@ -407,8 +396,10 @@ MoveData.DecodeInfo = function (move_code, ship)
         if move_code:sub(1,1) == 'k' then
             info.extra = 'koiogran'
             info.note = 'koiogran turned ' .. info.speed
+            info.collNote = 'tried to koiogran turn ' .. info.speed
         else
             info.note = 'flew straight ' .. info.speed
+            info.collNote = 'tried to fly straight ' .. info.speed
         end
         if info.speed > 5 then info.type = 'invalid' end
         -- Banks, regular stuff
@@ -422,8 +413,10 @@ MoveData.DecodeInfo = function (move_code, ship)
         if move_code:sub(-1,-1) == 's' then
             info.extra = 'segnor'
             info.note = 'segnor looped ' .. info.dir .. ' ' .. info.speed
+            info.collNote = 'tried to segnor loop ' .. info.dir .. ' ' .. info.speed
         else
             info.note = 'banked ' .. info.dir .. ' ' .. info.speed
+            info.collNote = 'tried to bank ' .. info.dir .. ' ' .. info.speed
         end
         if info.speed > 3 then info.type = 'invalid' end
         -- Turns, regular stuff
@@ -437,11 +430,14 @@ MoveData.DecodeInfo = function (move_code, ship)
         if move_code:sub(-1,-1) == 't' then
             info.extra = 'talon'
             info.note = 'talon rolled ' .. info.dir .. ' ' .. info.speed
+            info.collNote = 'tried to talon roll ' .. info.dir .. ' ' .. info.speed
         elseif move_code:sub(-1,-1) == 's' then
             info.extra = 'segnor'
             info.note = 'segnor looped (turn template) ' .. info.dir .. ' ' .. info.speed
+            info.collNote = 'tried to segnor loop (turn template) ' .. info.dir .. ' ' .. info.speed
         else
             info.note = 'turned ' .. info.dir .. ' ' .. info.speed
+            info.collNote = 'tried to turn ' .. info.dir .. ' ' .. info.speed
         end
         if info.speed > 3 then info.type = 'invalid' end
         -- Barrel rolls, spaghetti
@@ -485,7 +481,10 @@ MoveData.DecodeFull = function(move_code, ship)
     local data = {}
     -- get the info about the move
     local info = MoveData.DecodeInfo(move_code, ship)
-    if info.type == 'invalid' then print('Wrong move') return {0, 0, 0, 0} end
+    if info.type == 'invalid' then
+        dummy()
+        --TO_DO: exception handling?
+        return {0, 0, 0, 0} end
     -- copy relevant offest
     data = Lua_ShallowCopy(MoveData[info.type][info.speed])
     -- apply modifiers
@@ -528,7 +527,10 @@ MoveData.DecodePartial = function(move_code, ship, part)
     -- handle part out of (0, PartMax) bounds
     if part >= PartMax then return MoveData.DecodeFull(move_code, ship)
     elseif part < 0 then return {0, 0, 0, 0} end
-    if info.type == 'invalid' then print('Wrong move partial') return {0, 0, 0, 0} end
+    if info.type == 'invalid' then
+        dummy()
+        --TO_DO: exception handling?
+        return {0, 0, 0, 0} end
 
     -- PARTIAL STRAIGHT
     -- Simply get a proportional part of a full straight move (oof)
@@ -665,9 +667,10 @@ end
 -- Lets us undo, redo and save positions a ship was seen at
 
 MoveModule.moveHistory = {}
-XW_cmd.AddCommand('[qz]', 'histHandle')
-XW_cmd.AddCommand('undo', 'histHandle')
-XW_cmd.AddCommand('redo', 'histhandle')
+XW_cmd.AddCommand('[qz]', 'historyHandle')
+XW_cmd.AddCommand('undo', 'historyHandle')
+XW_cmd.AddCommand('redo', 'historyHandle')
+XW_cmd.AddCommand('keep', 'historyHandle')
 
 -- Return history of a ship
 -- History table: {ship=shipRef, actKey=keyOfHistoryEntryShipWasLastSeenAt (._.), history=entryList}
@@ -728,23 +731,27 @@ MoveModule.AddHistoryEntry = function(ship, entry, andBeQuiet)
         local currEntry = histData.history[histData.actKey]
         if Dist_Pos(ship.getPosition(), currEntry.pos) < undoPosCutoff
         and math.abs(ship.getRotation()[2] - currEntry.rot[2]) < undoRotCutoffDeg then
+            if andBeQuiet ~= true then MoveModule.Announce(ship, {type='historyHandle', note='already has his position saved'}, 'all') end
             return
         end
     end
     histData.history[histData.actKey+1] = entry
     histData.actKey = histData.actKey+1
     MoveModule.ErasePastCurrent(ship)
-    MoveModule.PrintHistory(ship)
-    if andBeQuiet ~= true then --[[MoveModule.Announce({ship=ship, info={type='historyHandle', note='stored his position'}})]]--
-     end
+    if andBeQuiet ~= true then MoveModule.Announce(ship, {type='historyHandle', note='stored his position'}, 'all') end
+end
+
+MoveModule.SaveStateToHistory = function(ship, beQuiet)
+    local entry = {pos=ship.getPosition(), rot=ship.getRotation(), move='position save'}
+    MoveModule.AddHistoryEntry(ship, entry, beQuiet)
 end
 
 -- Move a ship to a previous state from the history
 MoveModule.UndoMove = function(ship)
     local histData = MoveModule.GetHistory(ship)
-    local announce = {ship=ship, info={type='historyHandle'}}
+    local announceInfo = {type='historyHandle'}
     if histData.actKey == 0 then
-        announce.info.note = 'has no more moves to undo'
+        announceInfo.note = 'has no more moves to undo'
         return
     else
         local currEntry = histData.history[histData.actKey]
@@ -755,7 +762,7 @@ MoveModule.UndoMove = function(ship)
             ship.setPosition(currEntry.pos)
             ship.setRotation(currEntry.rot)
             ship.lock()
-            announce.info.note = 'moved to the last saved position'
+            announceInfo.note = 'moved to the last saved position'
         else
             if histData.actKey > 1 then
                 histData.actKey = histData.actKey - 1
@@ -763,35 +770,35 @@ MoveModule.UndoMove = function(ship)
                 ship.setPosition(currEntry.pos)
                 ship.setRotation(currEntry.rot)
                 ship.lock()
-                announce.info.note = 'performed an undo of (' .. currEntry.move .. ')'
+                announceInfo.note = 'performed an undo of (' .. currEntry.move .. ')'
             else
-                announce.info.note = 'has no more moves to undo'
+                announceInfo.note = 'has no more moves to undo'
             end
         end
     end
-    --MoveModule.Announce(announce)
+    MoveModule.Announce(ship, announceInfo, 'all')
 end
 
 -- Move a ship to next state from the history
 MoveModule.RedoMove = function(ship)
     local histData = MoveModule.GetHistory(ship)
-    local announce = {ship=ship, info={type='historyHandle'}}
+    local announceInfo = {type='historyHandle'}
     if histData.actKey == 0 then
-        announce.info.note = 'has no more moves to redo'
+        announceInfo.note = 'has no more moves to redo'
         return
     else
         if histData.history[histData.actKey+1] == nil then
-            announce.info.note = 'has no more moves to redo'
+            announceInfo.note = 'has no more moves to redo'
         else
             histData.actKey = histData.actKey+1
             local currEntry = histData.history[histData.actKey]
             ship.setPosition(currEntry.pos)
             ship.setRotation(currEntry.rot)
             ship.lock()
-            announce.info.note = 'performed an redo of (' .. currEntry.move .. ')'
+            announceInfo.note = 'performed an redo of (' .. currEntry.move .. ')'
         end
     end
-    --MoveModule.Announce(announce)
+    MoveModule.Announce(ship, announceInfo, 'all')
 end
 
 
@@ -807,7 +814,10 @@ MoveModule.tokenWaitQueue = {} -- elements wait here until ships are ready
 -- Ships token moving, saving positons for undo, locking model
 -- also yanks it down if TTS decides it should just hang out resting midair
 function restWaitCoroutine()
-    if MoveModule.restWaitQueue[1] == nil then print('EMPTY') return 0 end
+    if MoveModule.restWaitQueue[1] == nil then
+        dummy()
+        --TO_DO: Exception handling?
+        return 0 end
     local waitData = MoveModule.restWaitQueue[#MoveModule.restWaitQueue]
     local actShip = waitData.ship
     local yank = false
@@ -884,7 +894,6 @@ end
 MoveModule.PerformMove = function(move_code, ship, ignoreCollisions)
 
     local finPos = nil
-    local collidedShip = nil
     local info = MoveData.DecodeInfo(move_code, ship)
 
     if ignoreCollisions ~= true then
@@ -942,6 +951,7 @@ MoveModule.PerformMove = function(move_code, ship, ignoreCollisions)
                 else collision = false end
                 actPart = actPart + partDelta
                 checkNum = checkNum + collInfo.numCheck
+                if collision == true then info.collidedShip = collInfo.coll end
             until collision == false or actPart < 0
 
             -- Right now, we're out of any collisions or at part 0 (no move)
@@ -955,9 +965,9 @@ MoveModule.PerformMove = function(move_code, ship, ignoreCollisions)
                 else collision = false end
                 actPart = actPart + partDelta
                 checkNum = checkNum + collInfo.numCheck
-            until collision == true or actPart > PartMax
-            actPart = actPart - 1
-            collidedShip = collInfo.coll -- This is what we hit
+            until (collision == true and collInfo.coll == info.collidedShip) or actPart > PartMax
+            actPart = actPart - partDelta
+            info.collidedShip = collInfo.coll -- This is what we hit
         end
 
         -- We get the final position as a calculated part or as a full move if ignoring collisions
@@ -1022,16 +1032,58 @@ MoveModule.PerformMove = function(move_code, ship, ignoreCollisions)
         end
     end
 
-    -- Lift it a bit and move
+    -- Lift it a bit, save current and move
     finPos.pos[2] = finPos.pos[2] + 1
+    MoveModule.SaveStateToHistory(ship, true)
     ship.setPosition(finPos.pos)
     ship.setRotation(finPos.rot)
     ship.setDescription('')
     -- Notification
-    --MoveModule.AnnounceMove({ship=ship, moveInfo=info, collShip=collidedShip})
+    info.type = 'move'
+    MoveModule.Announce(ship, info, 'all')
     -- Get the ship in a queue to do stuff once resting
     table.insert(MoveModule.restWaitQueue, {ship=ship, lastMove=move_code})
     startLuaCoroutine(Global, 'restWaitCoroutine')
+end
+
+-- COLOR CONFIGURATION FOR ANNOUNCEMENTS
+MoveModule.AnnounceColor = {}
+MoveModule.AnnounceColor.moveClear = {0.1, 1, 0.1}     -- Green
+MoveModule.AnnounceColor.moveCollision = {1, 0.5, 0.1} -- Orange
+MoveModule.AnnounceColor.action = {0.1, 0.1, 1}        -- Blue
+MoveModule.AnnounceColor.historyHandle = {0.1, 1, 1}   -- Cyan
+MoveModule.AnnounceColor.error = {1, 0.1, 0.1}         -- Red
+
+-- Notify color or all players of some event
+-- Info: {ship=shipRef, info=announceInfo, target=targetStr}
+-- announceInfo: {type=typeOfEvent, note=notificationString}
+MoveModule.Announce = function(ship, info, target)
+    local annString = ''
+    local annColor = {1, 1, 1}
+    if info.type == 'move' then
+        if info.collidedShip == nil then
+            annString = ship.getName() .. ' ' .. info.note .. ' (' .. info.code .. ')'
+            annColor = MoveModule.AnnounceColor.moveClear
+        else
+            annString = ship.getName() .. ' ' .. info.collNote .. ' (' .. info.code .. ') but is now touching ' .. info.collidedShip.getName()
+            annColor = MoveModule.AnnounceColor.moveCollision
+        end
+    elseif info.type == 'historyHandle' then
+        annString = ship.getName() .. ' ' .. info.note
+        annColor = MoveModule.AnnounceColor.historyHandle
+    elseif info.type == 'action' then
+        annString = ship.getName() .. ' ' .. info.note
+        annColor = MoveModule.AnnounceColor.action
+    elseif info.type:find('error') ~= nil then
+        annString = ship.getName() .. ' ' .. info.note
+        annColor = MoveModule.AnnounceColor.error
+    end
+
+    if target == 'all' then
+        printToAll(annString, annColor)
+    else
+        printToColor(target, annString, annColor)
+    end
 end
 -- END MAIN MOVEMENT MODULE
 --------
@@ -1100,8 +1152,7 @@ function DialAPI_AssignSet(set_ship)
     local validSet = {}
     for k,dial in pairs(set_ship.set) do
         if validSet[dial.getDescription()] ~= nil then
-            -- TO_DO announce bad set assignment
-            dummy()
+            MoveModule.Announce(set_ship.ship, {type='error_DialModule', note='tried to assign a duplicate dial'}, 'all')
         else
             validSet[dial.getDescription()] = {dial=dial, originPos=dial.getPosition()}
         end
@@ -1231,13 +1282,13 @@ DialModule.RestoreSaveData = function(saveTable)
     end
     for k,set in pairs(saveTable) do
         if getObjectFromGUID(set.ship) == nil then
-            print('wut')
+            dummy()
             -- TO_DO: exception handling?
         else
             DialModule.ActiveSets[k] = {ship=getObjectFromGUID(set.ship), dialSet={}}
             for k2,dialInfo in pairs(set.dialSet) do
                 if getObjectFromGUID(dialInfo.dial) == nil then
-                    print('wot')
+                    dummy()
                     -- TO_DO: exception handling?
                 else
                     DialModule.ActiveSets[k].dialSet[k2] = {dial=getObjectFromGUID(dialInfo.dial), originPos=dialInfo.originPos}
@@ -1284,6 +1335,7 @@ end
 XW_cmd.AddCommand('r', 'action')
 DialModule.PerformAction = function(ship, type, extra)
     local tokenActions = 'focus evade stress targetLock'
+    announceInfo = {type='action'}
     if type == 'ruler' then
         local rulerExisted = false
         for k,info in pairs(DialModule.SpawnedRulers) do
@@ -1315,6 +1367,7 @@ DialModule.PerformAction = function(ship, type, extra)
             local button = {['click_function'] = 'Ruler_SelfDestruct', ['label'] = 'DEL', ['position'] = {0, 0.5, 0}, ['rotation'] =  {0, 0, 0}, ['width'] = 900, ['height'] = 900, ['font_size'] = 250}
             newRuler.createButton(button)
             table.insert(DialModule.SpawnedRulers, {ruler=newRuler, ship=ship})
+            announceInfo.note = 'spawned a ruler'
         end
     elseif tokenActions:find(type) ~= nil then
         local baseSize
@@ -1325,7 +1378,7 @@ DialModule.PerformAction = function(ship, type, extra)
         elseif type == 'focus' then dest[3] = dest[3] + (Convert_mm_igu(40)/math.sqrt(3))
         elseif type == 'targetLock' then
             dest[3] = dest[3] + (Convert_mm_igu(40)/math.sqrt(3))
-            dest[1] = dest[1] - 1
+            dest[1] = dest[1]*-1
         end
         local tempDest = Vect_Sum(Vect_RotateDeg(dest, ship.getRotation()[2]+180), ship.getPosition())
         closest = XW_ClosestToPosWithinDist(tempDest, Convert_mm_igu(150), 'ship').obj
@@ -1335,8 +1388,17 @@ DialModule.PerformAction = function(ship, type, extra)
         dest = Vect_RotateDeg(dest, ship.getRotation()[2]+180)
         dest = Vect_Sum(dest, ship.getPosition())
         local newToken = DialModule.TokenSources[type].takeObject({position=dest, callback='Dial_SetLocks', callback_owner=Global})
-        table.insert(DialModule.LocksToBeSet, {lock=newToken, name=ship.getName(), color=extra})
+        if type == 'targetLock' then table.insert(DialModule.LocksToBeSet, {lock=newToken, name=ship.getName(), color=extra})
+            announceInfo.note = 'acquired a target lock'
+        else
+            if type == 'evade' then
+                announceInfo.note = 'takes an evade token'
+            else
+                announceInfo.note = 'takes a ' .. type .. ' token'
+            end
+        end
     end
+    MoveModule.Announce(ship, announceInfo, 'all')
 end
 
 DialModule.LocksToBeSet = {}
@@ -1717,6 +1779,14 @@ end
 -- COLLISION CHECKING MODULE
 -- Generally checking if two rotated rectangles overlap
 
+-- ~~~~~~
+-- CONFIGURATION:
+
+-- How many milimeters should we widen the base from each side
+-- With this at zero, sometimes ships overlap after a move
+addidionalCollisionMargin_mm = 0.3
+-- ~~~~~~
+
 -- General idea here: http://www.gamedev.net/page/resources/_/technical/game-programming/2d-rotated-rectangle-collision-r2604
 -- Originally written by Flolania and Hera Verigo, slightly refitted here
 
@@ -1728,9 +1798,9 @@ function getCorners(shipInfo)
     local srot = shipInfo.rot[2]
     local size = nil
     if DB_isLargeBase(shipInfo.ship) == true then
-        size = Convert_mm_igu((mm_largeBase/2) + 0.2)
+        size = Convert_mm_igu((mm_largeBase/2) + addidionalCollisionMargin_mm)
     else
-        size = Convert_mm_igu((mm_smallBase/2) + 0.2)
+        size = Convert_mm_igu((mm_smallBase/2) + addidionalCollisionMargin_mm)
     end
     local world_coords = {}
     world_coords[1] = {spos[1] - size, spos[3] + size}
@@ -1826,7 +1896,7 @@ function DB_isLargeBase(shipRef)
     if shipRef.getName():find('LGS') ~= nil then return true
     else
         if shipRef.getVar('DB_missingModelWarned') ~= true then
-            print(shipRef.getName() .. '\'s model not recognized - use LGS in name if large base and contact author about the issue')
+            printToAll(shipRef.getName() .. '\'s model not recognized - use LGS in name if large base and contact author about the issue', {1, 0.1, 0.1})
             shipRef.setVar('DB_missingModelWarned', true)
         end
         return false

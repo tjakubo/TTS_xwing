@@ -136,14 +136,25 @@ end
 -- Choose a ship, check its type and adjust self state
 -- Prepare next state object to continue
 function AssignAndProceed(ship)
-    print(ship.getName())
+    local currState = 1
+    local currType = self.getObjects()[1].nickname
+    currType = currType:gsub(' Dial', '')
+    for type, state in pairs(dialStateIndex) do
+        if currType == type then currState = state end
+    end
     local type = Global.call('DB_getShipTypeCallable', {ship})
     if type ~= 'Unknown' then
         local newState = dialStateIndex[type]
-        local newObj = self.setState(newState)
-        newObj.setLuaScript(self.getLuaScript())
+        local newObj
+        if currState ~= newState then
+            newObj = self.setState(newState)
+            newObj.setLuaScript(self.getLuaScript())
+        else
+            newObj = self
+        end
         newObj.setVar('proceedAssignment', true)
         newObj.setVar('setShip', ship)
+        if newObj == self then onLoad() end
     else
         printToAll('This ship model has been not recognized (contact author about it)', {1, 0.1, 0.1})
     end
