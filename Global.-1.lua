@@ -1632,10 +1632,13 @@ DialModule.PerformAction = function(ship, type, extra)
         end
         dest = Vect_RotateDeg(dest, ship.getRotation()[2]+180)
         dest = Vect_Sum(dest, ship.getPosition())
-        local newToken = DialModule.TokenSources[type].takeObject({position=dest, callback='Dial_SetLocks', callback_owner=Global})
-        if type == 'targetLock' then table.insert(DialModule.LocksToBeSet, {lock=newToken, name=ship.getName(), color=extra})
+
+        if type == 'targetLock' then
+            DialModule.TokenSources[type].takeObject({position=dest, callback='Dial_SetLocks', callback_owner=Global})
+            table.insert(DialModule.LocksToBeSet, {lock=newToken, name=ship.getName(), color=extra})
             announceInfo.note = 'acquired a target lock'
         else
+            DialModule.TokenSources[type].takeObject({position=dest})
             if type == 'evade' then
                 announceInfo.note = 'takes an evade token'
             else

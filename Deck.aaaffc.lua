@@ -120,7 +120,7 @@ function decodePos(desc, te0pos, dialSpacing)
         if dir == 'e' or dir == 'l' then outPos['x'] = outPos['x'] * -1 end
     end
 
-    if z_half == 1 then
+    if z_half(self) == 1 then
         outPos['x'] = outPos['x'] * -1
         outPos['y'] = outPos['y'] * -1
         outPos['z'] = outPos['z'] * -1
