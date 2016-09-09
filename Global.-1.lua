@@ -777,7 +777,7 @@ MoveModule.AddHistoryEntry = function(ship, entry, andBeQuiet)
     histData.history[histData.actKey+1] = entry
     histData.actKey = histData.actKey+1
     MoveModule.ErasePastCurrent(ship)
-    if andBeQuiet ~= true then MoveModule.Announce(ship, {type='historyHandle', note='stored his position'}, 'all') end
+    if andBeQuiet ~= true then MoveModule.Announce(ship, {type='historyHandle', note='stored current position'}, 'all') end
 end
 
 -- Save curent ship position to the history
@@ -1583,6 +1583,7 @@ DialModule.PerformAction = function(ship, type, extra)
                 info.ruler.destruct()
                 table.remove(DialModule.SpawnedRulers, k)
                 rulerExisted = true
+                return
             end
         end
         if rulerExisted == false then
@@ -1634,7 +1635,7 @@ DialModule.PerformAction = function(ship, type, extra)
         dest = Vect_Sum(dest, ship.getPosition())
 
         if type == 'targetLock' then
-            DialModule.TokenSources[type].takeObject({position=dest, callback='Dial_SetLocks', callback_owner=Global})
+            local newToken = DialModule.TokenSources[type].takeObject({position=dest, callback='Dial_SetLocks', callback_owner=Global})
             table.insert(DialModule.LocksToBeSet, {lock=newToken, name=ship.getName(), color=extra})
             announceInfo.note = 'acquired a target lock'
         else
@@ -1685,7 +1686,6 @@ function DialClick_Flip(dial)
 end
 function DialClick_Move(dial)
     local actShip = dial.getVar('assignedShip')
-    MoveModule.AddHistoryEntry(actShip, {pos=actShip.getPosition(), rot=actShip.getRotation(), move='manual reposition'})
     XW_cmd.Process(actShip, dial.getDescription())
     DialModule.SwitchMainButton(dial, 'undo')
 end
@@ -2033,7 +2033,7 @@ end
 
 -- How many milimeters should we widen the base from each side
 -- With this at zero, sometimes ships overlap after a move
-addidionalCollisionMargin_mm = 0.3
+addidionalCollisionMargin_mm = 0.4
 -- ~~~~~~
 
 -- General idea here: http://www.gamedev.net/page/resources/_/technical/game-programming/2d-rotated-rectangle-collision-r2604
