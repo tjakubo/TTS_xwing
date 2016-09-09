@@ -54,10 +54,12 @@ function Convert_igu_mm(in_game_units)
     return in_game_units/mm_igu_ratio
 end
 
+-- Distance between two positions
 function Dist_Pos(pos1, pos2)
     return math.sqrt( math.pow(pos1[1]-pos2[1], 2) + math.pow(pos1[3]-pos2[3], 2) )
 end
 
+-- Distance between two objects
 function Dist_Obj(obj1, obj2)
     local pos1 = obj1.getPosition()
     local pos2 = obj2.getPosition()
@@ -81,6 +83,7 @@ function Vect_Sum(vec1, vec2)
     return out
 end
 
+-- Inverse each element of a vector
 function Vect_Inverse(vector)
     local out = {}
     local k = 1
@@ -91,6 +94,7 @@ function Vect_Inverse(vector)
     return out
 end
 
+-- Multiply each element of a vector by a factor
 function Vect_Scale(vector, factor)
     local out = {}
     local k = 1
@@ -101,6 +105,7 @@ function Vect_Scale(vector, factor)
     return out
 end
 
+-- Length (euclidean norm) of a vector
 function Vect_Length(vector)
     return math.sqrt(vector[1]*vector[1] + vector[3]*vector[3])
 end
@@ -109,11 +114,6 @@ end
 -- Useful for TTS positioning offsets
 function Vect_Offset(self, vec2)
     return {self[1]+vec2[1], self[2], self[3]+vec2[3]}
-end
-
--- Euclidean norm of a 3D vector, second element is ignored
-function Vect_Norm(vector)
-    return math.sqrt((vector[1]*vector[1])+(vector[3]*vector[3]))
 end
 
 -- Rotation of a 3D vector over its second element axis, arg in degrees
@@ -228,6 +228,7 @@ XW_cmd = {}
 -- Table of valid commands: their patterns and general types
 XW_cmd.ValidCommands = {}
 XW_cmd.AddCommand = function(cmdRegex, type)
+    -- When adding avaialble commands, assert beggining and end of string automatically
     if cmdRegex:sub(1,1) ~= '^' then cmdRegex = '^' .. cmdRegex end
     if cmdRegex:sub(-1,-1) ~= '$' then cmdRegex = cmdRegex .. '$' end
     table.insert(XW_cmd.ValidCommands, {cmdRegex, type})
@@ -235,8 +236,10 @@ end
 
 -- Process provided command on a provided object
 XW_cmd.Process = function(obj, cmd)
+    -- Trim whitespaces
     cmd = cmd:match( "^%s*(.-)%s*$" )
     local type = nil
+    -- Resolve command type
     for k,pat in pairs(XW_cmd.ValidCommands) do
         if cmd:match(pat[1]) ~= nil then
             type = pat[2]
@@ -244,7 +247,7 @@ XW_cmd.Process = function(obj, cmd)
         end
     end
     if type == nil then return end
-
+    -- If it matched something, do it
     if type == 'move' then
         MoveModule.PerformMove(cmd, obj)
     elseif type == 'actionMove' then
@@ -514,6 +517,8 @@ MoveData.DecodeFull = function(move_code, ship)
     if info.type == 'invalid' then
         dummy()
         --TO_DO: exception handling?
+        -- This should really never happen since command regex should prevent
+        --  borked commands from getting through
         return {0, 0, 0, 0}
     end
     -- copy relevant offest
@@ -561,6 +566,8 @@ MoveData.DecodePartial = function(move_code, ship, part)
     if info.type == 'invalid' then
         dummy()
         --TO_DO: exception handling?
+        -- This should really never happen since command regex should prevent
+        --  borked commands from getting through
         return {0, 0, 0, 0}
     end
 
@@ -754,7 +761,7 @@ undoPosCutoff = Convert_mm_igu(1)
 -- How much rotation can be offset to be considered 'same'
 undoRotCutoffDeg = 1
 
--- Save a ship position to the history
+-- Save <some> ship position to the history
 -- Can be quiet when not explicitly called by the user
 MoveModule.AddHistoryEntry = function(ship, entry, andBeQuiet)
     local histData = MoveModule.GetHistory(ship)
@@ -773,6 +780,8 @@ MoveModule.AddHistoryEntry = function(ship, entry, andBeQuiet)
     if andBeQuiet ~= true then MoveModule.Announce(ship, {type='historyHandle', note='stored his position'}, 'all') end
 end
 
+-- Save curent ship position to the history
+-- Can be quiet when not explicitly called by the user
 MoveModule.SaveStateToHistory = function(ship, beQuiet)
     local entry = {pos=ship.getPosition(), rot=ship.getRotation(), move='position save'}
     MoveModule.AddHistoryEntry(ship, entry, beQuiet)
@@ -782,30 +791,38 @@ end
 MoveModule.UndoMove = function(ship)
     local histData = MoveModule.GetHistory(ship)
     local announceInfo = {type='historyHandle'}
+    -- No history
     if histData.actKey == 0 then
         announceInfo.note = 'has no more moves to undo'
         return
     else
+    -- There is history
         local currEntry = histData.history[histData.actKey]
         local rotDiff = math.abs(ship.getRotation()[2] - currEntry.rot[2])
         if rotDiff > 180 then rotDiff = 360 - rotDiff end
         if Dist_Pos(ship.getPosition(), currEntry.pos) > undoPosCutoff
         or rotDiff > undoRotCutoffDeg then
+        -- Current posiion/rotation not matching last entry
+            -- Queue tokens for movement, but disable position saving
             MoveModule.QueueShipTokensMove(ship, 'none')
             ship.setPosition(currEntry.pos)
             ship.setRotation(currEntry.rot)
             ship.lock()
             announceInfo.note = 'moved to the last saved position'
         else
+        -- Current posiion/rotation is matching last entry
             if histData.actKey > 1 then
+                -- Move to previuso saved position
                 histData.actKey = histData.actKey - 1
                 currEntry = histData.history[histData.actKey]
+                -- Queue tokens for movement, but disable position saving
                 MoveModule.QueueShipTokensMove(ship, 'none')
                 ship.setPosition(currEntry.pos)
                 ship.setRotation(currEntry.rot)
                 ship.lock()
                 announceInfo.note = 'performed an undo of (' .. currEntry.move .. ')'
             else
+                -- There is no data to go back to
                 announceInfo.note = 'has no more moves to undo'
             end
         end
@@ -817,15 +834,20 @@ end
 MoveModule.RedoMove = function(ship)
     local histData = MoveModule.GetHistory(ship)
     local announceInfo = {type='historyHandle'}
+    -- No history
     if histData.actKey == 0 then
         announceInfo.note = 'has no more moves to redo'
         return
     else
+    -- There is history
         if histData.history[histData.actKey+1] == nil then
+            -- No more moves forward
             announceInfo.note = 'has no more moves to redo'
         else
+            -- Move forward
             histData.actKey = histData.actKey+1
             local currEntry = histData.history[histData.actKey]
+            -- Queue tokens for movement, but disable position saving
             MoveModule.QueueShipTokensMove(ship, 'none')
             ship.setPosition(currEntry.pos)
             ship.setRotation(currEntry.rot)
@@ -842,16 +864,29 @@ end
 --  on everything all the time
 
 -- Queue containing stuff to watch
-MoveModule.restWaitQueue = {} -- elements pop from here as coroutines start
-MoveModule.tokenWaitQueue = {} -- elements wait here until ships are ready
+
+-- Ships waiting to be level (resting)
+-- entry: {ship=shipRef, lastMove=lastMoveCode}
+-- if last move code is nil, do not save to history
+-- elements pop from here as coroutines start
+MoveModule.restWaitQueue = {}
+
+-- Tokens waiting to be moved with ships
+-- entry: {token=tokenRef, ship=shipWaitingFor}
+-- elements wait here until ships are ready
+MoveModule.tokenWaitQueue = {}
 
 -- This completes when a ship is resting at a table level
 -- Ships token moving, saving positons for undo, locking model
 -- also yanks it down if TTS decides it should just hang out resting midair
+-- TO_DO: Final token position (that is not determined beforehand) can be on other ship for example
+--  move these tokens on the base instead, would be useful to have nice token-handling functions for it
 function restWaitCoroutine()
     if MoveModule.restWaitQueue[1] == nil then
         dummy()
         print('coroutine table empty') --TO_DO: Exception handling?
+        -- Should now happen since I try to keep 1 entry added = 1 coroutine started ratio
+        --  but who knows, it's kinda harmless anyways
         return 0
     end
 
@@ -864,27 +899,30 @@ function restWaitCoroutine()
             actShip.setPositionSmooth({actShip.getPosition()['x'], actShip.getPosition()['y']-0.1, actShip.getPosition()['z']})
         end
         coroutine.yield(0)
+    -- YIELD until ship is resting, not held and close to the table
     until actShip.resting == true and actShip.held_by_color == nil and actShip.getPosition()[2] < 1.5
     local newTokenTable = {}
     for k,tokenInfo in pairs(MoveModule.tokenWaitQueue) do
+        -- Move and pop waiting tokens
         if tokenInfo.ship == actShip then
             local offset = Vect_RotateDeg(tokenInfo.offset, actShip.getRotation()[2])
             local dest = Vect_Sum(offset, actShip.getPosition())
             dest[2] = dest[2] + 1.5
             tokenInfo.token.setPositionSmooth(dest)
         else
+        -- Index back tokens that are not waiting for this ship
             table.insert(newTokenTable, tokenInfo)
         end
 
     end
     MoveModule.tokenWaitQueue = newTokenTable
     actShip.lock()
+    -- Save this position if last move code was provided
     if waitData.lastMove ~= nil then MoveModule.AddHistoryEntry(actShip, {pos=actShip.getPosition(), rot=actShip.getRotation(), move=waitData.lastMove}, true) end
     return 1
 end
 
 -- Check if provided ship in a provided position/rotation would collide with anything from the provided table
--- This is ALMOST where shit gets real
 MoveModule.CheckCollisions = function(ship, shipPosRot, colShipTable)
     local info = {coll=nil, minMargin=0, numCheck=0}
     local shipInfo = {pos=shipPosRot.pos, rot=shipPosRot.rot, ship=ship}
@@ -1028,23 +1066,16 @@ MoveModule.PerformMove = function(move_code, ship, ignoreCollisions)
         maxShipReach = Convert_mm_igu(mm_smallBase*math.sqrt(2)/2)
     end
 
-    --[[-- Check for nearby tokens
-    local selfTokens = XW_ObjWithinDist(ship.getPosition(), maxShipReach+Convert_mm_igu(50), 'token')
-    -- Check which ones have our ship nearest, put them in a queue to be moved after ship rests
-    for k, token in pairs(selfTokens) do
-        local owner = XW_ClosestWithinDist(token, Convert_mm_igu(80), 'ship').obj
-        if owner == ship then
-            local infoTable = {}
-            infoTable.token = token
-            infoTable.ship = ship
-            local offset = Vect_Sum(token.getPosition(), Vect_Scale(ship.getPosition(), -1))
-            infoTable.offset = Vect_RotateDeg(offset, -1*ship.getRotation()[2])
-            table.insert(MoveModule.tokenWaitQueue, infoTable)
-        end
-    end]]--
+    -- This part was recently collapsed into a function
+    -- TO_DO: Actually wrap this stuff around in functions nicely, like
+    --  getTokenOwner
+    --  getShipTokens
+    -- and stuff since token movement is kinda hacky now
     MoveModule.QueueShipTokensMove(ship)
 
     -- Check which tokens could obstruct final position
+    -- TO_DO: Collapse this into a function maybe?
+    --  can wait until there would be a use for this outside here
     local obstrTokens = XW_ObjWithinDist(finPos.pos, maxShipReach+Convert_mm_igu(20), 'token')
     for k, token in pairs(obstrTokens) do
         local owner = XW_ClosestWithinDist(token, Convert_mm_igu(80), 'ship').obj
@@ -1062,7 +1093,7 @@ MoveModule.PerformMove = function(move_code, ship, ignoreCollisions)
             local dest = Vect_Sum(token.getPosition(), dir)
             dest[2] = 2
             token.setPositionSmooth(dest)
-            -- If tokens appears to be stray, just yank it out of the way
+        -- If tokens appears to be stray, just yank it out of the way
         else
             local dir = Vect_Sum(token.getPosition(), Vect_Scale(finPos.pos, -1))
             local dist = Vect_Length(dir)
@@ -1087,6 +1118,9 @@ MoveModule.PerformMove = function(move_code, ship, ignoreCollisions)
     startLuaCoroutine(Global, 'restWaitCoroutine')
 end
 
+-- Get tokens that should belong to this ship, cram them into token waiting for movement table
+--  AND FIRE THE SHIP WAITING COROUTINE!
+-- This should be only called immediately before changing position of a ship
 MoveModule.QueueShipTokensMove = function(ship, queueShipMove)
     -- This is because token next to a large ship is MUCH FARTHER from it than token near a small ship
     local isShipLargeBase = DB_isLargeBase(ship)
@@ -1128,7 +1162,7 @@ MoveModule.AnnounceColor.moveCollision = {1, 0.5, 0.1} -- Orange
 MoveModule.AnnounceColor.action = {0.1, 0.1, 1}        -- Blue
 MoveModule.AnnounceColor.historyHandle = {0.1, 1, 1}   -- Cyan
 MoveModule.AnnounceColor.error = {1, 0.1, 0.1}         -- Red
-MoveModule.AnnounceColor.info = {0.6, 0.1, 0.6}
+MoveModule.AnnounceColor.info = {0.6, 0.1, 0.6}        -- Purple
 
 -- Notify color or all players of some event
 -- Info: {ship=shipRef, info=announceInfo, target=targetStr}
@@ -1233,9 +1267,11 @@ function DialAPI_AssignSet(set_ship)
     end
     local validSet = {}
     for k,dial in pairs(set_ship.set) do
+        -- If there already is a dial of same description in those that are added now
         if validSet[dial.getDescription()] ~= nil then
             MoveModule.Announce(set_ship.ship, {type='error_DialModule', note='tried to assign few of same dials'}, 'all')
         else
+        -- If dial description is (so far) unique
             validSet[dial.getDescription()] = {dial=dial, originPos=dial.getPosition()}
         end
         if dial.getVar('assignedShip') == nil then
@@ -1273,7 +1309,7 @@ DialModule.RemoveSet = function(ship)
         local hadDials = false
         if set.ship == ship then
             hadDials = true
-            ship.setVar('DialModule_hasDials', false)
+            ship.setVar('DialModule_hasDials', false) -- Just informative
             if set.activeDial ~= nil then
                 DialModule.RestoreActive(set.ship)
             end
@@ -1323,11 +1359,15 @@ saveNearbyCircleDist = Convert_mm_igu(160)
 DialModule.SaveNearby = function(ship)
     local nearbyDialsAll = XW_ObjWithinDist(ship.getPosition(), saveNearbyCircleDist, 'dial')
     local nearbyDials = {}
+    -- Nothing nearby
     if nearbyDialsAll[1] == nil then
         MoveModule.Announce(ship, {type='info_DialModule', note=('has no valid dials nearby')}, 'all')
         return
     end
+    -- There is stuff nearby
     for k,dial in pairs(nearbyDialsAll) do
+        -- If a dial is already assigned, unassign if it belongs to another ship
+        -- Ingore if it's this ship
         if DialModule.isAssigned(dial) == true then
             if dial.getVar('assignedShip') ~= ship then
                 local prevOwner = dial.getVar('assignedShip').getName()
@@ -1339,12 +1379,14 @@ DialModule.SaveNearby = function(ship)
             table.insert(nearbyDials, dial)
         end
     end
+    -- If there are no filtered (not this ship already) dials
     if nearbyDials[1] == nil then
         MoveModule.Announce(ship, {type='info_DialModule', note=('already has all nearby dials assigned to him')}, 'all')
         return
     end
     local dialSet = {}
     local actSet = DialModule.GetSet(ship)
+    -- Break if this ship already has a dial of same description as we're trying to save
     if actSet ~= nil then
         for k,dial in pairs(nearbyDials) do
             if actSet.dialSet[dial.getDescription()] ~= nil and actSet.dialSet[dial.getDescription()] ~= dial then
@@ -1353,12 +1395,13 @@ DialModule.SaveNearby = function(ship)
             end
         end
     end
+    -- Then we start adding
     local dialCount = 0
-    -- TO_DO: Count and notify about dials saved
     for k, dial in pairs(nearbyDials) do
-
         local dialOK = nil
+        -- Make sure the dial has correct script set up
         if dial.getLuaScript() ~= dialLuaScript then
+            -- If not, clone it, apply script and delete the original
             local cloneDialPos = dial.getPosition()
             dial.setPosition({0, -1, 0})
             dialOK = dial.clone({position=cloneDialPos})
@@ -1368,8 +1411,7 @@ DialModule.SaveNearby = function(ship)
         else
             dialOK = dial
         end
-        dialOK.setName(ship.getName())
-        dialOK.setVar('assignedShip', ship)
+        -- Add to set, break if there are 2 dials of same description
         if dialSet[dialOK.getDescription()] == nil then
             dialSet[dialOK.getDescription()] = {dial=dialOK, originPos=dialOK.getPosition()}
         else
@@ -1378,10 +1420,19 @@ DialModule.SaveNearby = function(ship)
         end
         dialCount = dialCount + 1
     end
+    -- If everything is OK, set each dial and pass the set to be added
+    for k,dialInfo in pairs(dialSet) do
+        dialInfo.dial.setName(ship.getName())
+        dialInfo.dial.setVar('assignedShip', ship)
+    end
     DialModule.AddSet(ship, dialSet)
     MoveModule.Announce(ship, {type='info_dialModule', note=' had ' .. dialCount .. ' dials assigned (' .. DialModule.DialCount(ship) .. ' total now)' }, 'all')
 end
 
+-- Unassign this dial from any sets it is found in
+-- Could check what ship set this is first, but it's more reliable this way
+-- TO_DO table.remove is unsafe when iterating if we expect to remove more than one object
+--  we're not really expecting it here, but it's supposed to be foolproof...
 DialModule.UnassignDial = function(dial)
     for k,set in pairs(DialModule.ActiveSets) do
         for k2,dialInfo in pairs(set.dialSet) do
@@ -1399,6 +1450,7 @@ DialModule.UnassignDial = function(dial)
     dial.setName('')
 end
 
+-- Count dials assigne to some ship
 DialModule.DialCount = function(ship)
     local count = 0
     local actSet = DialModule.GetSet(ship)
@@ -1455,7 +1507,7 @@ DialModule.onLoad = function(saveTable)
 
         end
     end
-
+    -- Restore dial sets
     DialModule.RestoreSaveData(saveTable)
 end
 
@@ -1469,13 +1521,14 @@ DialModule.RestoreSaveData = function(saveTable)
     for k,set in pairs(saveTable) do
         if getObjectFromGUID(set.ship) == nil then
             dummy()
-            -- TO_DO: exception handling?
+            -- TO_DO: I guess this means that it's lost an we continue?
         else
             DialModule.ActiveSets[k] = {ship=getObjectFromGUID(set.ship), dialSet={}}
             for k2,dialInfo in pairs(set.dialSet) do
                 if getObjectFromGUID(dialInfo.dial) == nil then
                     dummy()
-                    -- TO_DO: exception handling?
+                    -- TO_DO: This is more severe than whole ship missing, but
+                    -- can't think of anything else than to skip it
                 else
                     DialModule.ActiveSets[k].dialSet[k2] = {dial=getObjectFromGUID(dialInfo.dial), originPos=dialInfo.originPos}
                     getObjectFromGUID(dialInfo.dial).call('setShip', {getObjectFromGUID(set.ship)})
@@ -1521,16 +1574,19 @@ end
 DialModule.PerformAction = function(ship, type, extra)
     local tokenActions = 'focus evade stress targetLock'
     announceInfo = {type='action'}
+    -- Ruler spawning
     if type == 'ruler' then
         local rulerExisted = false
         for k,info in pairs(DialModule.SpawnedRulers) do
             if info.ship == ship then
+                -- Ruler existed
                 info.ruler.destruct()
                 table.remove(DialModule.SpawnedRulers, k)
                 rulerExisted = true
             end
         end
         if rulerExisted == false then
+            -- New ruler to be spawned
             local obj_parameters = {}
             obj_parameters.type = 'Custom_Model'
             obj_parameters.position = ship.getPosition()
@@ -1555,16 +1611,20 @@ DialModule.PerformAction = function(ship, type, extra)
             announceInfo.note = 'spawned a ruler'
         end
     elseif tokenActions:find(type) ~= nil then
+        -- Token spawning!
         local baseSize
+        -- Get the position next to the ship base
         if DB_isLargeBase(ship) == true then baseSize = Convert_mm_igu(mm_largeBase/2)
         else baseSize = Convert_mm_igu(mm_smallBase/2) end
         local dest = {baseSize+Convert_mm_igu(20), 1.5, 0}
+        -- Offset forward/backward between tokens
         if type == 'stress' then dest[3] = dest[3] - (Convert_mm_igu(40)/math.sqrt(3))
         elseif type == 'focus' then dest[3] = dest[3] + (Convert_mm_igu(40)/math.sqrt(3))
         elseif type == 'targetLock' then
             dest[3] = dest[3] + (Convert_mm_igu(40)/math.sqrt(3))
             dest[1] = dest[1]*-1
         end
+        -- If this position has other ship than ours here closest, halve it (it's on base instead then)
         local tempDest = Vect_Sum(Vect_RotateDeg(dest, ship.getRotation()[2]+180), ship.getPosition())
         closest = XW_ClosestToPosWithinDist(tempDest, Convert_mm_igu(150), 'ship').obj
         if closest == nil or closest ~= ship then
@@ -1586,6 +1646,9 @@ DialModule.PerformAction = function(ship, type, extra)
     MoveModule.Announce(ship, announceInfo, 'all')
 end
 
+-- Table for locks to be set and callback to call setting of them
+-- It's easiest this way if we want target lock tokens to still retain functionality
+--  when manually handled too
 DialModule.LocksToBeSet = {}
 function Dial_SetLocks()
     for k,info in pairs(DialModule.LocksToBeSet) do
@@ -1939,15 +2002,12 @@ end
 
 -- When table is loaded up, this is called
 -- save_state contains everything separate modules saved before to restore table state
+-- TO_DO: I swear I wanted to save/load something else too
 function onLoad(save_state)
     if save_state ~= '' and save_state ~= nil then
         local savedData = JSON.decode(save_state)
         DialModule.onLoad(savedData['DialModule'])
     end
-    -- Restore dial sets
-    --DialModule.onLoad(save_state)
-    -- Restore undo data
-    --MoveModule.onLoad(save_state)
 end
 
 function onSave()
