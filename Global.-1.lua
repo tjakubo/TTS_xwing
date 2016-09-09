@@ -770,7 +770,7 @@ MoveModule.AddHistoryEntry = function(ship, entry, andBeQuiet)
         local currEntry = histData.history[histData.actKey]
         if Dist_Pos(ship.getPosition(), currEntry.pos) < undoPosCutoff
         and math.abs(ship.getRotation()[2] - currEntry.rot[2]) < undoRotCutoffDeg then
-            if andBeQuiet ~= true then MoveModule.Announce(ship, {type='historyHandle', note='already has his position saved'}, 'all') end
+            if andBeQuiet ~= true then MoveModule.Announce(ship, {type='historyHandle', note='already has current position saved'}, 'all') end
             return
         end
     end
@@ -1319,7 +1319,7 @@ DialModule.RemoveSet = function(ship)
                 dialData.dial.setName('')
             end
             table.remove(DialModule.ActiveSets, k)
-            MoveModule.Announce(ship, {type='info_DialModule', note='had all his dials unassigned (and flipped)'}, 'all')
+            MoveModule.Announce(ship, {type='info_DialModule', note='had all dials unassigned'}, 'all')
             break
         end
         if hadDials == false then MoveModule.Announce(ship, {type='info_DialModule', note='had no assigned dials'}, 'all') end
@@ -1426,7 +1426,7 @@ DialModule.SaveNearby = function(ship)
         dialInfo.dial.setVar('assignedShip', ship)
     end
     DialModule.AddSet(ship, dialSet)
-    MoveModule.Announce(ship, {type='info_dialModule', note=' had ' .. dialCount .. ' dials assigned (' .. DialModule.DialCount(ship) .. ' total now)' }, 'all')
+    MoveModule.Announce(ship, {type='info_dialModule', note='had ' .. dialCount .. ' dials assigned (' .. DialModule.DialCount(ship) .. ' total now)' }, 'all')
 end
 
 -- Unassign this dial from any sets it is found in
