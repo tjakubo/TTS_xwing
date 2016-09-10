@@ -137,15 +137,16 @@ end
 -- MISC FUNCTIONS
 
 -- Check if object matches some of predefined X-Wing types
+-- TO_DO: Change lock script to use more unique variable than 'set'
 function XW_ObjMatchType(obj, type)
     if type == 'any' then
         return true
     elseif type == 'ship' then
         if obj.tag == 'Figurine' then return true end
     elseif type == 'token' then
-        if obj.tag == 'Chip' or obj.getVar('XW_lockSet') ~= nil then return true end
+        if (obj.tag == 'Chip' or obj.getVar('set') ~= nil) and obj.getName() ~= 'Shield' then return true end
     elseif type == 'lock' then
-        if obj.getVar('XW_lockSet') ~= nil then return true end
+        if obj.getVar('set') ~= nil then return true end
     elseif type == 'dial' then
         if obj.tag == 'Card' and obj.getDescription() ~= '' then return true end
     end
@@ -493,7 +494,7 @@ MoveData.DecodeInfo = function (move_code, ship)
             info.note = info.note .. ' forward ' .. info.dir
         elseif move_code:sub(-1,-1) == 'b' then
             info.extra = 'backward'
-            info.note = info.note .. ' backward' .. info.dir
+            info.note = info.note .. ' backward ' .. info.dir
         else
             info.note = info.note .. ' ' .. info.dir
         end
@@ -813,6 +814,7 @@ MoveModule.UndoMove = function(ship)
         -- Current posiion/rotation is matching last entry
             if histData.actKey > 1 then
                 -- Move to previuso saved position
+                local undidMove = currEntry.move
                 histData.actKey = histData.actKey - 1
                 currEntry = histData.history[histData.actKey]
                 -- Queue tokens for movement, but disable position saving
@@ -820,7 +822,7 @@ MoveModule.UndoMove = function(ship)
                 ship.setPosition(currEntry.pos)
                 ship.setRotation(currEntry.rot)
                 ship.lock()
-                announceInfo.note = 'performed an undo of (' .. currEntry.move .. ')'
+                announceInfo.note = 'performed an undo of (' .. undidMove .. ')'
             else
                 -- There is no data to go back to
                 announceInfo.note = 'has no more moves to undo'
@@ -1774,7 +1776,10 @@ DialModule.Buttons.toggleExpanded = {label = 'A', click_function='DialClick_Togg
 DialModule.Buttons.undo = {label = 'Q', click_function='DialClick_Undo', height=500, width=200, position={-0.9, 0.5, -1}, font_size=250}
 DialModule.Buttons.nameButton = function(ship)
     local shortName = DialModule.GetShortName(ship)
-    return {label=shortName, click_function='dummy', height=300, width=string.len(shortName)*140, position={0, -0.5, -1}, rotation={180, 180, 0}, font_size=250}
+    local nameWidth = 900
+    local len = string.len(shortName)
+    if len*150 > nameWidth then nameWidth = len*150 end
+    return {label=shortName, click_function='dummy', height=300, width=nameWidth, position={0, -0.5, -1}, rotation={180, 180, 0}, font_size=250}
 end
 DialModule.Buttons.boostS = {label='B', click_function='DialClick_BoostS', height=500, width=365, position={0, 0.5, -2.2}, font_size=250}
 DialModule.Buttons.boostR = {label='Br', click_function='DialClick_BoostR', height=500, width=365, position={0.75, 0.5, -2.2}, font_size=250}
