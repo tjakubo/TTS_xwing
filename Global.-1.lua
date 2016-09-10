@@ -1,13 +1,16 @@
--- TO_DO: If final position of moved token doesnt make its owner ship it moved with,
+-- TESTING: If final position of moved token doesnt make its owner ship it moved with,
 --  move it on its base
+
 -- TO_DO: dont lock ship after completeing if it;s not level
--- TO_DO: rulers, bomb ranges
 -- TO_DO: Dials:o n drop among dials, return to origin (maybe)
 -- TO_DO onload (dials done, anything else?)
--- TO_DO: Small ship getting tokens has trouble checking who would be closest to the token
--- !!!
+
+-- TESTING: Small ship getting tokens has trouble checking who would be closest to the token
+-- kinda done (see 1st todo), to be tested
+
 -- TO_DO: Intercept deleted dial
 -- TO_DO: weirdness when playing with saving/deletin dials multiple times (testing?)
+
 
 -- Should the code execute print functions or skip them?
 -- This should be set to false on every release
@@ -881,7 +884,7 @@ MoveModule.tokenWaitQueue = {}
 -- This completes when a ship is resting at a table level
 -- Ships token moving, saving positons for undo, locking model
 -- also yanks it down if TTS decides it should just hang out resting midair
--- TO_DO: Final token position (that is not determined beforehand) can be on other ship for example
+-- TESTING: Final token position (that is not determined beforehand) can be on other ship for example
 --  move these tokens on the base instead, would be useful to have nice token-handling functions for it
 function restWaitCoroutine()
     if MoveModule.restWaitQueue[1] == nil then
@@ -909,6 +912,17 @@ function restWaitCoroutine()
         if tokenInfo.ship == actShip then
             local offset = Vect_RotateDeg(tokenInfo.offset, actShip.getRotation()[2])
             local dest = Vect_Sum(offset, actShip.getPosition())
+            local destData = MoveModule.GetTokenOwner(dest)
+            if destData.owner ~= actShip or destData.margin < Convert_mm_igu(20) then
+                local destLen
+                if DB_isLargeBase(actShip) == true then
+                    destLen = Convert_mm_igu(mm_largeBase/4)
+                else
+                    destLen = Convert_mm_igu(mm_smallBase/4)
+                end
+                offset = Vect_Scale(offset, (destLen/Vect_Length(offset)))
+                dest = Vect_Sum(offset, actShip.getPosition())
+            end
             dest[2] = dest[2] + 1.5
             tokenInfo.token.setPositionSmooth(dest)
         else
@@ -1073,6 +1087,7 @@ MoveModule.PerformMove = function(move_code, ship, ignoreCollisions)
     --  getTokenOwner
     --  getShipTokens
     -- and stuff since token movement is kinda hacky now
+    -- PARTIALLY DONE
     MoveModule.QueueShipTokensMove(ship)
 
     -- Check which tokens could obstruct final position
@@ -1120,6 +1135,31 @@ MoveModule.PerformMove = function(move_code, ship, ignoreCollisions)
     startLuaCoroutine(Global, 'restWaitCoroutine')
 end
 
+-- Check which ship has it's base closest to position (large ships have large bases!), thats the owner
+--  also check how far it is to the owner-changing position (out margin of safety)
+-- Kinda tested: margin > 20mm = visually safe
+MoveModule.GetTokenOwner = function(tokenPos)
+    local out = {owner=nil, dist=0, margin=-1}
+    local nearShips = XW_ObjWithinDist(tokenPos, Convert_mm_igu(120), 'ship')
+    if nearShips[1] == nil then return out end
+    local baseDist = {}
+    for k,ship in pairs(nearShips) do
+        local realDist = Dist_Pos(tokenPos, ship.getPosition())
+        if DB_isLargeBase(ship) == true then realDist = realDist-Convert_mm_igu(20) end
+        table.insert(baseDist, {ship=ship, dist=realDist})
+    end
+    local nearest = baseDist[1]
+    for k,data in pairs(baseDist) do
+        if data.dist < nearest.dist then nearest = data end
+    end
+    local nextNearest = {dist=999}
+    for k,data in pairs(baseDist) do
+        if data.ship ~= nearest.ship and (data.dist < nextNearest.dist) then
+            nextNearest = data
+        end
+    end
+    return {owner=nearest.ship, dist=nearest.dist, margin=(nextNearest.dist-nearest.dist)/2}
+end
 -- Get tokens that should belong to this ship, cram them into token waiting for movement table
 --  AND FIRE THE SHIP WAITING COROUTINE!
 -- This should be only called immediately before changing position of a ship
@@ -1619,7 +1659,7 @@ DialModule.PerformAction = function(ship, type, extra)
         -- Get the position next to the ship base
         if DB_isLargeBase(ship) == true then baseSize = Convert_mm_igu(mm_largeBase/2)
         else baseSize = Convert_mm_igu(mm_smallBase/2) end
-        local dest = {baseSize+Convert_mm_igu(20), 1.5, 0}
+        local dest = {baseSize+Convert_mm_igu(10), 1.5, 0}
         -- Offset forward/backward between tokens
         if type == 'stress' then dest[3] = dest[3] - (Convert_mm_igu(40)/math.sqrt(3))
         elseif type == 'focus' then dest[3] = dest[3] + (Convert_mm_igu(40)/math.sqrt(3))
@@ -1629,9 +1669,9 @@ DialModule.PerformAction = function(ship, type, extra)
         end
         -- If this position has other ship than ours here closest, halve it (it's on base instead then)
         local tempDest = Vect_Sum(Vect_RotateDeg(dest, ship.getRotation()[2]+180), ship.getPosition())
-        closest = XW_ClosestToPosWithinDist(tempDest, Convert_mm_igu(150), 'ship').obj
-        if closest == nil or closest ~= ship then
-            dest[1] = dest[1]/2
+        local destData = MoveModule.GetTokenOwner(tempDest)
+        if destData.owner ~= ship or destData.margin < Convert_mm_igu(20) then
+            dest[1] = (baseSize/2)*(dest[1]/math.abs(dest[1]))
         end
         dest = Vect_RotateDeg(dest, ship.getRotation()[2]+180)
         dest = Vect_Sum(dest, ship.getPosition())
