@@ -9,8 +9,6 @@
 -- TO_DO: Dials: on drop among dials, return to origin (maybe)
 -- TO_DO onload (dials done, anything else?)
 -- TO_DO: Movement collsision check resolution based on its legth (consistent between moves)
--- TO_DO: SetLock callback error
--- TO_DO: Limit name length on dial
 
 -- Should the code execute print functions or skip them?
 -- This should be set to false on every release
@@ -1536,6 +1534,10 @@ DialModule.ObjDestroyedHandle = function(obj)
     -- Unassign deleted dial
     elseif obj.tag == 'Card' and obj.getDescription() ~= '' then
         if DialModule.isAssigned(obj) then DialModule.UnassignDial(obj) end
+    elseif obj.getName() == 'Target Lock' then
+        for k,lockInfo in pairs(DialModule.LocksToBeSet) do
+            if lockInfo.lock == obj then table.remove(DialModule.LocksToBeSet, k) break end
+        end
     end
     -- Remove ruler with ship it is on and remove ruler from list if it is manually deleted
     for k,info in pairs(DialModule.SpawnedRulers) do
@@ -1720,6 +1722,7 @@ function Dial_SetLocks()
     for k,info in pairs(DialModule.LocksToBeSet) do
         info.lock.call('manualSet', {info.color, info.name})
     end
+    DialModule.LocksToBeSet = {}
 end
 
 -- Keep spawned rulers here so you can delete them with same button as for spawn
@@ -1857,9 +1860,18 @@ DialModule.Buttons.targetLock = {label='TL', click_function='DialClick_TargetLoc
 DialModule.GetShortName = function(ship)
     local shipNameWords = {}
     local numWords = 0
+    local ambigNames = 'The Captain Colonel Cartel'
     for word in ship.getName():gmatch('%w+') do table.insert(shipNameWords, word) numWords = numWords+1 end
     for k,w in pairs(shipNameWords) do if w == 'LGS' then table.remove(shipNameWords, k) numWords = numWords-1 end end
+    local currWord = 1
     local shipShortName = shipNameWords[1]
+    if ambigNames:find(shipShortName) ~= nil then shipShortName = shipNameWords[2] currWord = 2 end
+    if shipShortName:len() > 9 and shipNameWords[currWord+1] ~= nil then
+        if shipNameWords[currWord+1]:len() > 3 and shipNameWords[currWord+1]:len() < shipShortName:len() then
+            shipShortName = shipNameWords[currWord+1]
+            currWord = currWord + 1
+        end
+    end
     if shipShortName:sub(1,1) == '\'' or shipShortName:sub(1,1) == '\"' then shipShortName = shipShortName:sub(2, -1) end
     if shipNameWords[numWords]:len() == 1 then shipShortName = shipShortName .. ' ' .. shipNameWords[numWords]:sub(1,1) end
     return shipShortName
