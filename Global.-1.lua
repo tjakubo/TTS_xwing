@@ -5,19 +5,12 @@
 -- Based on a work of: Flolania, Hera Vertigo
 -- ~~~~~~
 
--- TESTING: If final position of moved token doesnt make its owner ship it moved with,
---  move it on its base
-
 -- TO_DO: dont lock ship after completeing if it;s not level
 -- TO_DO: Dials:o n drop among dials, return to origin (maybe)
 -- TO_DO onload (dials done, anything else?)
 
--- TESTING: Small ship getting tokens has trouble checking who would be closest to the token
--- kinda done (see 1st todo), to be tested
-
--- TO_DO: Intercept deleted dial
+-- TESTING: Intercept deleted dial
 -- TO_DO: weirdness when playing with saving/deletin dials multiple times (testing?)
-
 
 -- Should the code execute print functions or skip them?
 -- This should be set to false on every release
@@ -1371,8 +1364,8 @@ end
 -- Remove a set from ship (whole set, all assigned)
 -- If there is an active dial, restore it, flips all unassigned as an indicatior
 DialModule.RemoveSet = function(ship)
+    local hadDials = false
     for k, set in pairs(DialModule.ActiveSets) do
-        local hadDials = false
         if set.ship == ship then
             hadDials = true
             ship.setVar('DialModule_hasDials', false) -- Just informative
@@ -1388,8 +1381,8 @@ DialModule.RemoveSet = function(ship)
             MoveModule.Announce(ship, {type='info_DialModule', note='had all dials unassigned'}, 'all')
             break
         end
-        if hadDials == false then MoveModule.Announce(ship, {type='info_DialModule', note='had no assigned dials'}, 'all') end
     end
+    if hadDials == false then MoveModule.Announce(ship, {type='info_DialModule', note='had no assigned dials'}, 'all') end
 end
 
 -- Return a set belonging to a ship or nil if there is none
@@ -1497,20 +1490,26 @@ end
 
 -- Unassign this dial from any sets it is found in
 -- Could check what ship set this is first, but it's more reliable this way
--- TO_DO table.remove is unsafe when iterating if we expect to remove more than one object
---  we're not really expecting it here, but it's supposed to be foolproof...
 DialModule.UnassignDial = function(dial)
     for k,set in pairs(DialModule.ActiveSets) do
+        local filteredSet = {}
+        local changed = false
         for k2,dialInfo in pairs(set.dialSet) do
             if dialInfo.dial == dial then
                 dialInfo.dial.setVar('assignedShip', nil)
                 dialInfo.dial.clearButtons()
                 ClearButtonsPatch(dialInfo.dial)
-                table.remove(set.dialSet, k2)
+                changed = true
+            else
+                filteredSet[k2]=dialInfo
             end
         end
+        if set.activeDial ~= nil and set.activeDial.dial == dial then set.activeDial = nil end
+        if changed == true then set.dialSet = filteredSet end
         local empty = true
-        for k2,dialInfo in pairs(set.dialSet) do empty = false break end
+        if set.dialSet ~= nil then
+            for k2,dialInfo in pairs(set.dialSet) do empty = false break end
+        end
         if empty == true then DialModule.RemoveSet(set.ship) end
     end
     dial.setName('')
@@ -1539,6 +1538,9 @@ DialModule.ObjDestroyedHandle = function(obj)
         if DialModule.GetSet(obj) ~= nil then
             DialModule.RemoveSet(obj)
         end
+    -- Unassign deleted dial
+    elseif obj.tag == 'Card' and obj.getDescription() ~= '' then
+        if DialModule.isAssigned(obj) then DialModule.UnassignDial(obj) end
     end
     -- Remove ruler with ship it is on and remove ruler from list if it is manually deleted
     for k,info in pairs(DialModule.SpawnedRulers) do
