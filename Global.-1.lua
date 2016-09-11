@@ -1401,7 +1401,7 @@ DialModule.AddSet = function(ship, set)
     local actSet = DialModule.GetSet(ship)
     if actSet ~= nil then
         for k, newDialData in pairs(set) do
-            table.insert(actSet.dialSet, newDialData)
+            actSet.dialSet[k] = newDialData
         end
     else
         table.insert(DialModule.ActiveSets, {ship=ship, activeDial=nil, dialSet=set})
@@ -1624,7 +1624,6 @@ DialModule.GetSaveData = function()
         saveTable[k] = {ship=set.ship.getGUID(), dialSet={}}
         if set.activeDial ~= nil then saveTable[k].activeDialGUID = set.activeDial.dial.getGUID() end
         for k2,dialInfo in pairs(set.dialSet) do
-            --table.insert(saveTable[k].dialSet, {dial=dialInfo.dial.getGUID(), originPos=dialInfo.originPos})
             saveTable[k].dialSet[k2] = {dial=dialInfo.dial.getGUID(), originPos=DialModule.PosSerialize(dialInfo.originPos)}
         end
     end
@@ -2086,7 +2085,6 @@ end
 
 function onSave()
     local tableToSave = {}
-    tableToSave['DialModule'] = {}
     tableToSave['DialModule'] = DialModule.onSave()
     return JSON.encode_pretty(tableToSave)
 end
