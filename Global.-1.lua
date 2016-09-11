@@ -6,11 +6,11 @@
 -- ~~~~~~
 
 -- TO_DO: dont lock ship after completeing if it;s not level
--- TO_DO: Dials:o n drop among dials, return to origin (maybe)
+-- TO_DO: Dials: on drop among dials, return to origin (maybe)
 -- TO_DO onload (dials done, anything else?)
-
--- TESTING: Intercept deleted dial
--- TO_DO: weirdness when playing with saving/deletin dials multiple times (testing?)
+-- TO_DO: Movement collsision check resolution based on its legth (consistent between moves)
+-- TO_DO: SetLock callback error
+-- TO_DO: Limit name length on dial
 
 -- Should the code execute print functions or skip them?
 -- This should be set to false on every release
@@ -884,8 +884,6 @@ MoveModule.tokenWaitQueue = {}
 -- This completes when a ship is resting at a table level
 -- Ships token moving, saving positons for undo, locking model
 -- also yanks it down if TTS decides it should just hang out resting midair
--- TESTING: Final token position (that is not determined beforehand) can be on other ship for example
---  move these tokens on the base instead, would be useful to have nice token-handling functions for it
 function restWaitCoroutine()
     if MoveModule.restWaitQueue[1] == nil then
         dummy()
@@ -897,7 +895,6 @@ function restWaitCoroutine()
 
     local waitData = MoveModule.restWaitQueue[#MoveModule.restWaitQueue]
     local actShip = waitData.ship
-    local yank = false
     table.remove(MoveModule.restWaitQueue, #MoveModule.restWaitQueue)
     repeat
         if actShip.getPosition()[2] > 1.5 and actShip.resting == true then
@@ -913,6 +910,7 @@ function restWaitCoroutine()
             local offset = Vect_RotateDeg(tokenInfo.offset, actShip.getRotation()[2])
             local dest = Vect_Sum(offset, actShip.getPosition())
             local destData = MoveModule.GetTokenOwner(dest)
+            -- Ckeck if final position makes this ship owner of a token
             if destData.owner ~= actShip or destData.margin < Convert_mm_igu(20) then
                 local destLen
                 if DB_isLargeBase(actShip) == true then
@@ -920,6 +918,7 @@ function restWaitCoroutine()
                 else
                     destLen = Convert_mm_igu(mm_smallBase/4)
                 end
+                -- If not, place it on the base instead
                 offset = Vect_Scale(offset, (destLen/Vect_Length(offset)))
                 dest = Vect_Sum(offset, actShip.getPosition())
             end
@@ -1082,12 +1081,6 @@ MoveModule.PerformMove = function(move_code, ship, ignoreCollisions)
         maxShipReach = Convert_mm_igu(mm_smallBase*math.sqrt(2)/2)
     end
 
-    -- This part was recently collapsed into a function
-    -- TO_DO: Actually wrap this stuff around in functions nicely, like
-    --  getTokenOwner
-    --  getShipTokens
-    -- and stuff since token movement is kinda hacky now
-    -- PARTIALLY DONE
     MoveModule.QueueShipTokensMove(ship)
 
     -- Check which tokens could obstruct final position
@@ -1143,6 +1136,7 @@ MoveModule.GetTokenOwner = function(tokenPos)
     local nearShips = XW_ObjWithinDist(tokenPos, Convert_mm_igu(120), 'ship')
     if nearShips[1] == nil then return out end
     local baseDist = {}
+    -- Take the base size into account for distances
     for k,ship in pairs(nearShips) do
         local realDist = Dist_Pos(tokenPos, ship.getPosition())
         if DB_isLargeBase(ship) == true then realDist = realDist-Convert_mm_igu(20) end
@@ -1526,6 +1520,7 @@ DialModule.DialCount = function(ship)
 end
 
 -- Is this dial assigned to anyone?
+-- TO_DO: Replace other checks with this, maybe ckeck sets to be sure too?
 DialModule.isAssigned = function(dial)
     if dial.getVar('assignedShip') ~= nil then return true
     else return false end
