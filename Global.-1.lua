@@ -1,3 +1,10 @@
+-- ~~~~~~
+-- Script by dzikakulka
+-- Issues, history at: https://github.com/tjakubo2/TTS_xwing
+--
+-- Based on a work of: Flolania, Hera Vertigo
+-- ~~~~~~
+
 -- TESTING: If final position of moved token doesnt make its owner ship it moved with,
 --  move it on its base
 
@@ -40,7 +47,7 @@ end
 -- 40mm = 1.445igu
 -- (s1 length / small base size)
 
--- 1mm = 0.36125igu
+-- 1mm = 0.036125igu
 mm_igu_ratio = 0.036125
 
 -- Milimeter dimensions of ship bases
@@ -1175,6 +1182,23 @@ MoveModule.QueueShipTokensMove = function(ship, queueShipMove)
 
     -- Check for nearby tokens
     local selfTokens = XW_ObjWithinDist(ship.getPosition(), maxShipReach+Convert_mm_igu(50), 'token')
+    -- Exclude currently used cloak tokens
+    local tokensExcl = {}
+    for k, token in pairs(selfTokens) do
+        if token.getName() == 'Cloak' then
+            local active = true
+            local buttons = token.getButtons()
+            if buttons ~= nil then
+                for k2, but in pairs(buttons) do
+                    if but.label == 'Decloak' then active = false break end
+                end
+            end
+            if active == false then table.insert(tokensExcl, token) end
+        else
+            table.insert(tokensExcl, token)
+        end
+    end
+    selfTokens = tokensExcl
     -- Check which ones have our ship nearest, put them in a queue to be moved after ship rests
     for k, token in pairs(selfTokens) do
         local owner = XW_ClosestWithinDist(token, Convert_mm_igu(80), 'ship').obj
@@ -1201,7 +1225,7 @@ end
 MoveModule.AnnounceColor = {}
 MoveModule.AnnounceColor.moveClear = {0.1, 1, 0.1}     -- Green
 MoveModule.AnnounceColor.moveCollision = {1, 0.5, 0.1} -- Orange
-MoveModule.AnnounceColor.action = {0.1, 0.1, 1}        -- Blue
+MoveModule.AnnounceColor.action = {0.2, 0.2, 1}        -- Blue
 MoveModule.AnnounceColor.historyHandle = {0.1, 1, 1}   -- Cyan
 MoveModule.AnnounceColor.error = {1, 0.1, 0.1}         -- Red
 MoveModule.AnnounceColor.info = {0.6, 0.1, 0.6}        -- Purple
