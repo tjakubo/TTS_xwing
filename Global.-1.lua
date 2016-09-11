@@ -1829,7 +1829,7 @@ DialModule.Buttons.rollRF = {label='Xf', click_function='DialClick_RollRF', heig
 DialModule.Buttons.rollRB = {label='Xb', click_function='DialClick_RollRB', height=500, width=365, position={1.5, 0.5, 1}, font_size=250}
 DialModule.Buttons.rollL = {label='X', click_function='DialClick_RollL', height=500, width=365, position={-1.5, 0.5, 0}, font_size=250}
 DialModule.Buttons.rollLF = {label='Xf', click_function='DialClick_RollLF', height=500, width=365, position={-1.5, 0.5, -1}, font_size=250}
-DialModule.Buttons.rollLB = {label='Xb', click_function='DialClick_rollLB', height=500, width=365, position={-1.5, 0.5, 1}, font_size=250}
+DialModule.Buttons.rollLB = {label='Xb', click_function='DialClick_RollLB', height=500, width=365, position={-1.5, 0.5, 1}, font_size=250}
 DialModule.Buttons.ruler = {label='R', click_function='DialClick_Ruler', height=500, width=365, position={-1.5, 0.5, 2}, font_size=250}
 DialModule.Buttons.targetLock = {label='TL', click_function='DialClick_TargetLock', height=500, width=365, position={1.5, 0.5, 2}, font_size=250}
 
@@ -1841,7 +1841,7 @@ DialModule.GetShortName = function(ship)
     for k,w in pairs(shipNameWords) do if w == 'LGS' then table.remove(shipNameWords, k) numWords = numWords-1 end end
     local shipShortName = shipNameWords[1]
     if shipShortName:sub(1,1) == '\'' or shipShortName:sub(1,1) == '\"' then shipShortName = shipShortName:sub(2, -1) end
-    if shipNameWords[numWords]:sub(1,1) == shipNameWords[numWords]:sub(-1,-1) then shipShortName = shipShortName .. ' ' .. shipNameWords[numWords]:sub(1,1) end
+    if shipNameWords[numWords]:len() == 1 then shipShortName = shipShortName .. ' ' .. shipNameWords[numWords]:sub(1,1) end
     return shipShortName
 end
 
