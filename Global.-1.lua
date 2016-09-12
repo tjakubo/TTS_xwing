@@ -896,7 +896,7 @@ function restWaitCoroutine()
     table.remove(MoveModule.restWaitQueue, #MoveModule.restWaitQueue)
     repeat
         if actShip.getPosition()[2] > 1.5 and actShip.resting == true then
-            actShip.setPositionSmooth({actShip.getPosition()['x'], actShip.getPosition()['y']-0.1, actShip.getPosition()['z']})
+            actShip.setPositionSmooth({actShip.getPosition()[1], actShip.getPosition()[2]-0.1, actShip.getPosition()[3]})
         end
         coroutine.yield(0)
     -- YIELD until ship is resting, not held and close to the table
@@ -1121,9 +1121,39 @@ MoveModule.PerformMove = function(move_code, ship, ignoreCollisions)
     -- Notification
     info.type = 'move'
     MoveModule.Announce(ship, info, 'all')
+
+    -- Bump notification button
+    Ship_RemoveOverlapReminder(ship)
+    if info.collidedShip ~= nil then
+        MoveModule.SpawnOverlapReminder(ship)
+    end
+
     -- Get the ship in a queue to do stuff once resting
     table.insert(MoveModule.restWaitQueue, {ship=ship, lastMove=move_code})
     startLuaCoroutine(Global, 'restWaitCoroutine')
+end
+
+-- Spawn a 'BUMPED' informational button on the base that removes itself on click
+-- TO_DO: Some non-obscuring way to indicate that?
+MoveModule.SpawnOverlapReminder = function(ship)
+    Ship_RemoveOverlapReminder(ship)
+    --remindButton = {click_function = 'Ship_RemoveOverlapReminder', label = 'B\nU\nM\nP', rotation =  {0, 0, 0}, width = 200, height = 1100, font_size = 200}
+    remindButton = {click_function = 'Ship_RemoveOverlapReminder', label = 'BUMPED', rotation =  {0, 0, 0}, width = 1000, height = 350, font_size = 250}
+    if DB_isLargeBase(ship) == true then
+        remindButton.position = {0, 0.2, 2}
+    else
+        remindButton.position = {0, 0.3, 0.8}
+        --remindButton.position = {-1, 0.25, 0}
+    end
+    ship.createButton(remindButton)
+end
+
+-- Removes 'BUMPED' button from ship (click function)
+function Ship_RemoveOverlapReminder(ship)
+    local buttons = ship.getButtons()
+    if buttons ~= nil then
+        for k,but in pairs(buttons) do if but.label == 'BUMPED' then ship.removeButton(but.index) end end
+    end
 end
 
 -- Check which ship has it's base closest to position (large ships have large bases!), thats the owner
@@ -1556,10 +1586,10 @@ DialModule.TokenSources = {}
 DialModule.onLoad = function(saveTable)
     for k, obj in pairs(getAllObjects()) do
         if obj.tag == 'Infinite' then
-            if obj.getName() == 'Focus' then DialModule.TokenSources['focus'] = obj
-            elseif obj.getName() == 'Evade' then DialModule.TokenSources['evade'] = obj
-            elseif obj.getName() == 'Stress' then DialModule.TokenSources['stress'] = obj
-            elseif obj.getName() == 'Target Locks' then DialModule.TokenSources['targetLock'] = obj
+            if obj.getName() == 'Focus' then DialModule.TokenSources.focus = obj
+            elseif obj.getName() == 'Evade' then DialModule.TokenSources.evade = obj
+            elseif obj.getName() == 'Stress' then DialModule.TokenSources.stress = obj
+            elseif obj.getName() == 'Target Locks' then DialModule.TokenSources.targetLock = obj
             elseif obj.getName():find('Templates') ~= nil then
                 if obj.getName():find('Straight') ~= nil then
                     DialModule.TokenSources['s' .. obj.getName():sub(1,1)] = obj
@@ -1670,7 +1700,7 @@ DialModule.PerformAction = function(ship, type, extra)
             newRuler.setCustomObject(custom)
             newRuler.lock()
             newRuler.setScale(scale)
-            local button = {['click_function'] = 'Ruler_SelfDestruct', ['label'] = 'DEL', ['position'] = {0, 0.5, 0}, ['rotation'] =  {0, 0, 0}, ['width'] = 900, ['height'] = 900, ['font_size'] = 250}
+            local button = {click_function = 'Ruler_SelfDestruct', label = 'DEL', position = {0, 0.5, 0}, rotation =  {0, 0, 0}, width = 900, height = 900, font_size = 250}
             newRuler.createButton(button)
             table.insert(DialModule.SpawnedRulers, {ruler=newRuler, ship=ship})
             announceInfo.note = 'spawned a ruler'
@@ -2193,7 +2223,7 @@ end
 -- Return 'Unknown' is ship is not in the database
 function DB_getShipType(shipRef)
     if shipRef.getVar('DB_shipType') ~= nil then return shipRef.getVar('DB_shipType') end
-    local mesh = shipRef.getCustomObject()['mesh']
+    local mesh = shipRef.getCustomObject().mesh
     for k,typeTable in pairs(shipTypeDatabase) do
         for k2,model in pairs(typeTable) do
             if model == mesh then
