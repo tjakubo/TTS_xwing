@@ -2313,6 +2313,12 @@ shipTypeDatabase = {
     tieDefender = {'TIE Defender', false, 'https://paste.ee/r/0QVhZ'},
     tieFoFighter = {'TIE/fo Fighter', false, 'http://pastebin.com/jt2AzA8t'},
     tieAdvProt = {'TIE Adv. Prototype', false, 'https://paste.ee/r/l7cuZ'}
+
+    -- Not fully released packs from Complete Collection
+    tieSfFighter = {'TIE/sf Fighter', false, 'http://pastebin.com/LezDjunY'}
+    arc170 = {'ARC-170', false, 'http://cloud-3.steamusercontent.com/ugc/489018224649021380/CF0BE9820D8123314E976CF69F3EA0A2F52A19AA/'}
+    upsilonShuttle = {'Upsilon Shuttle', true, 'http://pastebin.com/nsHXF9XV'}
+    yt1300hotr = {'YT-1300', true, 'http://pastebin.com/VdHhgdFr'}
 }
 -- END SHIP DATABASE MODULE
 --------
