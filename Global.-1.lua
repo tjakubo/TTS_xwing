@@ -12,6 +12,8 @@
 
 -- TESTING: Not performing commands while ship has not finished previous one
 
+-- TESTING: Dials assignment system
+
 -- Should the code execute print functions or skip them?
 -- This should be set to false on every release
 print_debug = false
@@ -201,6 +203,26 @@ function XW_ObjWithinDist(position, maxDist, type)
     return ships
 end
 
+-- Get objects within specified rectangle + optional X-Wing type filter
+-- Rectangle is aligned with the table (no rotation)
+function XW_ObjWithinRect(center, x_size, z_size, type)
+    local objects = {}
+    local x_min = center[1] - (x_size/2)
+    local x_max = center[1] + (x_size/2)
+    local z_min = center[3] - (z_size/2)
+    local z_max = center[3] + (z_size/2)
+    for k,obj in pairs(getAllObjects()) do
+        if XW_ObjMatchType(obj, type) == true then
+            local obj_x = obj.getPosition()[1]
+            local obj_z = obj.getPosition()[3]
+            if obj_x < x_max and obj_x > x_min and obj_z < z_max and obj_z > z_min then
+                table.insert(objects, obj)
+            end
+        end
+    end
+    return objects
+end
+
 -- Simple shallow copy to cope with Lua reference handling
 function Lua_ShallowCopy(orig)
     local orig_type = type(orig)
@@ -285,6 +307,8 @@ XW_cmd.Process = function(obj, cmd)
             DialModule.SaveNearby(obj)
         elseif cmd == 'rd' then
             DialModule.RemoveSet(obj)
+        elseif cmd == 'cd' then
+            DialModule.SaveNearby(obj, true)
         end
         XW_cmd.SetReady(obj)
     elseif type == 'action' then
@@ -1306,25 +1330,29 @@ MoveModule.AnnounceColor.info = {0.6, 0.1, 0.6}        -- Purple
 MoveModule.Announce = function(ship, info, target)
     local annString = ''
     local annColor = {1, 1, 1}
+    local shipName = ''
+    if ship ~= nil then
+        shipName = ship.getName() .. ' '
+    end
     if info.type == 'move' then
         if info.collidedShip == nil then
-            annString = ship.getName() .. ' ' .. info.note .. ' (' .. info.code .. ')'
+            annString = shipName .. info.note .. ' (' .. info.code .. ')'
             annColor = MoveModule.AnnounceColor.moveClear
         else
-            annString = ship.getName() .. ' ' .. info.collNote .. ' (' .. info.code .. ') but is now touching ' .. info.collidedShip.getName()
+            annString = shipName .. info.collNote .. ' (' .. info.code .. ') but is now touching ' .. info.collidedShip.getName()
             annColor = MoveModule.AnnounceColor.moveCollision
         end
     elseif info.type == 'historyHandle' then
-        annString = ship.getName() .. ' ' .. info.note
+        annString = shipName .. info.note
         annColor = MoveModule.AnnounceColor.historyHandle
     elseif info.type == 'action' then
-        annString = ship.getName() .. ' ' .. info.note
+        annString = shipName .. info.note
         annColor = MoveModule.AnnounceColor.action
     elseif info.type:find('error') ~= nil then
-        annString = ship.getName() .. ' ' .. info.note
+        annString = shipName .. info.note
         annColor = MoveModule.AnnounceColor.error
     elseif info.type:find('info') ~= nil then
-        annString = ship.getName() .. ' ' .. info.note
+        annString = shipName .. info.note
         annColor = MoveModule.AnnounceColor.info
     end
 
@@ -1391,6 +1419,7 @@ DialModule.ActiveSets = {}
 XW_cmd.AddCommand('r', 'action')
 XW_cmd.AddCommand('rd', 'dialHandle')
 XW_cmd.AddCommand('sd', 'dialHandle')
+XW_cmd.AddCommand('cd', 'dialHandle')
 
 -- Assign a set of dials to a ship
 -- Fit for calling from outside, removes a set if it already exists for a ship
@@ -1489,35 +1518,117 @@ end
 -- Distance (circle from ship) at wchich dials can be to be registered
 saveNearbyCircleDist = Convert_mm_igu(160)
 
--- Save nearby dials
+-- Save nearby dials layout
+-- Detects layout center (straight dials as reference) and assigns dials that are appropriately placed
 -- If dials are already assigned to this ship, they are ignored
 -- If one of dials is assigned to other ship, unassign and proceed
-DialModule.SaveNearby = function(ship)
+DialModule.SaveNearby = function(ship, onlySpawnGuides)
     local nearbyDialsAll = XW_ObjWithinDist(ship.getPosition(), saveNearbyCircleDist, 'dial')
-    local nearbyDials = {}
     -- Nothing nearby
     if nearbyDialsAll[1] == nil then
         MoveModule.Announce(ship, {type='info_DialModule', note=('has no valid dials nearby')}, 'all')
         return
     end
-    -- There is stuff nearby
+    -- Filter dials to only get ones of uniue description
+    -- If there are duplicate dials, save closer ones
+    local nearbyDialsUnique = {}
     for k,dial in pairs(nearbyDialsAll) do
+        if nearbyDialsUnique[dial.getDescription()] ~= nil then
+            if Dist_Obj(ship, dial) < Dist_Obj(ship, nearbyDialsUnique[dial.getDescription()]) then
+                nearbyDialsUnique[dial.getDescription()] = dial
+            end
+        else
+            nearbyDialsUnique[dial.getDescription()] = dial
+        end
+    end
+    local refDial1 = nil -- reference dial with a straight, speed X move
+    local refDial2 = nil -- reference dial with a straight, speed X+1 move
+    -- Detect reference dials
+    for k, dial in pairs(nearbyDialsUnique) do
+        refDial1 = dial
+        local move = dial.getDescription():sub(1, -2)
+        local speed = tonumber(dial.getDescription():sub(-1, -1))
+        if move == 's' and speed ~= nil then
+            if nearbyDialsUnique[move .. (speed+1)] ~= nil then
+                refDial2 = nearbyDialsUnique[move .. (speed+1)]
+                break
+            end
+        end
+    end
+    -- If tow reference dials were not found (there;s no straight and 1 speed faster straight nearby)
+    if refDial2 == nil then
+        MoveModule.Announce(ship, {type='info_DialModule', note=('needs to be moved closer to the dial layout center')}, 'all')
+        return
+    end
+    -- Distance between any adjacent dials (assuming a regular grid)
+    local dialSpacing = math.abs(refDial1.getPosition()[3] - refDial2.getPosition()[3])
+    -- If distance between two dials appears to be huge
+    if dialSpacing > Convert_mm_igu(120) then
+        MoveModule.Announce(nil, {type='error_DialModule', note=('Dial layout nearest to ' .. ship.getName() .. ' seems to be invalid or not laid out on a proper grid (check dials descriptions)')}, 'all')
+        return
+    end
+    -- Determine center of the dial layout (between s2 and s3 dials)
+    local refSpeed = tonumber(refDial1.getDescription():sub(-1,-1))
+    local centerOffset = 2.5 - refSpeed
+    local z_half = refDial1.getPosition()[3]/math.abs(refDial1.getPosition()[3])
+    centerOffset = centerOffset * z_half * -1
+    local centerPos = {refDial1.getPosition()[1], refDial1.getPosition()[2], refDial1.getPosition()[3] + (centerOffset * dialSpacing)}
+    -- Place the ship in the center and spawn assignment guides
+    local straightRot = 180
+    if z_half > 0 then straightRot = 0 end
+    ship.setPositionSmooth(Vect_Sum(centerPos, {0, 1, 0}), false, true)
+    ship.setRotationSmooth({0, straightRot, 0}, false, true)
+    local zoneWidth = 5*dialSpacing
+    local zoneHeight = 6*dialSpacing
+    DialModule.SpawnLayoutZoneGuides(ship, zoneWidth, zoneHeight)
+    -- Check if dials in the depicted zone are all unique
+    local layoutDials = XW_ObjWithinRect(centerPos, zoneWidth, zoneHeight, 'dial')
+    local layoutDialsUnique = {}
+    for k,dial in pairs(layoutDials) do
+        if layoutDialsUnique[dial.getDescription()] == nil then
+            layoutDialsUnique[dial.getDescription()] = dial
+        else
+            MoveModule.Announce(nil, {type='error_DialModule', note=('Dial layout nearest to ' .. ship.getName() .. ' seems to be invalid or overlapping another layout (check dials descriptions)')}, 'all')
+            return
+        end
+    end
+    if onlySpawnGuides == true then
+        MoveModule.Announce(ship, {type='info_DialModule', note=('would have dials from the depicted zone assigned using the \'sd\' command')}, 'all')
+        return
+     end
+    -- There is a valid set nearby!
+    local conqueredDials = {}
+    local nearbyDials = {}
+    for k,dial in pairs(layoutDials) do
         -- If a dial is already assigned, unassign if it belongs to another ship
         -- Ingore if it's this ship
         if DialModule.isAssigned(dial) == true then
             if dial.getVar('assignedShip') ~= ship then
-                local prevOwner = dial.getVar('assignedShip').getName()
-                MoveModule.Announce(ship, {type='info_DialModule', note=('assigned a dial that previously was assigned to ' .. prevOwner)}, 'all')
+                local prevOwner = dial.getVar('assignedShip')
                 DialModule.UnassignDial(dial)
                 table.insert(nearbyDials, dial)
+                if conqueredDials[prevOwner] == nil then
+                    conqueredDials[prevOwner] = {}
+                end
+                table.insert(conqueredDials[prevOwner], dial)
             end
         else
             table.insert(nearbyDials, dial)
         end
     end
+    for poorShip, takenDials in pairs(conqueredDials) do
+        local dialsStr = ' ('
+        for k, dial in pairs(takenDials) do
+            dialsStr = dialsStr .. dial.getDescription() .. ', '
+        end
+        dialsStr = dialsStr:sub(1, -3)
+        dialsStr = dialsStr .. ') '
+        MoveModule.Announce(ship, {type='info_DialModule', note=('assigned' .. dialsStr ..  'dial(s) that previously belonged to ' .. poorShip.getName())}, 'all')
+    end
+
     -- If there are no filtered (not this ship already) dials
     if nearbyDials[1] == nil then
-        MoveModule.Announce(ship, {type='info_DialModule', note=('already has all nearby dials assigned to him')}, 'all')
+        MoveModule.Announce(ship, {type='info_DialModule', note=('already has all nearby dials assigned')}, 'all')
         return
     end
     local dialSet = {}
@@ -1531,6 +1642,7 @@ DialModule.SaveNearby = function(ship)
             end
         end
     end
+
     -- Then we start adding
     local dialCount = 0
     for k, dial in pairs(nearbyDials) do
@@ -1563,6 +1675,39 @@ DialModule.SaveNearby = function(ship)
     end
     DialModule.AddSet(ship, dialSet)
     MoveModule.Announce(ship, {type='info_dialModule', note='had ' .. dialCount .. ' dials assigned (' .. DialModule.DialCount(ship) .. ' total now)' }, 'all')
+end
+
+-- Spawn a rectangle zone depiction centered over the ship with appropriate size
+-- Size is in world units and ship scale does not matter
+DialModule.SpawnLayoutZoneGuides = function(ship, width, height)
+    LayoutGuides_Remove(ship)
+    local shipScale = ship.getScale()[1]
+    local zoneLUpos = Vect_Scale({width/2, 0.1, height/2}, 1/shipScale)
+    local zoneLLpos = Vect_Scale({-1*width/2, 0.1, height/2}, 1/shipScale)
+    local zoneRUpos = Vect_Scale({width/2, 0.1, -1*height/2}, 1/shipScale)
+    local zoneRLpos = Vect_Scale({-1*width/2, 0.1, -1*height/2}, 1/shipScale)
+    ship.createButton({position=zoneLUpos, rotation={0, 0, 0}, label='', height=80, width=1000, click_function='dummy', function_owner=Global})
+    ship.createButton({position=zoneLUpos, rotation={0, 90, 0}, label='', height=80, width=1000, click_function='dummy', function_owner=Global})
+    ship.createButton({position=zoneLLpos, rotation={0, 0, 0}, label='', height=80, width=1000, click_function='dummy', function_owner=Global})
+    ship.createButton({position=zoneLLpos, rotation={0, 90, 0}, label='', height=80, width=1000, click_function='dummy', function_owner=Global})
+    ship.createButton({position=zoneRUpos, rotation={0, 0, 0}, label='', height=80, width=1000, click_function='dummy', function_owner=Global})
+    ship.createButton({position=zoneRUpos, rotation={0, 90, 0}, label='', height=80, width=1000, click_function='dummy', function_owner=Global})
+    ship.createButton({position=zoneRLpos, rotation={0, 0, 0}, label='', height=80, width=1000, click_function='dummy', function_owner=Global})
+    ship.createButton({position=zoneRLpos, rotation={0, 90, 0}, label='', height=80, width=1000, click_function='dummy', function_owner=Global})
+    deleteButton = {click_function = 'LayoutGuides_Remove', label = 'REMOVE', rotation =  {0, 0, 0}, width = 1500, height = 450, font_size = 300}
+    if DB_isLargeBase(ship) == true then
+        deleteButton.position = {0, 0.2, 2.5}
+    else
+        deleteButton.position = {0, 0.3, 1}
+    end
+    ship.createButton(deleteButton)
+end
+
+function LayoutGuides_Remove(ship)
+    local buttons = ship.getButtons()
+    if buttons ~= nil then
+        for k,but in pairs(buttons) do if but.label == '' or but.label == 'REMOVE' then ship.removeButton(but.index) end end
+    end
 end
 
 -- Unassign this dial from any sets it is found in
@@ -2171,10 +2316,24 @@ end
 -- save_state contains everything separate modules saved before to restore table state
 -- TO_DO: I swear I wanted to save/load something else too
 function onLoad(save_state)
+
     if save_state ~= '' and save_state ~= nil then
         local savedData = JSON.decode(save_state)
         DialModule.onLoad(savedData['DialModule'])
     end
+
+--createButton(DialModule.TokenSources.focus {position={0, 3, 0}, width=1000, height=1000, click_function='dummy', function_owner=Global})
+
+    local t1 = DialModule.TokenSources.focus.takeObject({position={15, 2, -10}})
+    local t2 = DialModule.TokenSources.focus.takeObject({position={16, 2, -10}})
+    local t3 = DialModule.TokenSources.focus.takeObject({position={17, 2, -10}})
+    t2.setScale({0.1, 0.1, 0.1})
+    local pos1 = {0, 0.1, 1}
+    pos1 = Vect_Scale(pos1, 1/t2.getScale()[1])
+    local pos2 = {0, 0.1, -1}
+    pos2 = Vect_Scale(pos2, 1/t2.getScale()[1])
+    t2.createButton({position=pos1, width=500, height=500, click_function='dummy', function_owner=Global})
+    t2.createButton({position=pos2, width=500, height=500, click_function='dummy', function_owner=Global})
 end
 
 function onSave()
