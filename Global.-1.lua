@@ -10,6 +10,8 @@
 -- TO_DO onload (dials done, anything else?)
 -- TO_DO: Movement collsision check resolution based on its legth (consistent between moves)
 
+-- TESTING: Not performing commands while ship has not finished previous one
+
 -- Should the code execute print functions or skip them?
 -- This should be set to false on every release
 print_debug = false
@@ -237,7 +239,13 @@ XW_cmd.AddCommand = function(cmdRegex, type)
 end
 
 -- Process provided command on a provided object
+-- Return true if command has been executed/started
+-- Return false if object cannot process commands right now or command was invalid
 XW_cmd.Process = function(obj, cmd)
+
+    -- Return if object is not ready
+    if XW_cmd.isReady(obj) ~= true then return false end
+
     -- Trim whitespaces
     cmd = cmd:match( "^%s*(.-)%s*$" )
     local type = nil
@@ -248,8 +256,15 @@ XW_cmd.Process = function(obj, cmd)
             break
         end
     end
-    if type == nil then return end
-    -- If it matched something, do it
+    if type == nil then
+        return false
+    else
+        XW_cmd.SetBusy(obj)
+    end
+
+    -- If it matched something, do it:
+
+    -- Moving involves waiting for object to rest which then does SetReady
     if type == 'move' then
         MoveModule.PerformMove(cmd, obj)
     elseif type == 'actionMove' then
@@ -259,8 +274,11 @@ XW_cmd.Process = function(obj, cmd)
             MoveModule.UndoMove(obj)
         elseif cmd == 'z' or cmd == 'redo' then
             MoveModule.RedoMove(obj)
+
+    -- These commands are finished immediately and SetReady right away
         elseif cmd == 'keep' then
             MoveModule.SaveStateToHistory(obj, false)
+            XW_cmd.SetReady(obj)
         end
     elseif type == 'dialHandle' then
         if cmd == 'sd' then
@@ -268,13 +286,37 @@ XW_cmd.Process = function(obj, cmd)
         elseif cmd == 'rd' then
             DialModule.RemoveSet(obj)
         end
+        XW_cmd.SetReady(obj)
     elseif type == 'action' then
         if cmd == 'r' then cmd = 'ruler' end
         DialModule.PerformAction(obj, cmd)
+        XW_cmd.SetReady(obj)
     end
     obj.setDescription('')
+    return true
 end
 
+-- Is object not processing some commands right now?
+XW_cmd.isReady = function(obj)
+    if obj.getVar('XW_cmd_busy') == true then return false
+    else return true end
+end
+
+-- Flag the object as processing commands to ignore any in the meantime
+XW_cmd.SetBusy = function(obj)
+    if XW_cmd.isReady(obj) ~= true then
+        print('Nested process on ' .. obj.getName())
+    end
+    obj.setVar('XW_cmd_busy', true)
+end
+
+-- Flag the object as ready to process next command
+XW_cmd.SetReady = function(obj)
+    if XW_cmd.isReady(obj) == true then
+        print('Double ready on ' .. obj.getName())
+    end
+    obj.setVar('XW_cmd_busy', false)
+end
 --------
 -- MOVEMENT DATA MODULE
 -- Defines moves, parts of moves, their variants and decoding of move codes into actual move data
@@ -790,13 +832,15 @@ MoveModule.SaveStateToHistory = function(ship, beQuiet)
 end
 
 -- Move a ship to a previous state from the history
+-- Return true if action was taken
+-- Return false if there is no more data
 MoveModule.UndoMove = function(ship)
     local histData = MoveModule.GetHistory(ship)
     local announceInfo = {type='historyHandle'}
+    local shipMoved = false
     -- No history
     if histData.actKey == 0 then
         announceInfo.note = 'has no more moves to undo'
-        return
     else
     -- There is history
         local currEntry = histData.history[histData.actKey]
@@ -811,6 +855,7 @@ MoveModule.UndoMove = function(ship)
             ship.setRotation(currEntry.rot)
             ship.lock()
             announceInfo.note = 'moved to the last saved position'
+            shipMoved = true
         else
         -- Current posiion/rotation is matching last entry
             if histData.actKey > 1 then
@@ -824,6 +869,7 @@ MoveModule.UndoMove = function(ship)
                 ship.setRotation(currEntry.rot)
                 ship.lock()
                 announceInfo.note = 'performed an undo of (' .. undidMove .. ')'
+                shipMoved = true
             else
                 -- There is no data to go back to
                 announceInfo.note = 'has no more moves to undo'
@@ -831,16 +877,20 @@ MoveModule.UndoMove = function(ship)
         end
     end
     MoveModule.Announce(ship, announceInfo, 'all')
+    if shipMoved == false then XW_cmd.SetReady(ship) end
+    return shipMoved
 end
 
 -- Move a ship to next state from the history
+-- Return true if action was taken
+-- Return false if there is no more data
 MoveModule.RedoMove = function(ship)
     local histData = MoveModule.GetHistory(ship)
     local announceInfo = {type='historyHandle'}
+    local shipMoved = false
     -- No history
     if histData.actKey == 0 then
         announceInfo.note = 'has no more moves to redo'
-        return
     else
     -- There is history
         if histData.history[histData.actKey+1] == nil then
@@ -856,9 +906,12 @@ MoveModule.RedoMove = function(ship)
             ship.setRotation(currEntry.rot)
             ship.lock()
             announceInfo.note = 'performed an redo of (' .. currEntry.move .. ')'
+            shipMoved = true
         end
     end
     MoveModule.Announce(ship, announceInfo, 'all')
+    if shipMoved == false then XW_cmd.SetReady(ship) end
+    return shipMoved
 end
 
 
@@ -932,6 +985,8 @@ function restWaitCoroutine()
     actShip.lock()
     -- Save this position if last move code was provided
     if waitData.lastMove ~= nil then MoveModule.AddHistoryEntry(actShip, {pos=actShip.getPosition(), rot=actShip.getRotation(), move=waitData.lastMove}, true) end
+    -- Free the object so it can do other stuff
+    XW_cmd.SetReady(actShip)
     return 1
 end
 
@@ -1781,8 +1836,14 @@ function DialClick_Flip(dial)
 end
 function DialClick_Move(dial)
     local actShip = dial.getVar('assignedShip')
-    XW_cmd.Process(actShip, dial.getDescription())
-    DialModule.SwitchMainButton(dial, 'undo')
+    if XW_cmd.Process(actShip, dial.getDescription()) == true then
+        DialModule.SwitchMainButton(dial, 'undo')
+    end
+end
+function DialClick_Undo(dial)
+    if XW_cmd.Process(dial.getVar('assignedShip'), 'q') == true then
+        DialModule.SwitchMainButton(dial, 'move')
+    end
 end
 function DialClick_Focus(dial)
     DialModule.PerformAction(dial.getVar('assignedShip'), 'focus')
@@ -1798,10 +1859,6 @@ function DialClick_TargetLock(dial, playerColor)
 end
 function DialClick_Template(dial)
     DialModule.PerformAction(dial.getVar('assignedShip'), 'spawnTemplate')
-end
-function DialClick_Undo(dial)
-    XW_cmd.Process(dial.getVar('assignedShip'), 'q')
-    DialModule.SwitchMainButton(dial, 'move')
 end
 function DialClick_BoostS(dial)
     XW_cmd.Process(dial.getVar('assignedShip'), 's1')
