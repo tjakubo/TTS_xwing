@@ -2316,24 +2316,10 @@ end
 -- save_state contains everything separate modules saved before to restore table state
 -- TO_DO: I swear I wanted to save/load something else too
 function onLoad(save_state)
-
     if save_state ~= '' and save_state ~= nil then
         local savedData = JSON.decode(save_state)
         DialModule.onLoad(savedData['DialModule'])
     end
-
---createButton(DialModule.TokenSources.focus {position={0, 3, 0}, width=1000, height=1000, click_function='dummy', function_owner=Global})
-
-    local t1 = DialModule.TokenSources.focus.takeObject({position={15, 2, -10}})
-    local t2 = DialModule.TokenSources.focus.takeObject({position={16, 2, -10}})
-    local t3 = DialModule.TokenSources.focus.takeObject({position={17, 2, -10}})
-    t2.setScale({0.1, 0.1, 0.1})
-    local pos1 = {0, 0.1, 1}
-    pos1 = Vect_Scale(pos1, 1/t2.getScale()[1])
-    local pos2 = {0, 0.1, -1}
-    pos2 = Vect_Scale(pos2, 1/t2.getScale()[1])
-    t2.createButton({position=pos1, width=500, height=500, click_function='dummy', function_owner=Global})
-    t2.createButton({position=pos2, width=500, height=500, click_function='dummy', function_owner=Global})
 end
 
 function onSave()
