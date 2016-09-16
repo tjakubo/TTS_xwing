@@ -10,8 +10,6 @@
 -- TO_DO onload (dials done, anything else?)
 -- TO_DO: Movement collsision check resolution based on its legth (consistent between moves)
 
--- TESTING: Not performing commands while ship has not finished previous one
-
 -- TESTING: Dials assignment system
 
 -- Should the code execute print functions or skip them?
@@ -260,14 +258,9 @@ XW_cmd.AddCommand = function(cmdRegex, type)
     table.insert(XW_cmd.ValidCommands, {cmdRegex, type})
 end
 
--- Process provided command on a provided object
--- Return true if command has been executed/started
--- Return false if object cannot process commands right now or command was invalid
-XW_cmd.Process = function(obj, cmd)
-
-    -- Return if object is not ready
-    if XW_cmd.isReady(obj) ~= true then return false end
-
+-- Check if command is registered as valid
+-- If it is return its type identifier, if not return nil
+XW_cmd.CheckCommand = function(cmd)
     -- Trim whitespaces
     cmd = cmd:match( "^%s*(.-)%s*$" )
     local type = nil
@@ -278,6 +271,20 @@ XW_cmd.Process = function(obj, cmd)
             break
         end
     end
+    return type
+end
+
+-- Process provided command on a provided object
+-- Return true if command has been executed/started
+-- Return false if object cannot process commands right now or command was invalid
+XW_cmd.Process = function(obj, cmd)
+
+    -- Return if object is not ready
+    if XW_cmd.isReady(obj) ~= true then return false end
+
+    -- Resolve command type
+    local type = XW_cmd.CheckCommand(cmd)
+    -- Return if invalid, lock object if valid
     if type == nil then
         return false
     else
@@ -1322,6 +1329,7 @@ MoveModule.AnnounceColor.moveCollision = {1, 0.5, 0.1} -- Orange
 MoveModule.AnnounceColor.action = {0.2, 0.2, 1}        -- Blue
 MoveModule.AnnounceColor.historyHandle = {0.1, 1, 1}   -- Cyan
 MoveModule.AnnounceColor.error = {1, 0.1, 0.1}         -- Red
+MoveModule.AnnounceColor.warn = {1, 0.25, 0.05}        -- Red - orange
 MoveModule.AnnounceColor.info = {0.6, 0.1, 0.6}        -- Purple
 
 -- Notify color or all players of some event
@@ -1351,6 +1359,9 @@ MoveModule.Announce = function(ship, info, target)
     elseif info.type:find('error') ~= nil then
         annString = shipName .. info.note
         annColor = MoveModule.AnnounceColor.error
+    elseif info.type:find('warn') ~= nil then
+        annString = shipName .. info.note
+        annColor = MoveModule.AnnounceColor.warn
     elseif info.type:find('info') ~= nil then
         annString = shipName .. info.note
         annColor = MoveModule.AnnounceColor.info
@@ -1531,8 +1542,15 @@ DialModule.SaveNearby = function(ship, onlySpawnGuides)
     end
     -- Filter dials to only get ones of uniue description
     -- If there are duplicate dials, save closer ones
+    local positionWarning = false
     local nearbyDialsUnique = {}
     for k,dial in pairs(nearbyDialsAll) do
+        if math.abs(dial.getPosition()[3]) < 24 then positionWarning = true end
+        -- Warn if dial command is invalid (changed most likely)
+        if XW_cmd.CheckCommand(dial.getDescription()) ~= 'move' then
+            MoveModule.Announce(nil, {type='error_DialModule', note=('One of the dials near ' .. ship.getName() .. ' has an unsupported command in the description (\'' .. dial.getDescription() .. '\'), make sure you only select the ship when inserting \'sd\'/\'cd\'')}, 'all')
+            return
+        end
         if nearbyDialsUnique[dial.getDescription()] ~= nil then
             if Dist_Obj(ship, dial) < Dist_Obj(ship, nearbyDialsUnique[dial.getDescription()]) then
                 nearbyDialsUnique[dial.getDescription()] = dial
@@ -1540,6 +1558,10 @@ DialModule.SaveNearby = function(ship, onlySpawnGuides)
         else
             nearbyDialsUnique[dial.getDescription()] = dial
         end
+    end
+    -- Warn if some dials are outside hidden zones
+    if positionWarning == true then
+        MoveModule.Announce(nil, {type='warn_DialModule', note=('Some dials ' .. ship.getName() .. ' is trying to save are placed outside the hidden zones!')}, 'all')
     end
     local refDial1 = nil -- reference dial with a straight, speed X move
     local refDial2 = nil -- reference dial with a straight, speed X+1 move
@@ -1557,7 +1579,7 @@ DialModule.SaveNearby = function(ship, onlySpawnGuides)
     end
     -- If tow reference dials were not found (there;s no straight and 1 speed faster straight nearby)
     if refDial2 == nil then
-        MoveModule.Announce(ship, {type='info_DialModule', note=('needs to be moved closer to the dial layout center')}, 'all')
+        MoveModule.Announce(ship, {type='warn_DialModule', note=('needs to be moved closer to the dial layout center')}, 'all')
         return
     end
     -- Distance between any adjacent dials (assuming a regular grid)
@@ -1623,7 +1645,7 @@ DialModule.SaveNearby = function(ship, onlySpawnGuides)
         end
         dialsStr = dialsStr:sub(1, -3)
         dialsStr = dialsStr .. ') '
-        MoveModule.Announce(ship, {type='info_DialModule', note=('assigned' .. dialsStr ..  'dial(s) that previously belonged to ' .. poorShip.getName())}, 'all')
+        MoveModule.Announce(ship, {type='warn_DialModule', note=('assigned' .. dialsStr ..  'dial(s) that previously belonged to ' .. poorShip.getName())}, 'all')
     end
 
     -- If there are no filtered (not this ship already) dials
