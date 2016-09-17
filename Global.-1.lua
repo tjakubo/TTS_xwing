@@ -52,7 +52,7 @@ function Convert_mm_igu(milimeters)
     return milimeters*mm_igu_ratio
 end
 
--- Convert argument from MILIMETERS to IN-GAME UNITS
+-- Convert argument from IN-GAME UNITS to MILIMETERS
 function Convert_igu_mm(in_game_units)
     return in_game_units/mm_igu_ratio
 end
@@ -156,7 +156,7 @@ function XW_ObjMatchType(obj, type)
     return false
 end
 
--- Get objects within distance of some position + optional X-Wing type filter
+-- Get an object closest to some position + optional X-Wing type filter
 function XW_ClosestToPosWithinDist(centralPos, maxDist, type)
     local closest = nil
     local minDist = maxDist+1
@@ -172,7 +172,7 @@ function XW_ClosestToPosWithinDist(centralPos, maxDist, type)
     return {obj=closest, dist=minDist}
 end
 
--- Get an object closest to some position + optional X-Wing type filter
+-- Get an object closest to some other object + optional X-Wing type filter
 function XW_ClosestWithinDist(centralObj, maxDist, type)
     local closest = nil
     local minDist = maxDist+1
@@ -583,7 +583,7 @@ end
 
 -- Decode a "move" from the standard X-Wing notation into a valid movement data
 -- Provide a 'ship' object reference to determine if it is large based
--- Returns a valid path the ship has to traverse to perform a move (if it was at origin)
+-- Returns offset data ship has to be treated with to perform a full move
 -- Standard format {xOffset, yOffset, zOffset, rotOffset}
 MoveData.DecodeFull = function(move_code, ship)
     local data = {}
@@ -630,7 +630,11 @@ end
 -- Value is largely irrelevant since part can be a fraction (any kind of number really)
 PartMax = 1000
 
--- Get an offset of a ship if it would do A PART of the move
+-- Decode a "move" from the standard X-Wing notation into a valid movement data
+-- Provide a 'ship' object reference to determine if it is large based
+-- Returns offset data ship has to be treated with to perform a part of the move
+-- Standard format {xOffset, yOffset, zOffset, rotOffset}
+-- Part should between 0 and PartMax linearly scaling with true distance travelled (including path curvature)
 MoveData.DecodePartial = function(move_code, ship, part)
     local data = {}
     local info = MoveData.DecodeInfo(move_code, ship)
@@ -807,6 +811,7 @@ MoveModule.ErasePastCurrent = function(ship)
     local k=1
     while histData.history[histData.actKey + k] ~= nil do
         histData.history[histData.actKey + k] = nil
+        k = k+1
     end
 end
 
@@ -908,6 +913,7 @@ MoveModule.UndoMove = function(ship)
         end
     end
     MoveModule.Announce(ship, announceInfo, 'all')
+    -- Flag ship as done processing if it didn't move (and didn't get queued for rest wait)
     if shipMoved == false then XW_cmd.SetReady(ship) end
     return shipMoved
 end
@@ -941,6 +947,7 @@ MoveModule.RedoMove = function(ship)
         end
     end
     MoveModule.Announce(ship, announceInfo, 'all')
+    -- Flag ship as done processing if it didn't move (and didn't get queued for rest wait)
     if shipMoved == false then XW_cmd.SetReady(ship) end
     return shipMoved
 end
@@ -970,7 +977,7 @@ function restWaitCoroutine()
     if MoveModule.restWaitQueue[1] == nil then
         dummy()
         print('coroutine table empty') --TO_DO: Exception handling?
-        -- Should now happen since I try to keep 1 entry added = 1 coroutine started ratio
+        -- Should not happen since I try to keep 1 entry added = 1 coroutine started ratio
         --  but who knows, it's kinda harmless anyways
         return 0
     end
