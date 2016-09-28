@@ -14,7 +14,7 @@
 
 -- Should the code execute print functions or skip them?
 -- This should be set to false on every release
-print_debug = false
+print_debug = true
 
 TTS_print = print
 function print(arg)
@@ -1339,14 +1339,62 @@ MoveModule.AnnounceColor.error = {1, 0.1, 0.1}         -- Red
 MoveModule.AnnounceColor.warn = {1, 0.25, 0.05}        -- Red - orange
 MoveModule.AnnounceColor.info = {0.6, 0.1, 0.6}        -- Purple
 
+MoveModule.ActiveLogs = {}
+MoveModule.ActiveLogs['R-G'] = {}
+MoveModule.ActiveLogs['T-B'] = {}
+MoveModule.SkipChat = {}
+MoveModule.SkipChat['R-G'] = false
+MoveModule.SkipChat['T-B'] = false
+
+function EventLogDropped(infoTable)
+    if infoTable[1].getVar('idTag') == 'XW_set' then return end
+    local side = 'R-G'
+    if infoTable[2] < 0 then side = 'T-B' end
+    table.insert(MoveModule.ActiveLogs[side], infoTable[1])
+    infoTable[1].setVar('idTag', 'XW_set')
+    if #MoveModule.ActiveLogs[side] >= 2 then MoveModule.SkipChat[side] = true end
+    local logName = 'Event Log ('
+    if side == 'R-G' then logName = logName .. 'Red - Green)'
+    else logName = logName .. 'Teal - Blue)' end
+    return logName
+end
+
+MoveModule.ObjDestroyedHandle = function(obj)
+    for k,log in pairs(MoveModule.ActiveLogs['R-G']) do
+        if log == obj then
+            table.remove(MoveModule.ActiveLogs['R-G'], k)
+            if #MoveModule.ActiveLogs['R-G'] < 2 then MoveModule.SkipChat['R-G'] = false end
+        end
+    end
+    for k,log in pairs(MoveModule.ActiveLogs['T-B']) do
+        if log == obj then
+            table.remove(MoveModule.ActiveLogs['T-B'], k)
+            if #MoveModule.ActiveLogs['T-B'] < 2 then MoveModule.SkipChat['T-B'] = false end
+        end
+    end
+end
+
+MoveModule.LogMessage = function(messString, messColor, groupID, side)
+    for k,log in pairs(MoveModule.ActiveLogs[side]) do
+        log.call('API_AddNewMessage', {text = messString, color=messColor, groupID=groupID})
+    end
+end
+
 -- Notify color or all players of some event
 -- Info: {ship=shipRef, info=announceInfo, target=targetStr}
 -- announceInfo: {type=typeOfEvent, note=notificationString}
-MoveModule.Announce = function(ship, info, target)
+MoveModule.Announce = function(ship, info, target, prefix)
     local annString = ''
     local annColor = {1, 1, 1}
     local shipName = ''
-    if ship ~= nil then
+
+    if ship == nil then return end
+
+    local eventSide = nil
+    if ship.getPosition()[1] > 0 then eventSide = 'R-G'
+    else eventSide = 'T-B' end
+
+    if prefix ~= false then
         shipName = ship.getName() .. ' '
     end
     if info.type == 'move' then
@@ -1375,7 +1423,11 @@ MoveModule.Announce = function(ship, info, target)
     end
 
     if target == 'all' then
-        printToAll(annString, annColor)
+        local id = ship.getGUID()
+        MoveModule.LogMessage(annString, annColor, id, eventSide)
+        if MoveModule.SkipChat[eventSide] ~= true then
+            printToAll(annString, annColor)
+        end
     else
         printToColor(target, annString, annColor)
     end
@@ -1555,7 +1607,7 @@ DialModule.SaveNearby = function(ship, onlySpawnGuides)
         if math.abs(dial.getPosition()[3]) < 24 then positionWarning = true end
         -- Warn if dial command is invalid (changed most likely)
         if XW_cmd.CheckCommand(dial.getDescription()) ~= 'move' then
-            MoveModule.Announce(nil, {type='error_DialModule', note=('One of the dials near ' .. ship.getName() .. ' has an unsupported command in the description (\'' .. dial.getDescription() .. '\'), make sure you only select the ship when inserting \'sd\'/\'cd\'')}, 'all')
+            MoveModule.Announce(ship, {type='error_DialModule', note=('One of the dials near ' .. ship.getName() .. ' has an unsupported command in the description (\'' .. dial.getDescription() .. '\'), make sure you only select the ship when inserting \'sd\'/\'cd\'')}, 'all', false)
             return
         end
         if nearbyDialsUnique[dial.getDescription()] ~= nil then
@@ -1568,7 +1620,7 @@ DialModule.SaveNearby = function(ship, onlySpawnGuides)
     end
     -- Warn if some dials are outside hidden zones
     if positionWarning == true then
-        MoveModule.Announce(nil, {type='warn_DialModule', note=('Some dials ' .. ship.getName() .. ' is trying to save are placed outside the hidden zones!')}, 'all')
+        MoveModule.Announce(ship, {type='warn_DialModule', note=('Some dials ' .. ship.getName() .. ' is trying to save are placed outside the hidden zones!')}, 'all', false)
     end
     local refDial1 = nil -- reference dial with a straight, speed X move
     local refDial2 = nil -- reference dial with a straight, speed X+1 move
@@ -1593,7 +1645,7 @@ DialModule.SaveNearby = function(ship, onlySpawnGuides)
     local dialSpacing = math.abs(refDial1.getPosition()[3] - refDial2.getPosition()[3])
     -- If distance between two dials appears to be huge
     if dialSpacing > Convert_mm_igu(120) then
-        MoveModule.Announce(nil, {type='error_DialModule', note=('Dial layout nearest to ' .. ship.getName() .. ' seems to be invalid or not laid out on a proper grid (check dials descriptions)')}, 'all')
+        MoveModule.Announce(ship, {type='error_DialModule', note=('Dial layout nearest to ' .. ship.getName() .. ' seems to be invalid or not laid out on a proper grid (check dials descriptions)')}, 'all', false)
         return
     end
     -- Determine center of the dial layout (between s2 and s3 dials)
@@ -1617,7 +1669,7 @@ DialModule.SaveNearby = function(ship, onlySpawnGuides)
         if layoutDialsUnique[dial.getDescription()] == nil then
             layoutDialsUnique[dial.getDescription()] = dial
         else
-            MoveModule.Announce(nil, {type='error_DialModule', note=('Dial layout nearest to ' .. ship.getName() .. ' seems to be invalid or overlapping another layout (check dials descriptions)')}, 'all')
+            MoveModule.Announce(ship, {type='error_DialModule', note=('Dial layout nearest to ' .. ship.getName() .. ' seems to be invalid or overlapping another layout (check dials descriptions)')}, 'all', false)
             return
         end
     end
@@ -2339,6 +2391,7 @@ function onObjectDestroyed(dying_object)
     for k, obj in pairs(watchedObj) do if dying_object == obj then table.remove(watchedObj, k) end end
     -- Handle killing rulers and unassignment of dial sets
     DialModule.ObjDestroyedHandle(dying_object)
+    MoveModule.ObjDestroyedHandle(dying_object)
 end
 
 -- When table is loaded up, this is called
