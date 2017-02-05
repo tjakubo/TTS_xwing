@@ -1,3 +1,8 @@
+-- ~~~~~~
+-- Script by dzikakulka
+-- Issues, history at: http://github.com/tjakubo2/TTS_xwing
+-- ~~~~~~
+
 -- TO ADD NEW IMAGES TO THE SET
 -- Just add their links to the table below in the same fashion
 -- (comma after the currrent last one and your link enclosed in apostrophes following)

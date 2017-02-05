@@ -1,6 +1,6 @@
 -- ~~~~~~
 -- Script by dzikakulka
--- Issues, history at: https://github.com/tjakubo2/TTS_xwing
+-- Issues, history at: http://github.com/tjakubo2/TTS_xwing
 --
 -- Based on a work of: Flolania, Hera Vertigo
 -- ~~~~~~
@@ -986,8 +986,10 @@ function restWaitCoroutine()
     local actShip = waitData.ship
     table.remove(MoveModule.restWaitQueue, #MoveModule.restWaitQueue)
     repeat
-        if actShip.getPosition()[2] > 1.5 and actShip.resting == true then
+        if actShip.getLock() == true then actShip.unlock() end
+        if actShip.getPosition()[2] > 1.5 and actShip.resting == true and actShip.isSmoothMoving ~= true then
             actShip.setPositionSmooth({actShip.getPosition()[1], actShip.getPosition()[2]-0.1, actShip.getPosition()[3]})
+            actShip.resting = false
         end
         coroutine.yield(0)
     -- YIELD until ship is resting, not held and close to the table
@@ -1013,6 +1015,7 @@ function restWaitCoroutine()
             end
             dest[2] = dest[2] + 1.5
             tokenInfo.token.setPositionSmooth(dest)
+            tokenInfo.token.highlightOn({0, 1, 0}, 2)
         else
         -- Index back tokens that are not waiting for this ship
             table.insert(newTokenTable, tokenInfo)
@@ -1970,12 +1973,12 @@ DialModule.PerformAction = function(ship, type, extra)
             local newRuler = spawnObject(obj_parameters)
             local custom = {}
             if DB_isLargeBase(ship) == true then
-                custom.mesh = 'https://paste.ee/r/AZlb4'
-                custom.collider = 'https://paste.ee/r/BUHIZ'
+                custom.mesh = 'http://paste.ee/r/AZlb4'
+                custom.collider = 'http://paste.ee/r/BUHIZ'
                 scale = {0.623, 0.623, 0.623}
             else
-                custom.mesh = 'https://paste.ee/r/VVoNs'
-                custom.collider = 'https://paste.ee/r/oCwKG'
+                custom.mesh = 'http://paste.ee/r/VVoNs'
+                custom.collider = 'http://paste.ee/r/oCwKG'
                 scale = {0.629, 0.629, 0.629}
             end
             newRuler.setCustomObject(custom)
@@ -2510,9 +2513,12 @@ function DB_getShipType(shipRef)
     local mesh = shipRef.getCustomObject().mesh
     for k,typeTable in pairs(shipTypeDatabase) do
         for k2,model in pairs(typeTable) do
-            if model == mesh then
-                shipRef.setVar('DB_shipType', typeTable[1])
-                return typeTable[1]
+            if type(model) == 'string' then
+                local ssl_model = 'https' .. model:sub(5, -1)
+                if model == mesh or ssl_model == mesh then
+                    shipRef.setVar('DB_shipType', typeTable[1])
+                    return typeTable[1]
+                end
             end
         end
     end
@@ -2559,44 +2565,44 @@ end
 -- Type <=> Model (mesh) database
 -- Entry: { <type name>, <is large base?>, <model1>, <model2>, ..., <modelN>}
 shipTypeDatabase = {
-    xWing = {'X-Wing', false, 'https://paste.ee/r/54FLC', 'https://paste.ee/r/eAdkb', 'https://paste.ee/r/hxWah', 'https://paste.ee/r/ZxcTT', 'https://paste.ee/r/FfWNK'},
-    yWingReb = {'Y-Wing Rebel', false, 'https://paste.ee/r/MV6qP'},
-    yt1300 = {'YT-1300', true, 'https://paste.ee/r/kkPoB', 'http://pastebin.com/VdHhgdFr'},
-    yt2400 = {'YT-2400', true, 'https://paste.ee/r/Ff0vZ'},
-    aWing = {'A-Wing', false, 'https://paste.ee/r/tIdib', 'https://paste.ee/r/mow3U', 'https://paste.ee/r/ntg8n'},
-    bWing = {'B-Wing', false, 'https://paste.ee/r/8CtXr'},
-    hwk290Reb = {'HWK-290 Rebel', false, 'https://paste.ee/r/MySkn'},
-    vcx100 = {'VCX-100', true, 'https://paste.ee/r/VmV6q'},
-    attShuttle = {'Attack Shuttle', false, 'https://paste.ee/r/jrwRJ'},
-    t70xWing = {'T-70 X-Wing', false, 'https://paste.ee/r/NH1KI'},
-    eWing = {'E-Wing', false, 'https://paste.ee/r/A57A8'},
-    kWing = {'K-Wing', false, 'https://paste.ee/r/2Airh'},
-    z95hhReb = {'Z-95 Headhunter Rebel', false, 'https://paste.ee/r/d91Hu'},
+    xWing = {'X-Wing', false, 'http://paste.ee/r/54FLC', 'http://paste.ee/r/eAdkb', 'http://paste.ee/r/hxWah', 'http://paste.ee/r/ZxcTT', 'http://paste.ee/r/FfWNK'},
+    yWingReb = {'Y-Wing Rebel', false, 'http://paste.ee/r/MV6qP'},
+    yt1300 = {'YT-1300', true, 'http://paste.ee/r/kkPoB', 'http://pastebin.com/VdHhgdFr'},
+    yt2400 = {'YT-2400', true, 'http://paste.ee/r/Ff0vZ'},
+    aWing = {'A-Wing', false, 'http://paste.ee/r/tIdib', 'http://paste.ee/r/mow3U', 'http://paste.ee/r/ntg8n'},
+    bWing = {'B-Wing', false, 'http://paste.ee/r/8CtXr'},
+    hwk290Reb = {'HWK-290 Rebel', false, 'http://paste.ee/r/MySkn'},
+    vcx100 = {'VCX-100', true, 'http://paste.ee/r/VmV6q'},
+    attShuttle = {'Attack Shuttle', false, 'http://paste.ee/r/jrwRJ'},
+    t70xWing = {'T-70 X-Wing', false, 'http://paste.ee/r/NH1KI'},
+    eWing = {'E-Wing', false, 'http://paste.ee/r/A57A8'},
+    kWing = {'K-Wing', false, 'http://paste.ee/r/2Airh'},
+    z95hhReb = {'Z-95 Headhunter Rebel', false, 'http://paste.ee/r/d91Hu'},
 
-    fs31Scum = {'Firespray-31 Scum', true, 'https://paste.ee/r/3INxK'},
-    z95hhScum = {'Z-95 Headhunter Scum', false, 'https://paste.ee/r/OZrhd'},
-    yWingScum = {'Y-Wing Scum', false, 'https://paste.ee/r/1T0ii'},
-    hwk290Scum = {'HWK-290 Scum', false, 'https://paste.ee/r/tqTsw'},
-    m3aScyk = {'M3-A Interceptor', false, 'https://paste.ee/r/mUFjk'},
-    starViper = {'StarViper', false, 'https://paste.ee/r/jpEbC'},
-    aggressor = {'Aggressor', true, 'https://paste.ee/r/0UFlm'},
-    yv666 = {'YV-666', true, 'https://paste.ee/r/lLZ8W'},
-    kihraxz = {'Kihraxz Fighter', false, 'https://paste.ee/r/E8ZT0'},
-    jm5k = {'JumpMaster 5000', true, 'https://paste.ee/r/1af5C'},
-    g1a = {'G-1A StarFighter', false, 'https://paste.ee/r/aLVFD'},
+    fs31Scum = {'Firespray-31 Scum', true, 'http://paste.ee/r/3INxK'},
+    z95hhScum = {'Z-95 Headhunter Scum', false, 'http://paste.ee/r/OZrhd'},
+    yWingScum = {'Y-Wing Scum', false, 'http://paste.ee/r/1T0ii'},
+    hwk290Scum = {'HWK-290 Scum', false, 'http://paste.ee/r/tqTsw'},
+    m3aScyk = {'M3-A Interceptor', false, 'http://paste.ee/r/mUFjk'},
+    starViper = {'StarViper', false, 'http://paste.ee/r/jpEbC'},
+    aggressor = {'Aggressor', true, 'http://paste.ee/r/0UFlm'},
+    yv666 = {'YV-666', true, 'http://paste.ee/r/lLZ8W'},
+    kihraxz = {'Kihraxz Fighter', false, 'http://paste.ee/r/E8ZT0'},
+    jm5k = {'JumpMaster 5000', true, 'http://paste.ee/r/1af5C'},
+    g1a = {'G-1A StarFighter', false, 'http://paste.ee/r/aLVFD'},
 
-    tieFighter = {'TIE Fighter', false, 'https://paste.ee/r/Yz0kt'},
-    tieCeptor= {'TIE Interceptor', false, 'https://paste.ee/r/cedkZ', 'https://paste.ee/r/JxWNX'},
-    spaceCow = {'Lambda-Class Shuttle', true, 'https://paste.ee/r/4uxZO'},
-    fs31Imp = {'Firespray-31 Imperial', true, 'https://paste.ee/r/p3iYR'},
-    tieBomber = {'TIE Bomber', false, 'https://paste.ee/r/5A0YG'},
-    tiePhantom = {'TIE Phantom', false, 'https://paste.ee/r/JN16g'},
-    vtDecimator = {'VT-49 Decimator', true, 'https://paste.ee/r/MJOFI'},
-    tieAdv = {'TIE Advanced', false, 'https://paste.ee/r/NeptF'},
-    tiePunisher = {'TIE Punisher', false, 'https://paste.ee/r/aVGkQ'},
-    tieDefender = {'TIE Defender', false, 'https://paste.ee/r/0QVhZ'},
+    tieFighter = {'TIE Fighter', false, 'http://paste.ee/r/Yz0kt'},
+    tieCeptor= {'TIE Interceptor', false, 'http://paste.ee/r/cedkZ', 'http://paste.ee/r/JxWNX'},
+    spaceCow = {'Lambda-Class Shuttle', true, 'http://paste.ee/r/4uxZO'},
+    fs31Imp = {'Firespray-31 Imperial', true, 'http://paste.ee/r/p3iYR'},
+    tieBomber = {'TIE Bomber', false, 'http://paste.ee/r/5A0YG'},
+    tiePhantom = {'TIE Phantom', false, 'http://paste.ee/r/JN16g'},
+    vtDecimator = {'VT-49 Decimator', true, 'http://paste.ee/r/MJOFI'},
+    tieAdv = {'TIE Advanced', false, 'http://paste.ee/r/NeptF'},
+    tiePunisher = {'TIE Punisher', false, 'http://paste.ee/r/aVGkQ'},
+    tieDefender = {'TIE Defender', false, 'http://paste.ee/r/0QVhZ'},
     tieFoFighter = {'TIE/fo Fighter', false, 'http://pastebin.com/jt2AzA8t'},
-    tieAdvProt = {'TIE Adv. Prototype', false, 'https://paste.ee/r/l7cuZ'},
+    tieAdvProt = {'TIE Adv. Prototype', false, 'http://paste.ee/r/l7cuZ'},
 
     -- Not fully released packs from Complete Collection
     tieSfFighter = {'TIE/sf Fighter', false, 'http://pastebin.com/LezDjunY'},

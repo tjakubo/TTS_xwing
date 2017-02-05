@@ -1,6 +1,6 @@
 -- ~~~~~~
 -- Script by dzikakulka
--- Issues, history at: https://github.com/tjakubo2/TTS_xwing
+-- Issues, history at: http://github.com/tjakubo2/TTS_xwing
 -- ~~~~~~
 
 function onload()
