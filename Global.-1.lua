@@ -5,16 +5,16 @@
 -- Based on a work of: Flolania, Hera Vertigo
 -- ~~~~~~
 
--- TO_DO: dont lock ship after completeing if it;s not level
+-- TO_DO: dont lock ship after completeing if it's not level
 -- TO_DO: Dials: on drop among dials, return to origin (maybe)
 -- TO_DO onload (dials done, anything else?)
--- TO_DO: Movement collsision check resolution based on its legth (consistent between moves)
+-- TO_DO: Movement collision check resolution based on its legth (consistent between moves)
 
--- TESTING: Dials assignment system
+-- TESTING: Reverse movements
 
 -- Should the code execute print functions or skip them?
 -- This should be set to false on every release
-print_debug = true
+print_debug = false
 
 TTS_print = print
 function print(arg)
@@ -390,7 +390,7 @@ MoveData.straight.largeBaseOffsetInit = {0, 0, mm_largeBase/2, 0}
 MoveData.straight.largeBaseOffsetFinal = {0, 0, mm_largeBase/2, 0}
 MoveData.straight.largeBaseOffset = Vect_Sum(MoveData.straight.largeBaseOffsetInit, MoveData.straight.largeBaseOffsetFinal)
 MoveData.straight.length = {str_mm[1], str_mm[2], str_mm[3], str_mm[4], str_mm[5]}
-XW_cmd.AddCommand('[sk][12345]', 'move')
+XW_cmd.AddCommand('[sk][12345][r]?', 'move')
 
 -- Banks RIGHT (member function to modify to left)
 -- Path traversed is eighth part (1/8 or 45deg) of a circle of specified radius (see CONFIGURATION)
@@ -407,7 +407,7 @@ MoveData.bank.largeBaseOffsetInit = {0, 0, mm_largeBase/2, 0}
 MoveData.bank.largeBaseOffsetFinal = {(mm_largeBase/2)/math.sqrt(2), 0, (mm_largeBase/2)/math.sqrt(2), 0}
 MoveData.bank.largeBaseOffset = Vect_Sum(MoveData.bank.largeBaseOffsetInit, MoveData.bank.largeBaseOffsetFinal)
 MoveData.bank.length = {2*math.pi*bankRad_mm[1]/8, 2*math.pi*bankRad_mm[2]/8, 2*math.pi*bankRad_mm[3]/8}
-XW_cmd.AddCommand('b[rle][123][s]?', 'move')
+XW_cmd.AddCommand('b[rle][123][sr]?', 'move')
 
 -- Turns RIGHT (member function to modify to left)
 -- Path traversed is fourth part (1/4 or 90deg) of a circle of specified radius (see CONFIGURATION)
@@ -424,8 +424,7 @@ MoveData.turn.largeBaseOffsetInit = {0, 0, mm_largeBase/2, 0}
 MoveData.turn.largeBaseOffsetFinal = {mm_largeBase/2, 0, 0, 0}
 MoveData.turn.largeBaseOffset = Vect_Sum(MoveData.turn.largeBaseOffsetInit, MoveData.turn.largeBaseOffsetFinal)
 MoveData.turn.length = {2*math.pi*turnRad_mm[1]/4, 2*math.pi*turnRad_mm[2]/4, 2*math.pi*turnRad_mm[3]/4}
-XW_cmd.AddCommand('t[rle][123]', 'move')
-XW_cmd.AddCommand('t[rle][123][st]', 'move')
+XW_cmd.AddCommand('t[rle][123][str]?', 'move')
 
 -- Barrel roll RIGHT (member function to modify to left)
 -- Large ships are hard to handle exceptions so their rolls are defined separately as 5 speeds higher
@@ -470,14 +469,56 @@ MoveData.TurnInwardVariant = function(entry)
     return {entry[1], entry[2], entry[3], entry[4]+dir}
 end
 
+-- Change an entry to be reverse type
+MoveData.ReverseVariant = function(entry)
+    return {entry[1], entry[2], -1*entry[3], -1*entry[4]}
+end
+
+-- Get an adjusted init offset entry
+MoveData.GetInitOffset = function(info)
+    local offset = {}
+    if info.size == 'large' then
+        offset = Lua_ShallowCopy(MoveData[info.type].largeBaseOffsetInit)
+    else
+        offset = Lua_ShallowCopy(MoveData[info.type].smallBaseOffsetInit)
+    end
+    if info.extra == 'reverse' then
+        offset = MoveData.ReverseVariant(offset)
+    end
+    if info.dir == 'left' then
+        offset = MoveData.LeftVariant(offset)
+    end
+    return offset
+end
+
+-- Get an adjusted final offset entry
+MoveData.GetFinalOffset = function(info)
+    local offset = {}
+    if info.size == 'large' then
+        offset = Lua_ShallowCopy(MoveData[info.type].largeBaseOffsetFinal)
+    else
+        offset = Lua_ShallowCopy(MoveData[info.type].smallBaseOffsetFinal)
+    end
+    if info.extra == 'reverse' then
+        offset = MoveData.ReverseVariant(offset)
+    end
+    if info.dir == 'left' then
+        offset = MoveData.LeftVariant(offset)
+    end
+    return offset
+end
+
 -- Apply base offset to an entry
 -- Needs to be done as a member cause both base size and direction affects it
 MoveData.BaseOffset = function(entry, info)
     local offset = {}
     if info.size == 'large' then
-        offset = MoveData[info.type].largeBaseOffset
+        offset = Lua_ShallowCopy(MoveData[info.type].largeBaseOffset)
     else
-        offset = MoveData[info.type].smallBaseOffset
+        offset = Lua_ShallowCopy(MoveData[info.type].smallBaseOffset)
+    end
+    if info.extra == 'reverse' then
+        offset = MoveData.ReverseVariant(offset)
     end
     if info.dir == 'left' then offset = MoveData.LeftVariant(offset) end
     return {entry[1]+offset[1], entry[2]+offset[2], entry[3]+offset[3], entry[4]+offset[4]}
@@ -485,7 +526,17 @@ end
 
 -- Decode a move command into table with type, direction, speed etc info
 MoveData.DecodeInfo = function (move_code, ship)
-    local info = {type='invalid', speed=nil, dir=nil, extra=nil, size=nil, note=nil, collNote=nil, code=move_code}
+    local info = {  type='invalid',
+                    speed=nil,         -- speed, +5 for large ship barrel roll
+                    dir=nil,           -- 'left', 'right' or nil
+                    extra=nil,         -- 'koiogran', 'segnor', 'talon', 'reverse' (moves)
+                                       -- 'straight', 'forward', 'backward' (decloaks/rolls)
+                                       -- nil if not applicable
+                    size=nil,          -- base size, 'large' or 'small'
+                    note=nil,          -- how movement nore looks, ex. (...) 'banked xxx' (...)
+                    collNote=nil,      -- how collision note looks, ex. (...) 'tried to do xxx' (...)
+                    code=move_code     -- explicit move code recieved
+                }
 
     if DB_isLargeBase(ship) == true then info.size = 'large'
     else info.size = 'small' end
@@ -502,6 +553,11 @@ MoveData.DecodeInfo = function (move_code, ship)
             info.note = 'flew straight ' .. info.speed
             info.collNote = 'tried to fly straight ' .. info.speed
         end
+        if move_code:sub(-1,-1) == 'r' and info.extra ~= 'koiogran' then
+            info.extra = 'reverse'
+            info.note = 'flew reverse ' .. info.speed
+            info.collNote = 'tried to fly reverse ' .. info.speed
+        end
         if info.speed > 5 then info.type = 'invalid' end
         -- Banks, regular stuff
     elseif move_code:sub(1,1) == 'b' then
@@ -515,6 +571,10 @@ MoveData.DecodeInfo = function (move_code, ship)
             info.extra = 'segnor'
             info.note = 'segnor looped ' .. info.dir .. ' ' .. info.speed
             info.collNote = 'tried to segnor loop ' .. info.dir .. ' ' .. info.speed
+        elseif move_code:sub(-1,-1) == 'r' then
+            info.extra = 'reverse'
+            info.note = 'flew reverse bank ' .. info.dir .. ' ' .. info.speed
+            info.collNote = 'tried to fly reverse bank ' .. info.dir .. ' ' .. info.speed
         else
             info.note = 'banked ' .. info.dir .. ' ' .. info.speed
             info.collNote = 'tried to bank ' .. info.dir .. ' ' .. info.speed
@@ -536,6 +596,10 @@ MoveData.DecodeInfo = function (move_code, ship)
             info.extra = 'segnor'
             info.note = 'segnor looped (turn template) ' .. info.dir .. ' ' .. info.speed
             info.collNote = 'tried to segnor loop (turn template) ' .. info.dir .. ' ' .. info.speed
+        elseif move_code:sub(-1,-1) == 'r' then
+            info.extra = 'reverse'
+            info.note = 'flew reverse turn ' .. info.dir .. ' ' .. info.speed
+            info.collNote = 'tried to fly reverse turn ' .. info.dir .. ' ' .. info.speed
         else
             info.note = 'turned ' .. info.dir .. ' ' .. info.speed
             info.collNote = 'tried to turn ' .. info.dir .. ' ' .. info.speed
@@ -604,6 +668,8 @@ MoveData.DecodeFull = function(move_code, ship)
         data = MoveData.TurnAroundVariant(data)
     elseif info.extra == 'talon' then
         data = MoveData.TurnInwardVariant(data)
+    elseif info.extra == 'reverse' then
+        data = MoveData.ReverseVariant(data)
     end
 
     -- handle rolls and decloak
@@ -665,10 +731,17 @@ MoveData.DecodePartial = function(move_code, ship, part)
         -- - when ship moves off the template and slides it between guides again
     elseif info.type == 'bank' or info.type == 'turn' then
 
+        -- full move data
+        local fullMove = MoveData.DecodeFull(move_code, ship)
+
+        -- get template offset data
+        local initOffset = MoveData.GetInitOffset(info)
+        local finalOffset = MoveData.GetFinalOffset(info)
+
         -- calculate length of the base offsets and real move
-        local initOffLen = Vect_Length(MoveData[info.type][info.size .. 'BaseOffsetInit'])
+        local initOffLen = Vect_Length(initOffset)
         local moveLen = MoveData[info.type].length[info.speed]
-        local finalOffLen = Vect_Length(MoveData[info.type][info.size .. 'BaseOffsetFinal'])
+        local finalOffLen = Vect_Length(finalOffset)
         local totalLen = initOffLen + moveLen + finalOffLen
 
         -- check where (at which part value) transitions initOffset-move and move-finalOffset happen
@@ -679,37 +752,34 @@ MoveData.DecodePartial = function(move_code, ship, part)
         if part <= initPartCutoff then
             -- proportiaonal angle change
             -- proportional part of the init offset since it is straight
-            local offset = MoveData.ConvertDataToIGU(MoveData[info.type][info.size .. 'BaseOffsetInit'])[3]*(part/initPartCutoff)
-            local angle = MoveData[info.type][info.speed][4]*(part/PartMax)
+            local offset = MoveData.ConvertDataToIGU(initOffset)[3]*(part/initPartCutoff)
+            local angle = fullMove[4]*(part/PartMax)
             data = {0, 0, offset, angle}
-            if info.dir == 'left' then data=MoveData.LeftVariant(data) end
         elseif part > movePartCutoff then
             -- similiar idea as above
             -- get the final position and slide the ship BACK
-            --  a proportional part of the final offset (since it is a straight)
-            data = MoveData.DecodeFull(move_code, ship)
-            data[4] = MoveData[info.type][info.speed][4]*(part/PartMax)
-            if info.dir == 'left' then data[4] = -1*data[4] end
+            -- a proportional part of the final offset (since it is a straight)
+            data = Lua_ShallowCopy(fullMove)
+            data[4] = fullMove[4]*(part/PartMax)
 
-            -- scale the part value so it's 0 for full move and PartMax for move just before final offset
+            -- scale the part value so it's 0 for full move and 1 for move just before final offset
             part = (part-PartMax)*(-1/(PartMax-movePartCutoff))
 
-            local xInset = MoveData.ConvertDataToIGU(MoveData[info.type][info.size .. 'BaseOffsetFinal'])[1]*part
-            local zInset = MoveData.ConvertDataToIGU(MoveData[info.type][info.size .. 'BaseOffsetFinal'])[3]*part
-            if info.dir == 'left' then xInset = xInset * -1 end
+            local xInset = MoveData.ConvertDataToIGU(MoveData.GetFinalOffset(info))[1]*part
+            local zInset = MoveData.ConvertDataToIGU(MoveData.GetFinalOffset(info))[3]*part
             data[1] = data[1] - xInset
             data[3] = data[3] - zInset
         else
             -- simply slide the ship over a part of a circle
-            local angle = MoveData[info.type][info.speed][4]*(part/PartMax)
-            if info.dir == 'left' then angle = -1*angle end
-            data = Lua_ShallowCopy(MoveData[info.type][info.size .. 'BaseOffsetInit'])
+            local angle = fullMove[4]*(part/PartMax)
+            data = Lua_ShallowCopy(MoveData.GetInitOffset(info))
             -- scale part so it's 0 at the start of the template and PartMax at its end
             part = (part-(initPartCutoff))*(PartMax/(movePartCutoff-initPartCutoff))
             -- argument at the end of a move is 1/4 of a circle for turn and 1/8 for a bank
             local fullArg = nil
             if info.type == 'bank' then fullArg = math.pi/4
             elseif info.type == 'turn' then fullArg = math.pi/2 end
+            if info.extra == 'reverse' then fullArg = -1*fullArg end
             local arg = (fullArg*part)/PartMax
             local radius = {}
             if info.type == 'bank' then radius = bankRad_mm[info.speed]
@@ -747,7 +817,6 @@ MoveData.DecodePartial = function(move_code, ship, part)
         end
         partOffset = MoveData.ConvertDataToIGU(partOffset)
         data = Vect_Sum(data, partOffset)
-        --data = MoveData.ConvertDataToIGU(data)
     end
 
     return data
@@ -2604,7 +2673,6 @@ shipTypeDatabase = {
     tieFoFighter = {'TIE/fo Fighter', false, 'http://pastebin.com/jt2AzA8t'},
     tieAdvProt = {'TIE Adv. Prototype', false, 'http://paste.ee/r/l7cuZ'},
 
-    -- Not fully released packs from Complete Collection
     tieSfFighter = {'TIE/sf Fighter', false, 'http://pastebin.com/LezDjunY'},
     arc170 = {'ARC-170', false, 'http://cloud-3.steamusercontent.com/ugc/489018224649021380/CF0BE9820D8123314E976CF69F3EA0A2F52A19AA/'},
     upsilonShuttle = {'Upsilon Shuttle', true, 'http://pastebin.com/nsHXF9XV'},
