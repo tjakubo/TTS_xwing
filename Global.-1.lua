@@ -5,7 +5,7 @@
 -- Based on a work of: Flolania, Hera Vertigo
 -- ~~~~~~
 
--- TO_DO: dont lock ship after completeing if it's not level
+-- TO_DO: don't lock ship after completeing if it's not level
 -- TO_DO: Dials: on drop among dials, return to origin (maybe)
 -- TO_DO onload (dials done, anything else?)
 -- TO_DO: Movement collision check resolution based on its legth (consistent between moves)
@@ -2594,8 +2594,15 @@ function DB_getShipType(shipRef)
     for k,typeTable in pairs(shipTypeDatabase) do
         for k2,model in pairs(typeTable) do
             if type(model) == 'string' then
-                local ssl_model = 'https' .. model:sub(5, -1)
-                if model == mesh or ssl_model == mesh then
+                local ssl_switch_model = ''
+                if model:sub(1,5) == 'https' then
+                    -- http variant
+                    ssl_switch_model = 'http' .. model:sub(6, -1)
+                else
+                    -- https variant
+                    ssl_switch_model = 'https' .. model:sub(5, -1)
+                end
+                if model == mesh or ssl_switch_model == mesh then
                     shipRef.setVar('DB_shipType', typeTable[1])
                     return typeTable[1]
                 end
