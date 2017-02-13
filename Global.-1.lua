@@ -2054,12 +2054,12 @@ DialModule.PerformAction = function(ship, type, extra)
             local newRuler = spawnObject(obj_parameters)
             local custom = {}
             if DB_isLargeBase(ship) == true then
-                custom.mesh = 'https://paste.ee/r/AZlb4'
-                custom.collider = 'https://paste.ee/r/BUHIZ'
+                custom.mesh = 'http://pastebin.com/raw/sZkuCV8a'
+                custom.collider = 'http://pastebin.com/raw/zucpQryb'
                 scale = {0.623, 0.623, 0.623}
             else
-                custom.mesh = 'https://paste.ee/r/VVoNs'
-                custom.collider = 'https://paste.ee/r/oCwKG'
+                custom.mesh = 'http://pastebin.com/raw/p3cjDpBk'
+                custom.collider = 'http://pastebin.com/raw/5G8JN2B6'
                 scale = {0.629, 0.629, 0.629}
             end
             newRuler.setCustomObject(custom)
