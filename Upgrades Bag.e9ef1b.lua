@@ -892,25 +892,40 @@ Builder.SpawnConditionCards = function()
             local newCond = Spawner.Spawn('Suppresive Fire condition', Builder.LocalPos(cOff, pTable.pRef), cRot)
             cOff[2] = cOff[2] + 0.1
             table.insert(Builder.misc.other, {ref=newCond, com='Condition'})
+            local condToken = Spawner.Spawn('Suppresive Fire condition token', Builder.LocalPos({0, 0.1, 0}, newCond), cRot)
+            table.insert(Builder.misc.tokens, {tRef=condToken, pRef=newCond})
+            condToken.setName(condToken.getName():sub(1,-7))
         elseif pTable.name == 'Kylo Ren' then
             local newCond = Spawner.Spawn('I\'ll Show You The Dark Side condition', Builder.LocalPos(cOff, pTable.pRef), cRot)
             cOff[2] = cOff[2] + 0.1
             table.insert(Builder.misc.other, {ref=newCond, com='Condition'})
+            local condToken = Spawner.Spawn('I\'ll Show You The Dark Side condition token', Builder.LocalPos({0, 0.1, 0}, newCond), cRot)
+            table.insert(Builder.misc.tokens, {tRef=condToken, pRef=newCond})
+            condToken.setName(condToken.getName():sub(1,-7))
         end
         if Builder.HasUpgrade('A Score to Settle', k) then
             local newCond = Spawner.Spawn('A Debt To Pay condition', Builder.LocalPos(cOff, pTable.pRef), cRot)
             cOff[2] = cOff[2] + 0.1
             table.insert(Builder.misc.other, {ref=newCond, com='Condition'})
+            local condToken = Spawner.Spawn('A Debt To Pay condition token', Builder.LocalPos({0, 0.1, 0}, newCond), cRot)
+            table.insert(Builder.misc.tokens, {tRef=condToken, pRef=newCond})
+            condToken.setName(condToken.getName():sub(1,-7))
         end
         if Builder.HasUpgrade('Kylo Ren', k) then
             local newCond = Spawner.Spawn('I\'ll Show You The Dark Side condition', Builder.LocalPos(cOff, pTable.pRef), cRot)
             cOff[2] = cOff[2] + 0.1
             table.insert(Builder.misc.other, {ref=newCond, com='Condition'})
+            local condToken = Spawner.Spawn('I\'ll Show You The Dark Side condition token', Builder.LocalPos({0, 0.1, 0}, newCond), cRot)
+            table.insert(Builder.misc.tokens, {tRef=condToken, pRef=newCond})
+            condToken.setName(condToken.getName():sub(1,-7))
         end
         if Builder.HasUpgrade('General Hux', k) then
             local newCond = Spawner.Spawn('Fanatical Devotion condition', Builder.LocalPos(cOff, pTable.pRef), cRot)
             cOff[2] = cOff[2] + 0.1
             table.insert(Builder.misc.other, {ref=newCond, com='Condition'})
+            local condToken = Spawner.Spawn('Fanatical Devotion condition token', Builder.LocalPos({0, 0.1, 0}, newCond), cRot)
+            table.insert(Builder.misc.tokens, {tRef=condToken, pRef=newCond})
+            condToken.setName(condToken.getName():sub(1,-7))
         end
     end
 end
@@ -948,7 +963,7 @@ Builder.SpawnExtraMunitions = function()
             for k2,uTable in pairs(upgrades) do
                 if applicableUpgrades[uTable.name] == true then
                     local newEMToken = Spawner.Spawn('Extra Munitions', Builder.LocalPos(offset, uTable.ref, 0.1), rot)
-                    table.insert(Builder.misc.tokens, {ref=newEMToken, com='EM'})
+                    table.insert(Builder.misc.tokens, {tRef=newEMToken, pRef=uTable.ref})
                 end
             end
         end
