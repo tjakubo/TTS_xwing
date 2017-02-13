@@ -1744,7 +1744,6 @@ DialModule.SaveNearby = function(ship, onlySpawnGuides)
     ship.setRotationSmooth({0, straightRot, 0}, false, true)
     local zoneWidth = 5*dialSpacing
     local zoneHeight = 6*dialSpacing
-    DialModule.SpawnLayoutZoneGuides(ship, zoneWidth, zoneHeight)
     -- Check if dials in the depicted zone are all unique
     local layoutDials = XW_ObjWithinRect(centerPos, zoneWidth, zoneHeight, 'dial')
     local layoutDialsUnique = {}
@@ -1757,6 +1756,7 @@ DialModule.SaveNearby = function(ship, onlySpawnGuides)
         end
     end
     if onlySpawnGuides == true then
+        DialModule.SpawnLayoutZoneGuides(ship, zoneWidth, zoneHeight)
         MoveModule.Announce(ship, {type='info_DialModule', note=('would have dials from the depicted zone assigned using the \'sd\' command')}, 'all')
         return
      end
@@ -1836,6 +1836,7 @@ DialModule.SaveNearby = function(ship, onlySpawnGuides)
     for k,dialInfo in pairs(dialSet) do
         dialInfo.dial.setName(ship.getName())
         dialInfo.dial.setVar('assignedShip', ship)
+        dialInfo.dial.highlightOn({0, 1, 0}, 5)
     end
     DialModule.AddSet(ship, dialSet)
     MoveModule.Announce(ship, {type='info_dialModule', note='had ' .. dialCount .. ' dials assigned (' .. DialModule.DialCount(ship) .. ' total now)' }, 'all')
