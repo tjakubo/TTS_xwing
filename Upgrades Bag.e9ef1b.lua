@@ -356,13 +356,13 @@ Builder.HasUpgrade = function(upgName, pilotIndex)
         local upgrades = Builder.GetUpgrades(pilotIndex)
         local found = false
         for k,uTable in pairs(upgrades) do
-            if uTable.name == upgName then found = true end
+            if string.lower(uTable.name) == string.lower(upgName) then found = true end
         end
         return found
-    elseif pilotIndex == 'any' then
+    elseif string.lower(pilotIndex) == 'any' then
         local found = false
         for k=1,#Builder.pilots,1 do
-            if Builder.HasUpgrade(upgName, k) == true then fount = true end
+            if Builder.HasUpgrade(upgName, k) == true then found = true end
         end
         return found
     end
