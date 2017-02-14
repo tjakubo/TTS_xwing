@@ -1090,6 +1090,8 @@ function restWaitCoroutine()
             end
             dest[2] = dest[2] + 1.5
             tokenInfo.token.setPositionSmooth(dest)
+            local tRot = tokenInfo.token.getRotation()
+            tokenInfo.token.setRotationSmooth({tRot[1], actShip.getRotation()[2] + tokenInfo.relRot, tRot[3]})
             tokenInfo.token.highlightOn({0, 1, 0}, 2)
         else
         -- Index back tokens that are not waiting for this ship
@@ -1399,6 +1401,7 @@ MoveModule.QueueShipTokensMove = function(ship, queueShipMove)
             infoTable.ship = ship
             local offset = Vect_Sum(token.getPosition(), Vect_Scale(ship.getPosition(), -1))
             infoTable.offset = Vect_RotateDeg(offset, -1*ship.getRotation()[2])
+            infoTable.relRot = token.getRotation()[2] - ship.getRotation()[2]
             table.insert(MoveModule.tokenWaitQueue, infoTable)
         end
     end
