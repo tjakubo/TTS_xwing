@@ -336,10 +336,24 @@ Builder.AddPilot = function(pilotName)
     table.insert(Builder.pilotCount[pilotName], #Builder.pilots + 1)
     table.insert(Builder.pilots, {name = pilotName, pRef = nil, sRef = nil, upgrades = {}, count = #Builder.pilotCount[pilotName]})
 end
+-- Duplicate some pilot with his upgrades
+-- No index passed = last pilot duplicated
+Builder.DuplicatePilot = function(pilotIndex)
+    if pilotIndex == nil or pilotIndex > #Builder.pilots then
+        pilotIndex = #Builder.pilots
+    end
+    local origPilot = Builder.pilots[pilotIndex]
+    Builder.AddPilot(origPilot.name)
+    for k,uTable in pairs(origPilot.upgrades) do
+        Builder.AddUpgrade(uTable.name)
+    end
+end
 -- Add an empty upgrade entry (name only) to the pilot at given index
 -- If index not provided, adds to the last pilot
 Builder.AddUpgrade = function(upgName, pilotIndex)
-    if pilotIndex == nil then pilotIndex = #Builder.pilots end
+    if pilotIndex == nil or pilotIndex > #Builder.pilots then
+        pilotIndex = #Builder.pilots
+    end
     table.insert(Builder.pilots[pilotIndex].upgrades, {name=upgName, ref=nil})
 end
 -- Get the upgrade table for pilot of given index
@@ -583,41 +597,40 @@ Builder.ParseSquad.uk_Plain = function(input)
     -- Cut all the names/headers from input
     local p_b,p_e = input:find('Pilots[%s]+%-%-%-%-%-%-')
     local cutInput = input:sub(p_e+1, -1)
+    local prefix = input:sub(1, p_e)
     -- Strip parentheses with text inside
     cutInput = cutInput:gsub('[%s]%([^%d][%w%s\']+%)', '')
-    local next = 'pilot'
-    -- Cut the input in words ending with point cost (+ comma if applies)
-    for word in cutInput:gmatch('[\'\"/%w%s%-%.]+[%s][%(][%d]+[%)][,]?') do
-        if next == 'pilot' then
-            word = Builder.TrimWord(word)
-            word = word:match('^([^%(]+)%(.+$')
-            word = Builder.TrimWord(word)
-            Builder.AddPilot(word)
-            next = 'pilot/ship' -- After added pilot, another pilot or his ship name follows
-        elseif next == 'pilot/ship' then
-            word = Builder.TrimWord(word)
-            if word:sub(-1,-1) == ',' then
-            -- If there was a comma, this is a ship name and next one is an upgrade for last pilot
-                next = 'upgrade'
-            else
-            -- If there was no comma, this is a pilot and either his ship and upgrades or new pilot follows
-                word = word:match('^([^%(]+)%(.+$')
-                word = Builder.TrimWord(word)
-                Builder.AddPilot(word)
-                next = 'pilot/ship'
-            end
-        elseif next == 'upgrade' then
-            word = Builder.TrimWord(word)
-            if word:sub(-1,-1) ~= ',' then
-            -- If there was no comma, upgrade list ends and new pilot follows
-                next = 'pilot'
-            end
-            -- If there was a comma, next one is another upgrade for last pilot
-            word = word:match('^([^%(]+)%(.+$')
-            word = Builder.TrimWord(word)
-            Builder.AddUpgrade(word)
+
+    -- Convert:
+    --> Pilot (cost) [x times]
+    --> ShipName (cost), Upg1 (cost), Upg2 (cost), ... , UpgN (cost)
+    -- into
+    --> Pilot [upg1, upg2, ... , upgN] (cost)
+    -- which is simply co.uk Plain Brief format
+    local lines = {}
+    for line in string.gmatch(cutInput,'[^\r\n]+') do
+        -- If it's just pilot line, add it
+        if line:find(',') == nil then
+            table.insert(lines, line)
+        else
+        -- If it's ship and upgrades line
+            line = line:gsub('[%s]%([%d]+%)', '')                               -- cut out point costs
+            line = Builder.TrimWord(line)
+            local firstComma = line:find(',')                                   -- cut out ship name
+            line = line:sub(firstComma+2, -1)
+            line = ' [' .. line .. ']'                                          -- add brackets
+            local e_b,e_e = lines[#lines]:find('[%s]%([%d]+%)')
+            local ending = lines[#lines]:sub(e_b, -1)
+            lines[#lines] = lines[#lines]:sub(1, e_b-1) .. line .. ending       -- cat with previous line (between pilot and "x times")
         end
     end
+    -- Fuse fluff prefix and all the lines
+    local finInput = ''
+    for k,line in pairs(lines) do
+        finInput = finInput .. line .. '\n'
+    end
+    finInput = prefix .. '\n' .. finInput
+    Builder.ParseSquad.uk_PlainBrief(finInput)
 end
 Builder.ParseSquad.uk_PlainBrief = function(input)
     -- Cut all the names/headers from input
@@ -633,7 +646,20 @@ Builder.ParseSquad.uk_PlainBrief = function(input)
     cutInput = cutInput:gsub('%s%[', ' + ')
     cutInput = cutInput:gsub(',%s', ' + ')
     cutInput = cutInput:gsub('%]%s%(', ' (')
-    Builder.ParseSquad['uk_Browse'](cutInput)
+    local finInput = ''
+    -- Replicate any lines that end in 'x [number]' (multiple of these pilots shortened)
+    for line in string.gmatch(cutInput,'[^\r\n]+') do
+        if (line:sub(-5,-1)):find('x[%s][%d]+') ~= nil then
+            local repNum = tonumber((line:sub(-5,-1)):match('x[%s]+([%d]+)'))
+            local trimmedLine = line:match('^[%s]*(.-)[%s]+x[%s]+[%d]+[%s]*$')
+            for k=1,repNum,1 do
+                finInput = finInput .. trimmedLine .. '\r\n'
+            end
+        else
+            finInput = finInput .. line .. '\r\n'
+        end
+    end
+    Builder.ParseSquad['uk_Browse'](finInput)
 end
 Builder.ParseSquad.geordanr_BB = function(input)
     -- Cut all the footer stuff
