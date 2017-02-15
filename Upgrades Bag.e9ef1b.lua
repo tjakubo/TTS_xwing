@@ -321,10 +321,11 @@ Builder.Log = function(logMsg)
     Builder.log = Builder.log .. logMsg .. '\n'
 end
 -- Display the log on note if it exists, highlight it
-Builder.DisplayLog = function()
+Builder.DisplayLog = function(color)
+    if color == nil then color = {1, 0, 0} end
     if Builder.noteObj ~= nil then
         Builder.noteObj.setDescription(Builder.log)
-        Builder.noteObj.highlightOn({1, 0, 0}, 6)
+        Builder.noteObj.highlightOn(color, 6)
     end
 end
 
@@ -1027,7 +1028,13 @@ end
 Builder.OnFinish = function()
     if Builder.deathNote == nil then
         Builder.Log('[b]Success![/b]')
-        Builder.DisplayLog()
+        Builder.DisplayLog({0, 1, 0})
+        --[[
+        for k, aTable in pairs(Builder.accesories) do
+            aTable.dRef.setPositionSmooth(Builder.LocalPos({-1*BC.dialOffset_x, 0, 0}, aTable.dRef))
+            aTable.rcRef.setPositionSmooth(Builder.LocalPos({-1*BC.refcardOffset_x, 0, 0}, aTable.rcRef))
+        end
+        ]]--
     end
     self.clearButtons()
     for k,obj in pairs(getAllObjects()) do
