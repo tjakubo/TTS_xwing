@@ -2396,7 +2396,7 @@ end
 -- Restore active dial for this ship set to origin
 DialModule.RestoreActive = function(ship)
     local actSet = DialModule.GetSet(ship)
-    if actSet.ship == ship and actSet.activeDial ~= nil then
+    if actSet ~= nil and actSet.ship == ship and actSet.activeDial ~= nil then
         actSet.activeDial.dial.clearButtons()
         ClearButtonsPatch(actSet.activeDial.dial)
         actSet.activeDial.dial.setPosition(actSet.activeDial.originPos)
@@ -2408,7 +2408,7 @@ end
 -- Resore said dial to origin
 DialModule.RestoreDial = function(dial)
     for k, set in pairs(DialModule.ActiveSets) do
-        if set.dialSet[dial.getDescription()].dial == dial then
+        if set.dialSet[dial.getDescription()] ~= nil and set.dialSet[dial.getDescription()].dial == dial then
             if set.activeDial ~= nil and set.activeDial.dial == dial then
                 DialModule.RestoreActive(set.ship)
             else
