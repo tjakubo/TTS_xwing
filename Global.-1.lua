@@ -14,7 +14,7 @@
 
 -- Should the code execute print functions or skip them?
 -- This should be set to false on every release
-print_debug = false
+print_debug = true
 
 TTS_print = print
 function print(arg)
@@ -1027,7 +1027,16 @@ MoveModule.RedoMove = function(ship)
     return shipMoved
 end
 
-
+-- Get the last move code from ship history
+MoveModule.GetLastMove = function(ship)
+    local move = 'none'
+    local histData = MoveModule.GetHistory(ship)
+    if histData.actKey < 1 then
+        return 'none'
+    else
+        return histData.history[histData.actKey].move
+    end
+end
 
 -- This tidbit lets us wait till ships lands WITHOUT checking for this condition
 --  on everything all the time
@@ -2255,6 +2264,56 @@ DialModule.Buttons.rollLF = {label='Xf', click_function='DialClick_RollLF', heig
 DialModule.Buttons.rollLB = {label='Xb', click_function='DialClick_RollLB', height=500, width=365, position={-1.5, 0.5, 1}, font_size=250}
 DialModule.Buttons.ruler = {label='R', click_function='DialClick_Ruler', height=500, width=365, position={-1.5, 0.5, 2}, font_size=250}
 DialModule.Buttons.targetLock = {label='TL', click_function='DialClick_TargetLock', height=500, width=365, position={1.5, 0.5, 2}, font_size=250}
+DialModule.Buttons.slideWidget = {label='Slide', click_function='DialClick_SlideStart', height=250, width=1600, position={2.5, 0.5, 0}, font_size=250, rotation={0, 90, 0}}
+
+function DialClick_SlideStart(dial, playerColor)
+    if dial.getVar('Slide_ongoing') == true then
+        dial.setVar('Slide_ongoing', false)
+    else
+        dial.setVar('Slide_ongoing', true)
+        table.insert(DialModule.slideDataQueue, {dial=dial, ship=dial.getVar('assignedShip'), pColor=playerColor, len=1})
+        startLuaCoroutine(Global, 'SlideCoroutine')
+    end
+end
+
+DialModule.slideDataQueue = {}
+function SlideCoroutine()
+    print('c started')
+    if #DialModule.slideDataQueue < 1 then
+        print('c NO DATA')
+        return 1
+    end
+    local dial = DialModule.slideDataQueue[#DialModule.slideDataQueue].dial
+    local ship = DialModule.slideDataQueue[#DialModule.slideDataQueue].ship
+    local pColor = DialModule.slideDataQueue[#DialModule.slideDataQueue].pColor
+    local len = DialModule.slideDataQueue[#DialModule.slideDataQueue].len
+    local initShipPos = ship.getPosition()
+    local dScale = dial.getScale()[1]
+    table.remove(DialModule.slideDataQueue)
+    print('c loaded')
+    repeat
+        local sPos = dial.getPosition()
+        local pPos = Player[pColor].getPointerPosition()
+        local syRot = dial.getRotation()[2]
+        local dtp = Vect_Sum(pPos, Vect_Scale(sPos, -1))
+        local rdtp = Vect_RotateDeg(dtp, -1*syRot-180)
+        local shift = rdtp[3]
+        local sideslip = rdtp[1]
+        print('ss: ' .. (sideslip/dScale - 3.566))
+        print('sh: ' .. shift/dScale)
+        if math.abs(shift/dScale) > 2.5 or math.abs(sideslip/dScale - 3.566) > (1.5) then dial.setVar('Slide_ongoing', false) return 1 end
+        if shift > 1 then shift = 1 end
+        if shift < -1 then shift = -1 end
+        local newPos = Lua_ShallowCopy(initShipPos)
+        newPos[3] = newPos[3] + shift*len
+        print('c it ' .. shift*len .. ' {' .. newPos[1] .. ' : ' .. newPos[2] .. ' : ' .. newPos[3] .. '}' )
+        ship.setPosition({newPos[1], newPos[2], newPos[3]})
+        coroutine.yield(0)
+    until Player[pColor] == nil or ship == nil or dial.getVar('Slide_ongoing') ~= true or dial == nil
+    print('c finsh')
+    dial.setVar('Slide_ongoing', false)
+    return 1
+end
 
 -- Get short name of a ship for dial indication "button"
 DialModule.GetShortName = function(ship)
@@ -2293,6 +2352,7 @@ DialModule.SpawnMainActiveButtons = function (dialTable)
     dialTable.dial.createButton(DialModule.Buttons.deleteFaceup)
     dialTable.dial.createButton(DialModule.Buttons.move)
     dialTable.dial.createButton(DialModule.Buttons.toggleExpanded)
+    dialTable.dial.createButton(DialModule.Buttons.slideWidget)
 end
 
 -- Check what buttons state the dial is in
