@@ -569,7 +569,7 @@ Builder.ParseSquad.uk_Browse = function(input)
         word = Builder.TrimWord(word)
         -- Replace special characters
         word = word:gsub('[\u{201C}\u{201D}]', '"')
-        word = word:gsub('\u{201D}', '\'')
+        word = word:gsub('\u{2019}', '\'')
 
         local itemName = word:sub(1, -3)
         local delim = word:sub(-1, -1)
