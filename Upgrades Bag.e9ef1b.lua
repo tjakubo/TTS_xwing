@@ -568,16 +568,9 @@ Builder.ParseSquad.uk_Browse = function(input)
     for word in input:gmatch('[\u{201C}\u{201D}\u{2019}\'\"/%w%s%-%.]+[%s][+%(]') do
         word = Builder.TrimWord(word)
         -- Replace special characters
-        for i = 1, #word do
-            local c = word:sub(i,i)
-            -- Fancy double asterisk into asterisks
-            if c == '\u{201C}' or c == '\u{201D}'
-            then
-                word = replaceChar(i, word, '"')
-            end
-            -- Fancy single asterisk into asterisk
-            if c == '\u{2019}' then word = replaceChar(i, word, '\'') end
-        end
+        word = word:gsub('[\u{201C}\u{201D}]', '"')
+        word = word:gsub('\u{201D}', '\'')
+
         local itemName = word:sub(1, -3)
         local delim = word:sub(-1, -1)
         -- Add new pilot if it is the time
@@ -666,6 +659,8 @@ Builder.ParseSquad.geordanr_BB = function(input)
     -- Cut all the footer stuff
     local t_b,t_e = input:find('%[b%]%[i%]Total:')
     local cutInput = input:sub(1, t_b-1)
+    -- Strip parentheses with text inside
+    cutInput = cutInput:gsub('[%s]%([^%d][%w%s\']+%)', '')
     -- Split input into lines marked by BB Code bold/italic symbols
     for word in cutInput:gmatch('%[[bi]%][\'\"/%w%s%-%.]+[%s][%(][%d]+[%)]%[/[bi]%]') do
         word = Builder.TrimWord(word)
