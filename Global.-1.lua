@@ -2264,7 +2264,7 @@ DialModule.Buttons.rollLF = {label='Xf', click_function='DialClick_RollLF', heig
 DialModule.Buttons.rollLB = {label='Xb', click_function='DialClick_RollLB', height=500, width=365, position={-1.5, 0.5, 1}, font_size=250}
 DialModule.Buttons.ruler = {label='R', click_function='DialClick_Ruler', height=500, width=365, position={-1.5, 0.5, 2}, font_size=250}
 DialModule.Buttons.targetLock = {label='TL', click_function='DialClick_TargetLock', height=500, width=365, position={1.5, 0.5, 2}, font_size=250}
-DialModule.Buttons.slideWidget = {label='Slide', click_function='DialClick_SlideStart', height=250, width=1600, position={2.5, 0.5, 0}, font_size=250, rotation={0, 90, 0}}
+DialModule.Buttons.slide = {label='Slide', click_function='DialClick_SlideStart', height=250, width=1600, position={2.5, 0.5, 0}, font_size=250, rotation={0, 90, 0}}
 
 function DialClick_SlideStart(dial, playerColor)
     if dial.getVar('Slide_ongoing') == true then
@@ -2283,46 +2283,63 @@ function DialClick_SlideStart(dial, playerColor)
     end
 end
 
+-- DELETE THIS BEFORE RELEASE
 function round(num, numDecimalPlaces)
   local mult = 10^(numDecimalPlaces or 0)
   return math.floor(num * mult + 0.5) / mult
 end
 
+-- Get slide range of a ship based on his last move
+-- Return: {fLen=howMuchForwardCanSlide, bLen=howMuchBackwardCanSlide}
+-- Return nil if last move doesn't allow slides
 DialModule.GetSlideRange = function(ship, moveCode)
     local baseSize = mm_smallBase
     if DB_isLargeBase(ship) then
         baseSize = mm_largeBase
     end
     baseSize = Convert_mm_igu(baseSize)
-    if moveCode == 'xrf' then
-        return {fLen = 0, bLen = baseSize}
-    elseif moveCode == 'xr' then
+    local movePrefix = moveCode:sub(1,2)
+    local lastChar = moveCode:sub(-1,-1)
+    -- Barrel rolls
+    if string.find('xr xe xl cr ce cl', movePrefix) ~= nil then
+        if lastChar == 'f' then
+            return {fLen = 0, bLen = baseSize}
+        elseif lastChar == 'b' then
+            return {fLen = baseSize, bLen = 0}
+        else
+            return {fLen = baseSize/2, bLen = baseSize/2}
+        end
+    end
+    -- Talon rolls
+    if  lastChar == 't' and string.find('tr te tl', movePrefix) ~= nil then
         return {fLen = baseSize/2, bLen = baseSize/2}
-    elseif moveCode == 'xrb' then
-        return {fLen = baseSize, bLen = 0}
     end
     return nil
 end
 
 DialModule.slideDataQueue = {}
 function SlideCoroutine()
-    print('c started')
     if #DialModule.slideDataQueue < 1 then
-        print('c NO DATA')
         return 1
     end
+    -- Save data from last element of queue, pop it
     local dial = DialModule.slideDataQueue[#DialModule.slideDataQueue].dial
     local ship = DialModule.slideDataQueue[#DialModule.slideDataQueue].ship
     local pColor = DialModule.slideDataQueue[#DialModule.slideDataQueue].pColor
     local range = DialModule.slideDataQueue[#DialModule.slideDataQueue].range
     table.remove(DialModule.slideDataQueue)
+
     local initShipPos = ship.getPosition()
     local shipRot = ship.getRotation()[2]+180
-    --local zeroShipPos = Vect_Sum(initShipPos, {0, 0, -1*range.bLen})
-    --local tranVect = {0, 0, range.fLen + range.bLen}
+    -- Position of the ship on most-backward slide
     local zeroShipPos = Vect_Sum(initShipPos, Vect_RotateDeg({0, 0, -1*range.bLen}, shipRot))
+    -- Slide vector, adding it to zeroShipPos gives us position on most-forward slide
     local tranVect = Vect_RotateDeg({0, 0, range.fLen + range.bLen}, shipRot)
-    --local dScale = dial.getScale()[1]
+
+    -- Get a "measurement" baed on sliding player cursor position
+    -- Dial scale invariant
+    -- Return: {shift=forwardCursorSway, sideslip=sidewaysCursorSway}
+    -- Shift and sideslip are measured from the button center
     local function getPointerOffset(dial, pColor)
         local sPos = dial.getPosition()
         local pPos = Player[pColor].getPointerPosition()
@@ -2331,14 +2348,19 @@ function SlideCoroutine()
         local rdtp = Vect_RotateDeg(dtp, -1*syRot-180)
         local dScale = dial.getScale()[1]
         return {shift=rdtp[3]/dScale, sideslip=(rdtp[1]/dScale - 3.566)}
-        -- Shift: (-1.5, 1.5)
     end
+
+    -- Set up initial shift offset so user doesn't get a "snap" on imperfect position button click
+    -- Also add it if slide is not even forward/backward
     local initShift=getPointerOffset(dial,pColor).shift
     local len = range.fLen + range.bLen
     initShift = initShift + (range.fLen/(range.fLen + range.bLen))*3 - 1.5
-    print('c loaded')
+
+    -- SLIDE LOOP
     repeat
         local meas = getPointerOffset(dial, pColor)
+        -- Trim the shift offset whenever possible so it eventually goes down to zero
+        --  as if user started at center button click
         local adjMeas = meas.shift - initShift
         if initShift ~= 0 then
             if initShift > 0 and adjMeas < -1.5 then
@@ -2352,21 +2374,28 @@ function SlideCoroutine()
             end
         end
         adjMeas = meas.shift - initShift
-        print('RSH: ' .. round(adjMeas, 2) .. ', OFF: ' .. round(initShift, 2) .. ', SS: ' .. round(meas.sideslip, 2))
+        --print('RSH: ' .. round(adjMeas, 2) .. ', OFF: ' .. round(initShift, 2) .. ', SS: ' .. round(meas.sideslip, 2))
+
+        -- End if shift or sideslip goes out of bound
         if math.abs(adjMeas) > 3 or math.abs(meas.sideslip) > 2 then
             dial.setVar('Slide_ongoing', false)
             return 1
         end
+
+        -- Normalize the shift to [0-3] range
         if adjMeas > 1.5 then
             adjMeas = 1.5
         elseif adjMeas < -1.5 then
             adjMeas = -1.5
         end
         adjMeas = adjMeas + 1.5
+
+        -- Set ship position appropriately
         ship.setPosition(Vect_Sum(zeroShipPos, Vect_Scale(tranVect, adjMeas/3)))
         coroutine.yield(0)
+
+        -- This ends if player switches color, ship or dial vanishes or button is clicked setting slide var to false
     until Player[pColor] == nil or ship == nil or dial.getVar('Slide_ongoing') ~= true or dial == nil
-    print('c finsh')
     dial.setVar('Slide_ongoing', false)
     return 1
 end
@@ -2408,7 +2437,6 @@ DialModule.SpawnMainActiveButtons = function (dialTable)
     dialTable.dial.createButton(DialModule.Buttons.deleteFaceup)
     dialTable.dial.createButton(DialModule.Buttons.move)
     dialTable.dial.createButton(DialModule.Buttons.toggleExpanded)
-    dialTable.dial.createButton(DialModule.Buttons.slideWidget)
 end
 
 -- Check what buttons state the dial is in
@@ -2430,7 +2458,7 @@ end
 -- Adjust button set between states like explained over GetButtonsState function
 DialModule.SetButtonsState = function(dial, newState)
     local standardActionsMatch = 'F S E Q'           -- labels for buttons of STANDARD set
-    local extActionsMatch = 'Br B Bl Xf X Xb TL R'  -- labels for buttons of EXTENDED set
+    local extActionsMatch = 'Br B Bl Xf X Xb TL R Slide'  -- labels for buttons of EXTENDED set
 
     local currentState = DialModule.GetButtonsState(dial)
     if newState > currentState then
@@ -2452,6 +2480,7 @@ DialModule.SetButtonsState = function(dial, newState)
             dial.createButton(DialModule.Buttons.rollLB)
             dial.createButton(DialModule.Buttons.ruler)
             dial.createButton(DialModule.Buttons.targetLock)
+            dial.createButton(DialModule.Buttons.slide)
         end
         -- if REMOVING buttons
     elseif newState < currentState then
