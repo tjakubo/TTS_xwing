@@ -2270,15 +2270,38 @@ function DialClick_SlideStart(dial, playerColor)
     if dial.getVar('Slide_ongoing') == true then
         dial.setVar('Slide_ongoing', false)
     else
-        dial.setVar('Slide_ongoing', true)
-        table.insert(DialModule.slideDataQueue, {dial=dial, ship=dial.getVar('assignedShip'), pColor=playerColor, len=1})
-        startLuaCoroutine(Global, 'SlideCoroutine')
+        local ship = dial.getVar('assignedShip')
+        local lastMove = MoveModule.GetLastMove(ship)
+        local range = DialModule.GetSlideRange(ship, lastMove)
+        if range ~= nil then
+            dial.setVar('Slide_ongoing', true)
+            table.insert(DialModule.slideDataQueue, {dial=dial, ship=ship, pColor=playerColor, range=range})
+            startLuaCoroutine(Global, 'SlideCoroutine')
+        else
+            printToColor(ship.getName() .. '\'s last move (' .. lastMove .. ') does not allow sliding!', playerColor, {1, 0.5, 0.1})
+        end
     end
 end
 
 function round(num, numDecimalPlaces)
   local mult = 10^(numDecimalPlaces or 0)
   return math.floor(num * mult + 0.5) / mult
+end
+
+DialModule.GetSlideRange = function(ship, moveCode)
+    local baseSize = mm_smallBase
+    if DB_isLargeBase(ship) then
+        baseSize = mm_largeBase
+    end
+    baseSize = Convert_mm_igu(baseSize)
+    if moveCode == 'xrf' then
+        return {fLen = 0, bLen = baseSize}
+    elseif moveCode == 'xr' then
+        return {fLen = baseSize/2, bLen = baseSize/2}
+    elseif moveCode == 'xrb' then
+        return {fLen = baseSize, bLen = 0}
+    end
+    return nil
 end
 
 DialModule.slideDataQueue = {}
@@ -2291,8 +2314,14 @@ function SlideCoroutine()
     local dial = DialModule.slideDataQueue[#DialModule.slideDataQueue].dial
     local ship = DialModule.slideDataQueue[#DialModule.slideDataQueue].ship
     local pColor = DialModule.slideDataQueue[#DialModule.slideDataQueue].pColor
-    local len = DialModule.slideDataQueue[#DialModule.slideDataQueue].len
+    local range = DialModule.slideDataQueue[#DialModule.slideDataQueue].range
+    table.remove(DialModule.slideDataQueue)
     local initShipPos = ship.getPosition()
+    local shipRot = ship.getRotation()[2]+180
+    --local zeroShipPos = Vect_Sum(initShipPos, {0, 0, -1*range.bLen})
+    --local tranVect = {0, 0, range.fLen + range.bLen}
+    local zeroShipPos = Vect_Sum(initShipPos, Vect_RotateDeg({0, 0, -1*range.bLen}, shipRot))
+    local tranVect = Vect_RotateDeg({0, 0, range.fLen + range.bLen}, shipRot)
     --local dScale = dial.getScale()[1]
     local function getPointerOffset(dial, pColor)
         local sPos = dial.getPosition()
@@ -2305,7 +2334,8 @@ function SlideCoroutine()
         -- Shift: (-1.5, 1.5)
     end
     local initShift=getPointerOffset(dial,pColor).shift
-    table.remove(DialModule.slideDataQueue)
+    local len = range.fLen + range.bLen
+    initShift = initShift + (range.fLen/(range.fLen + range.bLen))*3 - 1.5
     print('c loaded')
     repeat
         local meas = getPointerOffset(dial, pColor)
@@ -2327,6 +2357,13 @@ function SlideCoroutine()
             dial.setVar('Slide_ongoing', false)
             return 1
         end
+        if adjMeas > 1.5 then
+            adjMeas = 1.5
+        elseif adjMeas < -1.5 then
+            adjMeas = -1.5
+        end
+        adjMeas = adjMeas + 1.5
+        ship.setPosition(Vect_Sum(zeroShipPos, Vect_Scale(tranVect, adjMeas/3)))
         coroutine.yield(0)
     until Player[pColor] == nil or ship == nil or dial.getVar('Slide_ongoing') ~= true or dial == nil
     print('c finsh')
