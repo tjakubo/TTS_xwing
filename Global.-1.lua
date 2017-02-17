@@ -2276,6 +2276,11 @@ function DialClick_SlideStart(dial, playerColor)
     end
 end
 
+function round(num, numDecimalPlaces)
+  local mult = 10^(numDecimalPlaces or 0)
+  return math.floor(num * mult + 0.5) / mult
+end
+
 DialModule.slideDataQueue = {}
 function SlideCoroutine()
     print('c started')
@@ -2288,26 +2293,40 @@ function SlideCoroutine()
     local pColor = DialModule.slideDataQueue[#DialModule.slideDataQueue].pColor
     local len = DialModule.slideDataQueue[#DialModule.slideDataQueue].len
     local initShipPos = ship.getPosition()
-    local dScale = dial.getScale()[1]
-    table.remove(DialModule.slideDataQueue)
-    print('c loaded')
-    repeat
+    --local dScale = dial.getScale()[1]
+    local function getPointerOffset(dial, pColor)
         local sPos = dial.getPosition()
         local pPos = Player[pColor].getPointerPosition()
         local syRot = dial.getRotation()[2]
         local dtp = Vect_Sum(pPos, Vect_Scale(sPos, -1))
         local rdtp = Vect_RotateDeg(dtp, -1*syRot-180)
-        local shift = rdtp[3]
-        local sideslip = rdtp[1]
-        print('ss: ' .. (sideslip/dScale - 3.566))
-        print('sh: ' .. shift/dScale)
-        if math.abs(shift/dScale) > 2.5 or math.abs(sideslip/dScale - 3.566) > (1.5) then dial.setVar('Slide_ongoing', false) return 1 end
-        if shift > 1 then shift = 1 end
-        if shift < -1 then shift = -1 end
-        local newPos = Lua_ShallowCopy(initShipPos)
-        newPos[3] = newPos[3] + shift*len
-        print('c it ' .. shift*len .. ' {' .. newPos[1] .. ' : ' .. newPos[2] .. ' : ' .. newPos[3] .. '}' )
-        ship.setPosition({newPos[1], newPos[2], newPos[3]})
+        local dScale = dial.getScale()[1]
+        return {shift=rdtp[3]/dScale, sideslip=(rdtp[1]/dScale - 3.566)}
+        -- Shift: (-1.5, 1.5)
+    end
+    local initShift=getPointerOffset(dial,pColor).shift
+    table.remove(DialModule.slideDataQueue)
+    print('c loaded')
+    repeat
+        local meas = getPointerOffset(dial, pColor)
+        local adjMeas = meas.shift - initShift
+        if initShift ~= 0 then
+            if initShift > 0 and adjMeas < -1.5 then
+                local takeoff = -1.5 - adjMeas
+                initShift = initShift - takeoff
+                if initShift < 0 then initShift = 0 end
+            elseif initShift < 0 and adjMeas > 1.5 then
+                local takeoff = adjMeas - 1.5
+                initShift = initShift + takeoff
+                if initShift > 0 then initShift = 0 end
+            end
+        end
+        adjMeas = meas.shift - initShift
+        print('RSH: ' .. round(adjMeas, 2) .. ', OFF: ' .. round(initShift, 2) .. ', SS: ' .. round(meas.sideslip, 2))
+        if math.abs(adjMeas) > 3 or math.abs(meas.sideslip) > 2 then
+            dial.setVar('Slide_ongoing', false)
+            return 1
+        end
         coroutine.yield(0)
     until Player[pColor] == nil or ship == nil or dial.getVar('Slide_ongoing') ~= true or dial == nil
     print('c finsh')
