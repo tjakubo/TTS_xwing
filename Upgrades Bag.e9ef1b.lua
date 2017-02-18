@@ -1286,4 +1286,4 @@ shipStatsDatabase['TIE/fo Fighter'] = { shieldCount=1 }
 shipStatsDatabase['TIE Adv. Prototype'] = { shieldCount=2 }
 shipStatsDatabase['TIE Striker'] = { shieldCount=0 }
 shipStatsDatabase['TIE/sf Fighter'] = { shieldCount=3 }
-shipStatsDatabase['Upsilon Class Shuttle'] = { shieldCount=5 }
+shipStatsDatabase['Upsilon Class Shuttle'] = { shieldCount=6 }
