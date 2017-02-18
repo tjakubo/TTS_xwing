@@ -274,6 +274,49 @@ XW_cmd.CheckCommand = function(cmd)
     return type
 end
 
+XW_cmd.AddCommand('diag', 'special')
+-- Check for typical issues with a ship
+-- 1. Check and unlock XW_cmd lock if it's on
+-- 2. Clear buttons if there are any
+-- 3. Search for nil refs on dials in his set
+-- 4. Check if ship type is recognized OK
+XW_cmd.Diagnose = function(ship)
+    local issueFound = false
+    if XW_ObjMatchType(ship, 'ship') ~= true then return end
+    if XW_cmd.isReady(ship) ~= true then
+        XW_cmd.SetReady(ship)
+        printToAll(ship.getName() .. '\'s deadlock resolved!', {0.1, 0.1, 1})
+        issueFound = true
+    end
+    if ship.getButtons() ~= nil then
+        ship.clearButtons()
+        ClearButtonsPatch(ship)
+        printToAll(ship.getName() .. '\'s lingering buttons deleted!', {0.1, 0.1, 1})
+        issueFound = true
+    end
+    local set = DialModule.GetSet(ship)
+    local dialError = false
+    DialModule.RestoreActive(ship)
+    if set ~= nil and set.dialSet ~= nil then
+        for k, dInfo in pairs(set.dialSet) do
+            if dInfo.dial == nil then dialError = true end
+        end
+    end
+    if dialError == true then
+        printToAll(ship.getName() .. '\'s dial data corupted - delete model & dials and re-do assignment', {1, 0.1, 0.1})
+        issueFound = true
+    end
+    local shipType = DB_getShipType(ship)
+    if shipType == 'Unknown' then
+        printToAll(ship.getName() .. '\'s ship type not reconized. If this model was taken from Squad Builder or Collection, notify author of the issue.', {1, 0.1, 0.1})
+        issueFound = true
+    end
+
+    if issueFound ~= true then
+        printToAll(ship.getName() .. ' looks OK', {0.1, 1, 0.1})
+    end
+end
+
 -- Process provided command on a provided object
 -- Return true if command has been executed/started
 -- Return false if object cannot process commands right now or command was invalid
@@ -287,6 +330,10 @@ XW_cmd.Process = function(obj, cmd)
     -- Return if invalid, lock object if valid
     if type == nil then
         return false
+    elseif type == 'special' then
+        if cmd == 'diag' then
+            XW_cmd.Diagnose(obj)
+        end
     else
         XW_cmd.SetBusy(obj)
     end
@@ -2233,6 +2280,26 @@ function DialClick_ToggleExpanded(dial)
         else DialModule.SetButtonsState(dial, 1) end
     end
 end
+function DialClick_SlideStart(dial, playerColor)
+    if dial.getVar('Slide_ongoing') == true then
+        dial.setVar('Slide_ongoing', false)
+    else
+        local ship = dial.getVar('assignedShip')
+        if XW_cmd.isReady(ship) ~= true then return end
+        local lastMove = MoveModule.GetLastMove(ship)
+        local range = DialModule.GetSlideRange(ship, lastMove)
+        if range ~= nil then
+            dial.setVar('Slide_ongoing', true)
+            table.insert(DialModule.slideDataQueue, {dial=dial, ship=ship, pColor=playerColor, range=range})
+            MoveModule.QueueShipTokensMove(ship)
+            XW_cmd.SetBusy(ship)
+            MoveModule.Announce(ship, {type='move', note='manually adjusted base slide on his last move', code=lastMove}, 'all')
+            startLuaCoroutine(Global, 'SlideCoroutine')
+        else
+            printToColor(ship.getName() .. '\'s last move (' .. lastMove .. ') does not allow sliding!', playerColor, {1, 0.5, 0.1})
+        end
+    end
+end
 
 -- Dial buttons definitions (centralized so it;s easier to adjust)
 DialModule.Buttons = {}
@@ -2265,27 +2332,6 @@ DialModule.Buttons.rollLB = {label='Xb', click_function='DialClick_RollLB', heig
 DialModule.Buttons.ruler = {label='R', click_function='DialClick_Ruler', height=500, width=365, position={-1.5, 0.5, 2}, font_size=250}
 DialModule.Buttons.targetLock = {label='TL', click_function='DialClick_TargetLock', height=500, width=365, position={1.5, 0.5, 2}, font_size=250}
 DialModule.Buttons.slide = {label='Slide', click_function='DialClick_SlideStart', height=250, width=1600, position={2.5, 0.5, 0}, font_size=250, rotation={0, 90, 0}}
-
-function DialClick_SlideStart(dial, playerColor)
-    if dial.getVar('Slide_ongoing') == true then
-        dial.setVar('Slide_ongoing', false)
-    else
-        local ship = dial.getVar('assignedShip')
-        if XW_cmd.isReady(ship) ~= true then return end
-        local lastMove = MoveModule.GetLastMove(ship)
-        local range = DialModule.GetSlideRange(ship, lastMove)
-        if range ~= nil then
-            dial.setVar('Slide_ongoing', true)
-            table.insert(DialModule.slideDataQueue, {dial=dial, ship=ship, pColor=playerColor, range=range})
-            MoveModule.QueueShipTokensMove(ship)
-            XW_cmd.SetBusy(ship)
-            MoveModule.Announce(ship, {type='move', note='manually adjusted base slide on his last move', code=lastMove}, 'all')
-            startLuaCoroutine(Global, 'SlideCoroutine')
-        else
-            printToColor(ship.getName() .. '\'s last move (' .. lastMove .. ') does not allow sliding!', playerColor, {1, 0.5, 0.1})
-        end
-    end
-end
 
 -- DELETE THIS BEFORE RELEASE
 function round(num, numDecimalPlaces)
@@ -2321,6 +2367,8 @@ DialModule.GetSlideRange = function(ship, moveCode)
     return nil
 end
 
+-- Table with data slide coroutines pop and process
+-- Entry: {dial=dialRef, ship=shipRef, pColor=playerColor, range={fLen=forwardLength, bLen=backwardLength}}
 DialModule.slideDataQueue = {}
 function SlideCoroutine()
     if #DialModule.slideDataQueue < 1 then
