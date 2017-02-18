@@ -2271,11 +2271,15 @@ function DialClick_SlideStart(dial, playerColor)
         dial.setVar('Slide_ongoing', false)
     else
         local ship = dial.getVar('assignedShip')
+        if XW_cmd.isReady(ship) ~= true then return end
         local lastMove = MoveModule.GetLastMove(ship)
         local range = DialModule.GetSlideRange(ship, lastMove)
         if range ~= nil then
             dial.setVar('Slide_ongoing', true)
             table.insert(DialModule.slideDataQueue, {dial=dial, ship=ship, pColor=playerColor, range=range})
+            MoveModule.QueueShipTokensMove(ship)
+            XW_cmd.SetBusy(ship)
+            MoveModule.Announce(ship, {type='move', note='manually adjusted base slide on his last move', code=lastMove}, 'all')
             startLuaCoroutine(Global, 'SlideCoroutine')
         else
             printToColor(ship.getName() .. '\'s last move (' .. lastMove .. ') does not allow sliding!', playerColor, {1, 0.5, 0.1})
@@ -2328,7 +2332,7 @@ function SlideCoroutine()
     local pColor = DialModule.slideDataQueue[#DialModule.slideDataQueue].pColor
     local range = DialModule.slideDataQueue[#DialModule.slideDataQueue].range
     table.remove(DialModule.slideDataQueue)
-
+    broadcastToColor(ship.getName() .. '\'s slide adjust started!', pColor, {0.5, 1, 0.5})
     local initShipPos = ship.getPosition()
     local shipRot = ship.getRotation()[2]+180
     -- Position of the ship on most-backward slide
@@ -2379,7 +2383,6 @@ function SlideCoroutine()
         -- End if shift or sideslip goes out of bound
         if math.abs(adjMeas) > 3 or math.abs(meas.sideslip) > 2 then
             dial.setVar('Slide_ongoing', false)
-            return 1
         end
 
         -- Normalize the shift to [0-3] range
@@ -2396,7 +2399,10 @@ function SlideCoroutine()
 
         -- This ends if player switches color, ship or dial vanishes or button is clicked setting slide var to false
     until Player[pColor] == nil or ship == nil or dial.getVar('Slide_ongoing') ~= true or dial == nil
+    if Player[pColor] ~= nil then broadcastToColor(ship.getName() .. '\'s slide adjust ended!', pColor, {0.5, 1, 0.5}) end
     dial.setVar('Slide_ongoing', false)
+    table.insert(MoveModule.restWaitQueue, {ship=ship, lastMove='manual slide'})
+    startLuaCoroutine(Global, 'restWaitCoroutine')
     return 1
 end
 
@@ -2458,7 +2464,7 @@ end
 -- Adjust button set between states like explained over GetButtonsState function
 DialModule.SetButtonsState = function(dial, newState)
     local standardActionsMatch = 'F S E Q'           -- labels for buttons of STANDARD set
-    local extActionsMatch = 'Br B Bl Xf X Xb TL R Slide'  -- labels for buttons of EXTENDED set
+    local extActionsMatch = 'Br B Bl Xf X Xb TL R'  -- labels for buttons of EXTENDED set
 
     local currentState = DialModule.GetButtonsState(dial)
     if newState > currentState then
@@ -2487,7 +2493,7 @@ DialModule.SetButtonsState = function(dial, newState)
         local buttons = dial.getButtons()
         if currentState == 2 then -- remove EXTENDED set ones
             for k,but in pairs(buttons) do
-                if extActionsMatch:find(but.label) ~= nil then dial.removeButton(but.index) end
+                if extActionsMatch:find(but.label) ~= nil or but.label == 'Slide' then dial.removeButton(but.index) end
             end
         end
         if newState == 0 then -- remove STANDARD set ones
