@@ -737,8 +737,13 @@ MoveData.DecodePartial = function(move_code, ship, part)
         -- - when ship moves off the template and slides it between guides again
     elseif info.type == 'bank' or info.type == 'turn' then
 
-        -- full move data
-        local fullMove = MoveData.DecodeFull(move_code, ship)
+        -- Full move data
+        -- Skip the final position modifiers like talon/segnor
+        local adj_move_code = move_code
+        if info.extra == 'segnor' or info.extra == 'talon' then
+            adj_move_code = move_code:sub(1,-2)
+        end
+        local fullMove = MoveData.DecodeFull(adj_move_code, ship)
 
         -- get template offset data
         local initOffset = MoveData.GetInitOffset(info)
