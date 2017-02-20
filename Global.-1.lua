@@ -2388,7 +2388,37 @@ function SlideCoroutine()
     -- Slide vector, adding it to zeroShipPos gives us position on most-forward slide
     local tranVect = Vect_RotateDeg({0, 0, range.fLen + range.bLen}, shipRot)
 
-    -- Get a "measurement" baed on sliding player cursor position
+    -- Ships that can collide with sliding one
+    local collShips = {}
+    local shipCollRange = nil
+    -- Since we'll be doing collision checks every frame, aggresively filter out duplicate ships
+    local uniqueFilter = {}
+    uniqueFilter[ship.getGUID()] = true
+    if DB_isLargeBase(ship) then
+        shipCollRange = mm_largeBase/2
+    else
+        shipCollRange = mm_smallBase/2
+    end
+    -- Range = (large ship radius + current ship radius)*1.05 -- so it covers every ship
+    --   a collision is possible with
+    -- May be not enough for super long slides (for now its OK)
+    local totalCollRange = ((Convert_mm_igu((mm_largeBase/2)*math.sqrt(2)))+Convert_mm_igu(shipCollRange*math.sqrt(2)))*1.05
+    -- Add ships near zero position
+    for k,cShip in pairs(XW_ObjWithinDist(zeroShipPos, totalCollRange, 'ship')) do
+        if cShip ~= ship and uniqueFilter[cShip.getGUID()] == nil then
+            table.insert(collShips, cShip)
+            uniqueFilter[cShip.getGUID()] = true
+        end
+    end
+    -- Add ships near max position
+    for k,cShip in pairs(XW_ObjWithinDist(Vect_Sum(zeroShipPos, tranVect), totalCollRange, 'ship')) do
+        if uniqueFilter[cShip.getGUID()] == nil then
+            table.insert(collShips, cShip)
+            uniqueFilter[cShip.getGUID()] = true
+        end
+    end
+
+    -- Get a "measurement" based on sliding player cursor position
     -- Dial scale invariant
     -- Return: {shift=forwardCursorSway, sideslip=sidewaysCursorSway}
     -- Shift and sideslip are measured from the button center
@@ -2407,6 +2437,12 @@ function SlideCoroutine()
     local initShift=getPointerOffset(dial,pColor).shift
     local len = range.fLen + range.bLen
     initShift = initShift + (range.fLen/(range.fLen + range.bLen))*3 - 1.5
+    local lastShift = initShift
+
+    -- To skip some checks if we already slid into collision, skip subsequent check
+    --  if minimal slide forward/backward would collide
+    local blockFwd = false
+    local blockBwd = false
 
     -- SLIDE LOOP
     repeat
@@ -2441,8 +2477,45 @@ function SlideCoroutine()
         end
         adjMeas = adjMeas + 1.5
 
-        -- Set ship position appropriately
-        ship.setPosition(Vect_Sum(zeroShipPos, Vect_Scale(tranVect, adjMeas/3)))
+        -- Check for collisions on requested slide position
+        local targetPos = Vect_Sum(zeroShipPos, Vect_Scale(tranVect, adjMeas/3))
+        local collInfo = MoveModule.CheckCollisions(ship, {pos=targetPos, rot=ship.getRotation()}, collShips)
+        if collInfo.coll == nil then
+        -- If position is clear, set it
+            ship.setPosition(targetPos)
+            lastShift = adjMeas
+            -- Set the blocking variables to false
+            blockFwd = false
+            blockBwd = false
+        else
+        -- If position is obstructed, try to slide the ship towards cursor if possible
+            -- Try last clear position + 1/100 towards cursor
+            local dirFwd = nil
+            if lastShift < adjMeas then
+                adjMeas = lastShift + 0.015
+                dirFwd = true
+            else
+                adjMeas = lastShift - 0.015
+                dirFwd = false
+            end
+            if (dirFwd and not blockFwd) or (not dirFwd and not blockBwd) then
+                local tryPos = Vect_Sum(zeroShipPos, Vect_Scale(tranVect, adjMeas/3))
+                -- Check for collisions there
+                collInfo = MoveModule.CheckCollisions(ship, {pos=tryPos, rot=ship.getRotation()}, collShips)
+                -- If it is clear, set it
+                if collInfo.coll == nil then
+                    ship.setPosition(Vect_Sum(zeroShipPos, Vect_Scale(tranVect, adjMeas/3)))
+                    lastShift = adjMeas
+                else
+                    -- Indicate that this sirection is blocked
+                    if adjMeas > lastShift then
+                        blockFwd = true
+                    else
+                        blockBwd = true
+                    end
+                end
+            end
+        end
         coroutine.yield(0)
 
         -- This ends if player switches color, ship or dial vanishes or button is clicked setting slide var to false
