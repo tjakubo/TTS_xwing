@@ -280,7 +280,7 @@ function SBM_clickCollection()
     PC_bag.lock()
     PC_bag.tooltip = false
     items = PC_bag.getObjects()
-    local PC_sPos = {SM_sPos[1]+4, SM_sPos[2]+0.5, SM_sPos[3]-4}
+    local PC_sPos = {SM_sPos[1]+4, SM_sPos[2]+0.5, SM_sPos[3]-3}
     for k,info in pairs(items) do
         local newObj = PC_bag.takeObject({guid=info.guid, rotation={180, -90, 0}})
         newObj.setPosition(PC_sPos)
@@ -288,7 +288,10 @@ function SBM_clickCollection()
         TempModule.AddChildren('Pilot Cards Collection', newObj)
     end
     --TM.DeleteTempChildren('Pilot Cards Collection')
-    TM.Instantiate('[b]WARNING[/b]', Vect_Sum(PC_sPos, {0, 0, -4}))
+    local warnNote = TM.Instantiate('[b]WARNING[/b]', Vect_Sum(PC_sPos, {0, 0, -3}), {1.25, 1.25, 1.25}, {0, 180, 0})
+    warnNote.setLuaScript('')
+    warnNote.interactable = true
+    warnNote.unlock()
 end
 
 -- Tray positioning
