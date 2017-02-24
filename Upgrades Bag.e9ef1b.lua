@@ -902,7 +902,19 @@ Builder.SpawnMisc = function()
     Builder.SpawnShields()
     Builder.SpawnExtraMunitions()
     Builder.SpawnConditionCards()
+    Builder.SpawnArcIndicators()
     Builder.AdvanceState(Builder.states.MiscSpawned)
+end
+
+-- Spawn arc indicator for Lancer-Class Pursuit Crafts
+Builder.SpawnArcIndicators = function()
+    if Builder.ships['Lancer-Class Pursuit Craft'] ~= nil then
+        for k, pIndex in pairs(Builder.ships['Lancer-Class Pursuit Craft']) do
+            local ship = Builder.pilots[pIndex].sRef
+            local newIndicator = Spawner.Spawn('Arc Indicator', Builder.LocalPos({0, 0, 0}, ship), {0, 90, 0})
+            table.insert(Builder.misc.other, {ref=newIndicator, com='Arc Indicator'})
+        end
+    end
 end
 
 -- Spawn condition cards next to pilot cards
