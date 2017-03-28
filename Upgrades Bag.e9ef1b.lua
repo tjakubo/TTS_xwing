@@ -331,6 +331,7 @@ end
 
 -- Add a blank (name only) entry to the main pilots table
 Builder.AddPilot = function(pilotName)
+    pilotName = Builder.ErrataPass(pilotName)
     if Builder.pilotCount[pilotName] == nil then
         Builder.pilotCount[pilotName] = {}
     end
@@ -352,6 +353,7 @@ end
 -- Add an empty upgrade entry (name only) to the pilot at given index
 -- If index not provided, adds to the last pilot
 Builder.AddUpgrade = function(upgName, pilotIndex)
+    upgName = Builder.ErrataPass(upgName)
     if pilotIndex == nil or pilotIndex > #Builder.pilots then
         pilotIndex = #Builder.pilots
     end
@@ -765,6 +767,24 @@ Builder.MakeNamesUnique = function()
             end
         end
     end
+end
+
+-- Table with builder names corrections
+-- VERSION PRINTED ON CARD IS ALWAYS THE CORRECT ONE
+Builder.Errata = {}
+Builder.Errata['IG88-A'] = 'IG-88A'
+Builder.Errata['IG88-B'] = 'IG-88B'
+Builder.Errata['IG88-C'] = 'IG-88C'
+Builder.Errata['IG88-D'] = 'IG-88D'
+
+-- Check if a name should be corrected
+-- Return correct version (same if no correction entry)
+Builder.ErrataPass = function(name)
+  local corr = Builder.Errata[name]
+  if corr ~= nil and type(corr) == 'string' then
+    return corr
+  end
+  return name
 end
 
 -- Fil ship types table
