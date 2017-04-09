@@ -1,4 +1,4 @@
-w-- ~~~~~~
+-- ~~~~~~
 -- Script by dzikakulka
 -- Issues, history at: http://github.com/tjakubo2/TTS_xwing
 --
@@ -2266,7 +2266,7 @@ DialModule.GetShortName = function(ship)
     local shipNameWords = {}
     local numWords = 0
     local ambigNames = 'The Captain Colonel Cartel'
-    for word in ship.getName():gmatch('%w+') do table.insert(shipNameWords, word) numWords = numWords+1 end
+    for word in ship.getName():gmatch('[%w-]+') do table.insert(shipNameWords, word) numWords = numWords+1 end
     for k,w in pairs(shipNameWords) do if w == 'LGS' then table.remove(shipNameWords, k) numWords = numWords-1 end end
     local currWord = 1
     local shipShortName = shipNameWords[1]
