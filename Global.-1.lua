@@ -243,12 +243,12 @@ function XW_ClosestWithinDist(centralPosObj, maxDist, type)
 end
 
 -- Get objects within distance of some other object + optional X-Wing type filter
-function XW_ObjWithinDist(centralPosObj, maxDist, type)
+function XW_ObjWithinDist(centralPosObj, maxDist, objType, exclList)
     local ships = {}
     exclObj = nil
     centralPos = nil
-    if  type(centralPosObj) ~= 'userdata' or type(centralPosObj) ~= 'table' or
-    type(maxDist) ~= 'number' or type(type) ~= 'string' then
+    if  type(centralPosObj) ~= 'userdata' or type(centralPosObj) ~= 'table' or type(maxDist) ~= 'number' or
+    type(objType) ~= 'string' or (exclList ~= nil and type(exclList) ~= 'table') then
         print('XW_ClosestWithinDist: arg of invalid type')
     end
     if type(centralPosObj) == 'table' then
@@ -258,8 +258,17 @@ function XW_ObjWithinDist(centralPosObj, maxDist, type)
         exclObj = centralPosObj
     end
     for k,obj in pairs(getAllObjects()) do
-        if XW_ObjMatchType(obj, type) == true and obj ~= exclObj then
-            if Dist_Pos(centralPos, obj.getPosition()) < maxDist then
+        if XW_ObjMatchType(obj, objType) == true and obj ~= exclObj then
+            local excluded = false
+            if exclList ~= nil then
+                for k, exclListObj in pairs(exclList) do
+                    if obj == exclListObj then
+                        excluded = true
+                        break
+                    end
+                end
+            end
+            if (not excluded) and Dist_Pos(centralPos, obj.getPosition()) < maxDist then
                 table.insert(ships, obj)
             end
         end
@@ -392,11 +401,12 @@ end
 -- Return false if object cannot process commands right now or command was invalid
 XW_cmd.Process = function(obj, cmd)
 
-    -- Return if object is not ready
-    if XW_cmd.isReady(obj) ~= true then return false end
-
     -- Resolve command type
     local type = XW_cmd.CheckCommand(cmd)
+    -- Return if object is not ready
+    if type ~= 'special' and XW_cmd.isReady(obj) ~= true then return false end
+
+
     -- Return if invalid, lock object if valid
     if type == nil then
         return false
@@ -416,7 +426,7 @@ XW_cmd.Process = function(obj, cmd)
     elseif type == 'move' then
         MoveModule.PerformMove(cmd, obj)
     elseif type == 'actionMove' then
-        MoveModule.PerformMove(cmd, obj, true)
+        MoveModule.PerformMove(cmd, obj)
     elseif type == 'historyHandle' then
         if cmd == 'q' or cmd == 'undo' then
             MoveModule.UndoMove(obj)
@@ -538,10 +548,11 @@ MoveData.SlideLength = function(moveInfo)
     if not MoveData.IsSlideMove(moveInfo) then
         return nil
     else
-        if moveInfo.size == 'large' then
-            return mm_largeBase/2
-        elseif moveInfo.size == 'small' then
-            return mm_smallBase/2
+        baseSize = mm_baseSize[moveInfo.size]
+        if moveInfo.type == 'roll' then
+            return baseSize
+        elseif moveInfo.type == 'turn' and moveInfo.extra == 'talon' then
+            return baseSize/2
         end
     end
     return nil
@@ -571,27 +582,29 @@ MoveData.SlideMoveOrigin = function(moveInfo)
         if moveInfo.size == 'small' then
             data = MoveData.LUT.ConstructData({type='straight', speed=moveInfo.speed, size=moveInfo.size, code='s'..moveInfo.speed})
         else
-            data = {baseSize + 20, 0, 0, 0}
+            data = {0, 0, baseSize + 20, 0}
         end
         data = MoveData.RotateEntry(data, ang)
         data[4] = data[4] - ang
-        if moveInfo.extra == 'forward' then
-            data[1] = data[1] + MoveData.SlideLength(moveInfo)/2
-        elseif moveInfo.extra == 'backward' then
-            data[1] = data[1] - MoveData.SlideLength(moveInfo)/2
-        end
+        data[3] = data[3] - MoveData.SlideLength(moveInfo)/2
     elseif moveInfo.type == 'turn' and moveInfo.extra == 'talon' then
-        local data = MoveData.LUT.ConstructData(moveInfo)
-        if moveInfo.extra == 'forward' then
-            data[1] = data[1] - MoveData.SlideLength(moveInfo)/2
-        elseif moveInfo.extra == 'backward' then
-            data[1] = data[1] + MoveData.SlideLength(moveInfo)/2
+        data = MoveData.LUT.ConstructData(moveInfo)
+        data[3] = data[3] - MoveData.SlideLength(moveInfo)/2
+        if moveInfo.dir == 'left' then
+            data = MoveData.LeftVariant(data)
         end
+        data = MoveData.TurnInwardVariant(data)
+        --print('MoveData.SLideMoveOrigin TT data: ' .. data)
     end
     if data == nil then
         print('MoveData.SLideMoveOrigin return nil')
+        --print('MoveData.SLideMoveOrigin info: ' .. moveInfo.type .. ' : ' .. moveInfo.extra)
     end
     return data
+end
+
+MoveData.SlidePartOffset = function(moveInfo, part)
+    return {0, 0, MoveData.SlideLength(moveInfo)*(part/MoveData.PartMax), 0}
 end
 
 -- Table telling us how moves final position is determined
@@ -841,8 +854,9 @@ MoveData.DecodePartSlide = function(move_code, ship, part)
     local info = MoveData.DecodeInfo(move_code, ship)
     print('MoveData.DecodePartSlide 2')
     local slideOrigin = MoveData.SlideMoveOrigin(info)
+    local offset = MoveData.SlidePartOffset(info, part)
     print('MoveData.DecodePartSlide 3')
-    return slideOrigin
+    return Vect_Sum(slideOrigin, offset)
 end
 
 
@@ -1147,9 +1161,12 @@ function restWaitCoroutine()
     if waitData.lastMove ~= nil then MoveModule.AddHistoryEntry(actShip, {pos=actShip.getPosition(), rot=actShip.getRotation(), move=waitData.lastMove}, true) end
     -- Free the object so it can do other stuff
     XW_cmd.SetReady(actShip)
+    -- TO_DO: Set busy here and set ready in process
     return 1
 end
 
+
+-- TO_DO if large base switches to base size table
 -- Check if provided ship in a provided position/rotation would collide with anything from the provided table
 MoveModule.CheckCollisions = function(ship, shipPosRot, colShipTable)
     local info = {coll=nil, minMargin=0, numCheck=0}
@@ -1193,6 +1210,24 @@ MoveModule.CheckCollisions = function(ship, shipPosRot, colShipTable)
     return info
 end
 
+MoveModule.GetFreePart = function(info, ship, partFun)
+    local certShipReach = Convert_mm_igu(mm_baseSize[info.size])/2
+    local maxShipReach = Convert_mm_igu(mm_baseSize[info.size]*math.sqrt(2))/2
+
+    local moveReach = math.max( Dist_Pos(partFun(info.code, ship, MoveData.PartMax/2).pos, partFun(info.code, ship, MoveData.PartMax).pos),
+                                Dist_Pos(partFun(info.code, ship, MoveData.PartMax/2).pos, partFun(info.code, ship, 0).pos) )
+
+
+    print('MoveModule.GetFreePart range breakdown: ' .. Convert_igu_mm(moveReach) .. ' + ' .. Convert_igu_mm(maxShipReach) .. ' + ' .. mm_largeBase*math.sqrt(2)/2 .. ' + 10')
+
+    local collShipRange = moveReach + maxShipReach + Convert_mm_igu(mm_largeBase*math.sqrt(2))/2 + Convert_mm_igu(10)
+
+    local ships = XW_ObjWithinDist(partFun(info.code, ship, MoveData.PartMax/2).pos, collShipRange, 'ship', {ship})
+    print('MoveModule.GetFreePart cShipList: ')
+    for k, ship in pairs(ships) do print('  -- ' .. ship.getName()) end
+    return {part = 500}
+end
+
 MoveModule.GetFinalPos = function(move_code, ship, ignoreCollisions)
     local finPos = nil
     local info = MoveData.DecodeInfo(move_code, ship)
@@ -1202,7 +1237,28 @@ MoveModule.GetFinalPos = function(move_code, ship, ignoreCollisions)
         ignoreCollisions = true
     end
 
-    if ignoreCollisions ~= true then
+    if ignoreCollisions then
+        if MoveData.IsSlideMove(info) then
+            local initPart = MoveData.PartMax/2
+            if info.extra == 'forward' then
+                initPart = MoveData.PartMax
+            elseif info.extra == 'backward' then
+                initPart = 0
+            end
+            return MoveModule.GetPartSlide(info.code, ship, initPart)
+        else
+            return MoveModule.GetFullPos(info.code, ship)
+        end
+    else
+        if MoveData.IsSlideMove(info) then
+            local freePartData = MoveModule.GetFreePart(info, ship, MoveModule.GetPartSlide)
+            return MoveModule.GetPartSlide(info.code, ship, freePartData.part)
+        else
+            return MoveModule.GetFullPos(info.code, ship)
+        end
+    end
+
+    --[[if ignoreCollisions ~= true then
         -- LET THE SPAGHETTI FLOW!
         -- Check move length so we can relate how far some part of a move will take us
         local moveLength = MoveData.MoveLength(info)
@@ -1345,7 +1401,7 @@ MoveModule.GetFinalPos = function(move_code, ship, ignoreCollisions)
 
     -- Get the ship in a queue to do stuff once resting
     table.insert(MoveModule.restWaitQueue, {ship=ship, lastMove=move_code})
-    startLuaCoroutine(Global, 'restWaitCoroutine')
+    startLuaCoroutine(Global, 'restWaitCoroutine')]]--
 end
 
 XW_cmd.AddCommand('d:x[rle]', 'demoMove')
@@ -1438,12 +1494,9 @@ end
 MoveModule.PerformMove = function(move_code, ship, ignoreCollisions)
 
     local info = MoveData.DecodeInfo(move_code, ship)
-    if MoveData.IsSlideMove(info) then
-        local targetPos = DecodeFu
-    else
-
-    end
-
+    local finPos = MoveModule.GetFinalPos(move_code, ship, ignoreCollisions)
+    ship.setPosition(finPos.pos)
+    ship.setRotation(finPos.rot)
 
     --[[local finPos = nil
     local info = MoveData.DecodeInfo(move_code, ship)
