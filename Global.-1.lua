@@ -174,13 +174,22 @@ function Var_Clamp(var, min, max)
     end
 end
 
-function Sgn(arg)
+function math.sgn(arg)
     if arg < 0 then
         return -1
     elseif arg > 0 then
         return 1
     end
     return 0
+end
+
+function math.round(arg)
+    frac = arg - math.floor(arg)
+    if frac >= 0.5 then
+        return math.ceil(arg)
+    else
+        return math.floor(arg)
+    end
 end
 
 -- END VECTOR RELATED FUNCTIONS
@@ -286,9 +295,9 @@ end
 
 -- Get objects within specified rectangle + optional X-Wing type filter
 -- Rectangle is aligned with the table (no rotation)
-function XW_ObjWithinRect(center, x_size, z_size, type)
+function XW_ObjWithinRect(center, x_size, z_size, ObjType)
     if type(center) ~= 'table' or type(x_size) ~= 'number' or
-    type(z_size) ~= 'number' or type(type) ~= 'string' then
+    type(z_size) ~= 'number' or type(ObjType) ~= 'string' then
         print('XW_ObjWithinRect: arg of invalid type')
     end
 
@@ -298,7 +307,7 @@ function XW_ObjWithinRect(center, x_size, z_size, type)
     local z_min = center[3] - (z_size/2)
     local z_max = center[3] + (z_size/2)
     for k,obj in pairs(getAllObjects()) do
-        if XW_ObjMatchType(obj, type) == true then
+        if XW_ObjMatchType(obj, ObjType) == true then
             local obj_x = obj.getPosition()[1]
             local obj_z = obj.getPosition()[3]
             if obj_x < x_max and obj_x > x_min and obj_z < z_max and obj_z > z_min then
@@ -532,6 +541,7 @@ MoveData.IsSlideMove = function(moveInfoCode)
         code = moveInfoCode
     else
         print('MoveData.IsSlideMove: arg of invalid type')
+        print(type(moveInfoCode))
     end
     local matched = false
     for k,pat in pairs(MoveData.slideMatchTable) do
@@ -591,7 +601,7 @@ MoveData.SlideMoveOrigin = function(moveInfo)
         data[3] = data[3] - MoveData.SlideLength(moveInfo)/2
     elseif moveInfo.type == 'turn' and moveInfo.extra == 'talon' then
         data = MoveData.LUT.ConstructData(moveInfo)
-        data[3] = data[3] - MoveData.SlideLength(moveInfo)/2
+        data[3] = data[3] + MoveData.SlideLength(moveInfo)/2
         if moveInfo.dir == 'left' then
             data = MoveData.LeftVariant(data)
         end
@@ -606,7 +616,11 @@ MoveData.SlideMoveOrigin = function(moveInfo)
 end
 
 MoveData.SlidePartOffset = function(moveInfo, part)
-    return {0, 0, MoveData.SlideLength(moveInfo)*(part/MoveData.partMax), 0}
+    if moveInfo.extra == 'talon' then
+        return {0, 0, -1*MoveData.SlideLength(moveInfo)*(part/MoveData.partMax), 0}
+    else
+        return {0, 0, MoveData.SlideLength(moveInfo)*(part/MoveData.partMax), 0}
+    end
 end
 
 -- Table telling us how moves final position is determined
@@ -875,17 +889,17 @@ end
 
 -- Simply get the final position for a 'ship' if it did a move (standard move code)
 -- Returned position and rotation are ready to feed TTS functions with
-MoveModule.GetFullPos = function(move, ship)
+MoveModule.GetFullMove = function(move, ship)
     local entry = MoveData.DecodeFullMove(move, ship)
     return MoveModule.EntryToPos(entry, ship)
 end
 
 -- Simply get the final position for a 'ship' if it did a part of a move (standard move code)
 -- Returned position and rotation are ready to feed TTS functions with
-MoveModule.GetPartPos = function(move, ship, part)
-    --print('GetPartPos: ' .. move .. ' : ' .. ship.getName() .. ' : ' .. part )
+MoveModule.GetPartMove = function(move, ship, part)
+    --print('GetPartMove: ' .. move .. ' : ' .. ship.getName() .. ' : ' .. part )
     local entry = MoveData.DecodePartMove(move, ship, part)
-    --print('GetPartPos entry: ' .. entry[1] .. ' : ' .. entry[2] .. ' : ' .. entry[3] .. ' : ' .. entry[4])
+    --print('GetPartMove entry: ' .. entry[1] .. ' : ' .. entry[2] .. ' : ' .. entry[3] .. ' : ' .. entry[4])
     return MoveModule.EntryToPos(entry, ship)
 end
 
@@ -908,7 +922,7 @@ XW_cmd.AddCommand('keep', 'historyHandle')
 -- Return history of a ship
 -- History table: {ship=shipRef, actKey=keyOfHistoryEntryShipWasLastSeenAt (._.), history=entryList}
 -- Entry list: {entry1, entry2, entry3, ...}
--- Entry: {pos=position, rot=rotation, move=moveThatGotShipHere}
+-- Entry: {pos=position, rot=rotation, move=moveThatGotShipHere, part=partOfMovePerformed}
 MoveModule.GetHistory = function(ship)
     for k,hist in pairs(MoveModule.moveHistory) do
         if hist.ship == ship then
@@ -978,7 +992,7 @@ end
 -- Save curent ship position to the history
 -- Can be quiet when not explicitly called by the user
 MoveModule.SaveStateToHistory = function(ship, beQuiet)
-    local entry = {pos=ship.getPosition(), rot=ship.getRotation(), move='position save'}
+    local entry = {pos=ship.getPosition(), rot=ship.getRotation(), move='position save', part=nil}
     MoveModule.AddHistoryEntry(ship, entry, beQuiet)
 end
 
@@ -1074,7 +1088,7 @@ MoveModule.GetLastMove = function(ship)
     if histData.actKey < 1 then
         return 'none'
     else
-        return histData.history[histData.actKey].move
+        return histData.history[histData.actKey]
     end
 end
 
@@ -1234,7 +1248,7 @@ MoveModule.GetFreePart = function(info, ship, partFun, partRange, moveLength, fu
 
     if fullFun ~= nil then
         fullInfo = MoveModule.CheckCollisions(ship, fullFun(info.code, ship), collShips)
-        checkNum.full = checkNum.full + collInfo.numCheck
+        checkNum.full = checkNum.full + fullInfo.numCheck
         if fullInfo.coll == nil then
             out.info = 'full'
             return out
@@ -1242,7 +1256,7 @@ MoveModule.GetFreePart = function(info, ship, partFun, partRange, moveLength, fu
     end
 
     local actPart = partRange.from
-    local partDelta = Sgn(partRange.to - partRange.from)*(MoveData.partMax*MoveModule.partResolutionRough)
+    local partDelta = math.sgn(partRange.to - partRange.from)*(MoveData.partMax*MoveModule.partResolutionRough)
     local minPartDelta = math.abs(partDelta)
         -- There was a collision!
     local collision = false
@@ -1265,13 +1279,13 @@ MoveModule.GetFreePart = function(info, ship, partFun, partRange, moveLength, fu
             if distToSkip > 0 then
                 -- Calculate how big part it is and skip away!
                 -- This saves A LOT of iterations, for real
-                partDelta = Sgn(partDelta)*((distToSkip * MoveData.partMax)/moveLength)
+                partDelta = math.sgn(partDelta)*((distToSkip * MoveData.partMax)/moveLength)
                 print('GetFreePart rough to_skip:' .. distToSkip)
 
-                if math.abs(partDelta) < minPartDelta then partDelta = Sgn(partDelta)*minPartDelta end
+                if math.abs(partDelta) < minPartDelta then partDelta = math.sgn(partDelta)*minPartDelta end
                 -- Else we're back at 1/100th of a move back
             else
-                partDelta = Sgn(partDelta)*minPartDelta
+                partDelta = math.sgn(partDelta)*minPartDelta
             end
         else
             collision = false
@@ -1281,7 +1295,7 @@ MoveModule.GetFreePart = function(info, ship, partFun, partRange, moveLength, fu
             out.collObj = collInfo.coll
             actPart = actPart + partDelta
         end
-    until collision == false or ((partRange.to - actPart)*Sgn(partDelta) < 0) or partDelta == 0
+    until collision == false or ((partRange.to - actPart)*math.sgn(partDelta) < 0) or partDelta == 0
 print('GetFreePart rough FINISH: ' .. actPart)
 ----- <=====
 
@@ -1289,7 +1303,7 @@ print('GetFreePart rough FINISH: ' .. actPart)
     -- Right now, we're out of any collisions or at part 0 (no move)
     -- Go 1/1000th of a move forward until we have a collision, then skip to last free 1/1000th
     if collision == false and partDelta ~= 0 and actPart ~= partRange.from then
-        partDelta = Sgn(partRange.to - partRange.from)*(MoveData.partMax*MoveModule.partResolutionFine)*-1
+        partDelta = math.sgn(partRange.to - partRange.from)*(MoveData.partMax*MoveModule.partResolutionFine)*-1
         print('GetFreePart fine ranges: ' .. partRange.from .. ' : ' .. actPart .. ' : ' .. partRange.to .. ' :: ' .. partDelta)
 
         local collInfo
@@ -1304,7 +1318,7 @@ print('GetFreePart rough FINISH: ' .. actPart)
                 collision = false
             end
             actPart = actPart + partDelta
-        until collision == true or (partRange.from - actPart)*Sgn(partDelta) < 0
+        until collision == true or (partRange.from - actPart)*math.sgn(partDelta) < 0
         actPart = actPart - partDelta
         out.collObj = collInfo.coll -- This is what we hit
         out.part = actPart
@@ -1323,7 +1337,7 @@ end
 
 -- TO_DO return finPos from GetFreePart
 MoveModule.GetFinalPos = function(move_code, ship, ignoreCollisions)
-    local out = {finPos = nil, collObj = nil, finType = nil}
+    local out = {finPos = nil, collObj = nil, finType = nil, finPart = nil}
     local info = MoveData.DecodeInfo(move_code, ship)
 
     -- Don't bother with collisions if it's stationary
@@ -1341,10 +1355,12 @@ MoveModule.GetFinalPos = function(move_code, ship, ignoreCollisions)
             end
             out.finPos = MoveModule.GetPartSlide(info.code, ship, initPart)
             out.finType = 'slide'
+            out.finPart = initPart
             return out
         else
-            out.finPos = MoveModule.GetFullPos(info.code, ship)
+            out.finPos = MoveModule.GetFullMove(info.code, ship)
             out.finType = 'move'
+            out.finPart = 'max'
             return out
         end
     else
@@ -1360,6 +1376,7 @@ MoveModule.GetFinalPos = function(move_code, ship, ignoreCollisions)
                 if freePartData.info ~= 'overlap' then
                     out.finPos = MoveModule.GetPartSlide(info.code, ship, freePartData.part)
                     out.finType = 'slide'
+                    out.finPart = freePartData.part
                     print('GetFinalPos finPart: ' .. freePartData.part)
                     return out
                 end
@@ -1368,6 +1385,7 @@ MoveModule.GetFinalPos = function(move_code, ship, ignoreCollisions)
             if freePartData.info ~= 'overlap' then
                 out.finPos = MoveModule.GetPartSlide(info.code, ship, freePartData.part)
                 out.finType = 'slide'
+                out.finPart = freePartData.part
                 print('GetFinalPos finPart: ' .. freePartData.part)
                 return out
             end
@@ -1378,11 +1396,13 @@ MoveModule.GetFinalPos = function(move_code, ship, ignoreCollisions)
             if freePartData.info == 'full' then
                 out.finPos = MoveModule.GetFullMove(info.code, ship)
                 out.finType = 'move'
+                out.finPart = 'max'
                 return out
             else
                 out.finPos = MoveModule.GetPartMove(info.code, ship, freePartData.part)
                 out.finType = 'move'
-                print('GetFinalPos finPart: ' .. out.part)
+                out.finPart = freePartData.part
+                print('GetFinalPos finPart: ' .. freePartData.part)
                 out.collObj = freePartData.collObj
                 return out
             end
@@ -1412,11 +1432,11 @@ MoveModule.GetFinalPos = function(move_code, ship, ignoreCollisions)
         end
 
         -- Get list of ships that can possibly collide (all in *some* distance from middle of move)
-        local ships = XW_ObjWithinDist(MoveModule.GetPartPos(move_code, ship, MoveData.partMax/2).pos, moveLength+(2*maxShipReach), 'ship')
+        local ships = XW_ObjWithinDist(MoveModule.GetPartMove(move_code, ship, MoveData.partMax/2).pos, moveLength+(2*maxShipReach), 'ship')
         for k, collShip in pairs(ships) do if collShip == ship then table.remove(ships, k) end end
 
         -- Let's try collisions at the end of a move
-        local finalInfo = MoveModule.CheckCollisions(ship, MoveModule.GetFullPos(move_code, ship), ships)
+        local finalInfo = MoveModule.CheckCollisions(ship, MoveModule.GetFullMove(move_code, ship), ships)
 
         -- (if there will be collisions) we will start with maximum part of a move (ending position)
         local actPart = MoveData.partMax
@@ -1429,7 +1449,7 @@ MoveModule.GetFinalPos = function(move_code, ship, ignoreCollisions)
             -- BUT WITH A CATCH
             local partDelta = -1*(MoveData.partMax/100)
             repeat
-                local nPos = MoveModule.GetPartPos(move_code, ship, actPart)
+                local nPos = MoveModule.GetPartMove(move_code, ship, actPart)
                 local collInfo = MoveModule.CheckCollisions(ship, nPos, ships)
                 local distToSkip = nil
                 if collInfo.coll ~= nil then
@@ -1454,7 +1474,7 @@ MoveModule.GetFinalPos = function(move_code, ship, ignoreCollisions)
             partDelta = (1/1000)*MoveData.partMax
             local collInfo
             repeat
-                local nPos = MoveModule.GetPartPos(move_code, ship, actPart)
+                local nPos = MoveModule.GetPartMove(move_code, ship, actPart)
                 collInfo = MoveModule.CheckCollisions(ship, nPos, ships)
                 if collInfo.coll ~= nil then collision = true
                 else collision = false end
@@ -1466,9 +1486,9 @@ MoveModule.GetFinalPos = function(move_code, ship, ignoreCollisions)
         end
 
         -- We get the final position as a calculated part or as a full move if ignoring collisions
-        finPos = MoveModule.GetPartPos(move_code, ship, actPart)
+        finPos = MoveModule.GetPartMove(move_code, ship, actPart)
     else
-        finPos = MoveModule.GetFullPos(move_code, ship)
+        finPos = MoveModule.GetFullMove(move_code, ship)
     end
     -- Movement part finished!
 
@@ -1572,7 +1592,7 @@ function DemoMoveCoroutine()
     end
     if data.moveInfo.noPartial and (not data.moveInfo.slideMove) then
         print('Demo: stiff move')
-        local targetPos = MoveModule.GetFullPos(data.moveInfo.code, data.ship)
+        local targetPos = MoveModule.GetFullMove(data.moveInfo.code, data.ship)
         data.ship.setPosition(targetPos.pos)
         data.ship.setRotation(targetPos.rot)
     end
@@ -1588,9 +1608,9 @@ function DemoMoveCoroutine()
         data.ship.setRotation(data.startPos.rot)
         local targetPos = nil
         if data.currMovePart < MoveData.partMax then
-            targetPos = MoveModule.GetPartPos(data.moveInfo.code, data.ship, data.currMovePart)
+            targetPos = MoveModule.GetPartMove(data.moveInfo.code, data.ship, data.currMovePart)
         else
-            targetPos = MoveModule.GetFullPos(data.moveInfo.code, data.ship)
+            targetPos = MoveModule.GetFullMove(data.moveInfo.code, data.ship)
         end
         data.ship.setPosition(targetPos.pos)
         data.ship.setRotation(targetPos.rot)
@@ -1620,6 +1640,10 @@ function DemoMoveCoroutine()
     return 1
 end
 
+TokenModule = {}
+
+TokenModule.GetOwner = nil
+
 -- Perform move designated by move_code on a ship
 -- For some moves (like barrel rolls) collisons are automatically ignored, rest considers them normally
 -- Includes token handling so nothing obscurs the final position
@@ -1631,21 +1655,23 @@ MoveModule.PerformMove = function(move_code, ship, ignoreCollisions)
     if finData.finType == 'overlap' then
         print('---- chuja')
     elseif finData.finType == 'slide' then
-        print('---- Dobry slajd')
+        print('---- Dobry slajd: ' .. '"' .. move_code .. '[' .. math.round(finData.finPart) .. ']"')
         local finPos = finData.finPos
         ship.setPosition(finPos.pos)
         ship.setRotation(finPos.rot)
-    elseif finData.fintype == 'move' then
+        MoveModule.AddHistoryEntry(ship, {pos=finPos.pos, rot=finPos.rot, move=move_code, part=finData.finPart}, true)
+    elseif finData.finType == 'move' then
         local finPos = finData.finPos
         ship.setPosition(finPos.pos)
         ship.setRotation(finPos.rot)
         if finData.collObj == nil then
-            print('---- Dobry move')
+            print('---- Dobry move: ')
         else
             print('---- Move kolizja: ' .. finData.collObj.getName())
         end
     else
         print('???? Dziwne rzeczy')
+        print(finData.finType)
     end
 
     XW_cmd.SetReady(ship)
@@ -1678,11 +1704,11 @@ MoveModule.PerformMove = function(move_code, ship, ignoreCollisions)
         end
 
         -- Get list of ships that can possibly collide (all in *some* distance from middle of move)
-        local ships = XW_ObjWithinDist(MoveModule.GetPartPos(move_code, ship, MoveData.partMax/2).pos, moveLength+(2*maxShipReach), 'ship')
+        local ships = XW_ObjWithinDist(MoveModule.GetPartMove(move_code, ship, MoveData.partMax/2).pos, moveLength+(2*maxShipReach), 'ship')
         for k, collShip in pairs(ships) do if collShip == ship then table.remove(ships, k) end end
 
         -- Let's try collisions at the end of a move
-        local finalInfo = MoveModule.CheckCollisions(ship, MoveModule.GetFullPos(move_code, ship), ships)
+        local finalInfo = MoveModule.CheckCollisions(ship, MoveModule.GetFullMove(move_code, ship), ships)
 
         -- (if there will be collisions) we will start with maximum part of a move (ending position)
         local actPart = MoveData.partMax
@@ -1695,7 +1721,7 @@ MoveModule.PerformMove = function(move_code, ship, ignoreCollisions)
             -- BUT WITH A CATCH
             local partDelta = -1*(MoveData.partMax/100)
             repeat
-                local nPos = MoveModule.GetPartPos(move_code, ship, actPart)
+                local nPos = MoveModule.GetPartMove(move_code, ship, actPart)
                 local collInfo = MoveModule.CheckCollisions(ship, nPos, ships)
                 local distToSkip = nil
                 if collInfo.coll ~= nil then
@@ -1720,7 +1746,7 @@ MoveModule.PerformMove = function(move_code, ship, ignoreCollisions)
             partDelta = (1/1000)*MoveData.partMax
             local collInfo
             repeat
-                local nPos = MoveModule.GetPartPos(move_code, ship, actPart)
+                local nPos = MoveModule.GetPartMove(move_code, ship, actPart)
                 collInfo = MoveModule.CheckCollisions(ship, nPos, ships)
                 if collInfo.coll ~= nil then collision = true
                 else collision = false end
@@ -1732,9 +1758,9 @@ MoveModule.PerformMove = function(move_code, ship, ignoreCollisions)
         end
 
         -- We get the final position as a calculated part or as a full move if ignoring collisions
-        finPos = MoveModule.GetPartPos(move_code, ship, actPart)
+        finPos = MoveModule.GetPartMove(move_code, ship, actPart)
     else
-        finPos = MoveModule.GetFullPos(move_code, ship)
+        finPos = MoveModule.GetFullMove(move_code, ship)
     end
     -- Movement part finished!
 
@@ -2724,16 +2750,19 @@ function DialClick_SlideStart(dial, playerColor)
         local ship = dial.getVar('assignedShip')
         if XW_cmd.isReady(ship) ~= true then return end
         local lastMove = MoveModule.GetLastMove(ship)
-        local range = DialModule.GetSlideRange(ship, lastMove)
-        if range ~= nil then
+        print('DialClick_SlideStart lastMove.move: ' .. lastMove.move)
+        if lastMove.part ~= nil and MoveData.IsSlideMove(lastMove.move) then
             dial.setVar('Slide_ongoing', true)
-            table.insert(DialModule.slideDataQueue, {dial=dial, ship=ship, pColor=playerColor, range=range})
+            local slideRange = DialModule.GetSlideRange(ship, lastMove.move, lastMove.part)
+            table.insert(DialModule.slideDataQueue, {dial=dial, ship=ship, pColor=playerColor, range=slideRange})
             MoveModule.QueueShipTokensMove(ship)
             XW_cmd.SetBusy(ship)
-            MoveModule.Announce(ship, {type='move', note='manually adjusted base slide on his last move', code=lastMove}, 'all')
+            MoveModule.Announce(ship, {type='move', note='manually adjusted base slide on his last move', code=lastMove.move}, 'all')
             startLuaCoroutine(Global, 'SlideCoroutine')
+        elseif lastMove.code == 'manual slide' then
+            printToColor(ship.getName() .. ' needs to undo the manual slide before adjusting again', playerColor, {1, 0.5, 0.1})
         else
-            printToColor(ship.getName() .. '\'s last move (' .. lastMove .. ') does not allow sliding!', playerColor, {1, 0.5, 0.1})
+            printToColor(ship.getName() .. '\'s last move (' .. lastMove.move .. ') does not allow sliding!', playerColor, {1, 0.5, 0.1})
         end
     end
 end
@@ -2779,34 +2808,17 @@ end
 -- Get slide range of a ship based on his last move
 -- Return: {fLen=howMuchForwardCanSlide, bLen=howMuchBackwardCanSlide}
 -- Return nil if last move doesn't allow slides
-DialModule.GetSlideRange = function(ship, moveCode)
-    local baseSize = mm_smallBase
-    if DB_isLargeBase(ship) then
-        baseSize = mm_largeBase
-    end
-    baseSize = Convert_mm_igu(baseSize)
-    local movePrefix = moveCode:sub(1,2)
-    local lastChar = moveCode:sub(-1,-1)
-    -- Barrel rolls
-    if string.find('xr xe xl cr ce cl', movePrefix) ~= nil then
-        if lastChar == 'f' then
-            return {fLen = 0, bLen = baseSize}
-        elseif lastChar == 'b' then
-            return {fLen = baseSize, bLen = 0}
-        else
-            return {fLen = baseSize/2, bLen = baseSize/2}
-        end
-    end
-    -- Talon rolls
-    if  lastChar == 't' and string.find('tr te tl', movePrefix) ~= nil then
-        return {fLen = baseSize/2, bLen = baseSize/2}
-    end
-    return nil
+DialModule.GetSlideRange = function(ship, moveCode, currPart)
+    local info = MoveData.DecodeInfo(moveCode, ship)
+    local fullLength = Convert_mm_igu(MoveData.SlideLength(info))
+    local travelledLength = (currPart/MoveData.partMax)*fullLength
+    return {fLen = fullLength - travelledLength, bLen = travelledLength}
 end
 
 -- Table with data slide coroutines pop and process
 -- Entry: {dial=dialRef, ship=shipRef, pColor=playerColor, range={fLen=forwardLength, bLen=backwardLength}}
 DialModule.slideDataQueue = {}
+
 function SlideCoroutine()
     if #DialModule.slideDataQueue < 1 then
         return 1
