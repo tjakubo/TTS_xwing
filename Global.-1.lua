@@ -503,6 +503,14 @@ end
 MoveData = {}
 MoveData.LUT = {}
 
+MoveData.onLoad = function()
+    for k,obj in pairs(getAllObjects()) do
+        if obj.getName() == 'MoveLUT' then
+            MoveData.LUT.Parse(obj)
+        end
+    end
+end
+
 MoveData.LUT.Parse = function(object)
     MoveData.LUT.Data = object.call('ParseLUT', {})
 end
@@ -792,30 +800,42 @@ MoveData.DecodeInfo = function (move_code, ship)
             info.dir = 'left'
         end
         info.note = 'barrel rolled'
+        info.collNote = 'tried to barrel roll'
         -- (fucking decloak) is treated as a roll before, now just return straight 2 data
         if move_code:sub(2,2) == 's' then
             info.type = 'straight'
             info.speed = 2
             --info.extra = 'straight'
             info.note = 'decloaked forward'
+            info.collNote = 'tried to decloak forward'
             if info.size == 'large' then info.type = 'invalid' end
+            info.dir = nil
         elseif move_code:sub(1,1) == 'c' then
             info.note = 'decloaked'
+            info.collNote = 'tried to decloak'
             info.speed = 2
             if info.size == 'large' then return MoveData.DecodeInfo(move_code:gsub('c', 'x'), ship) end
         end
 
-        if move_code:sub(-1,-1) == 'f' then
-            info.extra = 'forward'
-            info.note = info.note .. ' forward ' .. info.dir
-        elseif move_code:sub(-1,-1) == 'b' then
-            info.extra = 'backward'
-            info.note = info.note .. ' backward ' .. info.dir
-        else
-            info.note = info.note .. ' ' .. info.dir
+        if info.type ~= 'straight' then
+            if move_code:sub(-1,-1) == 'f' then
+                info.extra = 'forward'
+                info.note = info.note .. ' forward ' .. info.dir
+                info.collNote = info.collNote .. ' forward ' .. info.dir
+            elseif move_code:sub(-1,-1) == 'b' then
+                info.extra = 'backward'
+                info.note = info.note .. ' backward ' .. info.dir
+                info.collNote = info.collNote .. ' forward ' .. info.dir
+            else
+                info.note = info.note .. ' ' .. info.dir
+                info.collNote = info.collNote .. ' ' .. info.dir
+            end
         end
 
     end
+    --for k,v in pairs(info) do
+    --    print(k .. ' : ' .. tostring(v))
+    --end
     return info
 end
 
@@ -1086,7 +1106,8 @@ MoveModule.GetLastMove = function(ship)
     local move = 'none'
     local histData = MoveModule.GetHistory(ship)
     if histData.actKey < 1 then
-        return 'none'
+        print('lmrn')
+        return {move='none'}
     else
         return histData.history[histData.actKey]
     end
@@ -1225,6 +1246,7 @@ end
 MoveModule.partResolutionRough = 1/100
 MoveModule.partResolutionFine = 1/1000
 MoveModule.GetFreePart = function(info, ship, partFun, partRange, moveLength, fullFun)
+    if moveLength == nil then moveLength = 0 end
     moveLength = Convert_mm_igu(moveLength)
     local out = {part = nil, info = nil, collObj = nil}
     local checkNum = {full=0, rough=0, fine=0}
@@ -1251,6 +1273,9 @@ MoveModule.GetFreePart = function(info, ship, partFun, partRange, moveLength, fu
         checkNum.full = checkNum.full + fullInfo.numCheck
         if fullInfo.coll == nil then
             out.info = 'full'
+            return out
+        elseif info.noPartial == true then
+            out.info = 'overlap'
             return out
         end
     end
@@ -1404,6 +1429,15 @@ MoveModule.GetFinalPos = function(move_code, ship, ignoreCollisions)
                 out.finPart = freePartData.part
                 print('GetFinalPos finPart: ' .. freePartData.part)
                 out.collObj = freePartData.collObj
+                return out
+            end
+        else
+            local partRange = {from=MoveData.partMax, to=MoveData.partMax}
+            local freePartData = MoveModule.GetFreePart(info, ship, MoveModule.GetPartMove, partRange, MoveData.MoveLength(info), MoveModule.GetFullMove)
+            if freePartData.info == 'full' then
+                out.finPos = MoveModule.GetFullMove(info.code, ship)
+                out.finType = 'move'
+                out.finPart = 'max'
                 return out
             end
         end
@@ -1642,7 +1676,234 @@ end
 
 TokenModule = {}
 
-TokenModule.GetOwner = nil
+TokenModule.tokenSources = {}
+
+-- Update token sources on each load
+-- Restore sets if data is loaded
+TokenModule.onLoad = function()
+    for k, obj in pairs(getAllObjects()) do
+        if obj.tag == 'Infinite' then
+            if obj.getName() == 'Focus' then TokenModule.tokenSources.Focus = {src=obj, hlColor={0, 0.5, 0}}
+            elseif obj.getName() == 'Evade' then TokenModule.tokenSources.Evade = {src=obj, hlColor={0, 1, 0}}
+            elseif obj.getName() == 'Stress' then TokenModule.tokenSources.Stress = {src=obj, hlColor={0.8, 0, 0}}
+            elseif obj.getName() == 'Target Locks' then TokenModule.tokenSources['Target Lock'] = {src=obj, hlColor={0, 0, 1}}
+            elseif obj.getName():find('Templates') ~= nil then
+                if obj.getName():find('Straight') ~= nil then
+                    TokenModule.tokenSources['s' .. obj.getName():sub(1,1)] = obj
+                elseif obj.getName():find('Turn') ~= nil then
+                    TokenModule.tokenSources['t' .. obj.getName():sub(1,1)] = obj
+                elseif obj.getName():find('Bank') ~= nil then
+                    TokenModule.tokenSources['b' .. obj.getName():sub(1,1)] = obj
+                end
+            end
+        end
+    end
+end
+
+-- Table for locks to be set and callback to call setting of them
+-- It's easiest this way if we want target lock tokens to still retain functionality
+--  when manually handled too
+TokenModule.locksToBeSet = {}
+function TokenModule_SetLocks()
+    for k,info in pairs(TokenModule.locksToBeSet) do
+        info.lock.call('manualSet', {info.color, info.name})
+        info.lock.highlightOn({0,0,0}, 0.01)
+    end
+    TokenModule.locksToBeSet = {}
+end
+
+TokenModule.TakeToken = function(type, playerColor, dest)
+    local takeTable = {}
+    if dest ~= nil then
+        takeTable.position = dest
+    end
+    local highlightColor = TokenModule.tokenSources[type].hlColor
+    if type == 'Target Lock' then
+        takeTable.callback = 'TokenModule_SetLocks'
+        takeTable.callback_owner = Global
+    end
+    local newToken = TokenModule.tokenSources[type].src.takeObject(takeTable)
+    newToken.highlightOn(highlightColor, 3)
+    return newToken
+end
+
+TokenModule.TakeTemplate = function(infoCode)
+
+end
+
+TokenModule.tokenReachDistance = Convert_mm_igu(100)
+TokenModule.visibleMargin = Convert_mm_igu(15)
+
+TokenModule.basePos = {}
+TokenModule.basePos.small = {}
+TokenModule.basePos.small.Focus     = { 12,  12}
+TokenModule.basePos.small.Evade     = { 12, -12}
+TokenModule.basePos.small.Stress    = {-12,  12}
+TokenModule.basePos.small.rest      = {-12, -12}
+TokenModule.basePos.large = {}
+TokenModule.basePos.large.Focus     = { 30,  30}
+TokenModule.basePos.large.Evade     = { 30,   0}
+TokenModule.basePos.large.Stress    = { 30, -30}
+TokenModule.basePos.large.Tractor   = {-30,  30}
+TokenModule.basePos.large.Ion       = {-30,   0}
+TokenModule.basePos.large.Lock      = {  0,  30}
+TokenModule.basePos.large.rest      = {-30, -30}
+TokenModule.nearPos = {}
+TokenModule.nearPos.small = {}
+TokenModule.nearPos.small.Focus     = { 35,  25}
+TokenModule.nearPos.small.Evade     = { 35,   0}
+TokenModule.nearPos.small.Stress    = { 35, -25}
+TokenModule.nearPos.small.Ion       = {-35,  25}
+TokenModule.nearPos.small.Tractor   = {-35,   0}
+TokenModule.nearPos.small.Lock      = {  0,  40}
+TokenModule.nearPos.small.rest      = {-35, -25}
+TokenModule.nearPos.large = {}
+TokenModule.nearPos.large.Focus     = { 55,  30}
+TokenModule.nearPos.large.Evade     = { 55,   0}
+TokenModule.nearPos.large.Stress    = { 55, -30}
+TokenModule.nearPos.large.Tractor   = {-55,  45}
+TokenModule.nearPos.large.Ion       = {-55,  15}
+TokenModule.nearPos.large.Weapons   = {-55, -15}
+TokenModule.nearPos.large.Lock      = {  0,  50}
+TokenModule.nearPos.large.rest      = {-55, -45}
+
+TokenModule.tokenPos = function(tokenName, ship, posTable)
+    local baseSize = DB_getBaseSize(ship)
+    local entry = posTable[baseSize].rest
+    for tokenEntryName, tEntry in pairs(posTable[baseSize]) do
+        if tokenName:find(tokenEntryName) ~= nil then
+            entry = tEntry
+        end
+    end
+    local tsPos = {Convert_mm_igu(entry[1]), 0.5, Convert_mm_igu(entry[2])}
+    return Vect_Sum(ship.getPosition(), Vect_RotateDeg(tsPos, ship.getRotation()[2]+180))
+end
+
+TokenModule.BasePosition = function(tokenName, ship)
+    local name = nil
+    if type(tokenName) == 'string' then
+            name = tokenName
+    elseif type(tokenName) == 'userdata' then
+        name = tokenName.getName()
+    else
+        print('fill me pls1')
+    end
+    return TokenModule.tokenPos(name, ship, TokenModule.basePos)
+end
+TokenModule.NearPosition = function(tokenName, ship)
+    local name = nil
+    if type(tokenName) == 'string' then
+            name = tokenName
+    elseif type(tokenName) == 'userdata' then
+        name = tokenName.getName()
+    else
+        print('fill me pls2')
+    end
+    return TokenModule.tokenPos(name, ship, TokenModule.nearPos)
+end
+
+TokenModule.VisiblePosition = function(tokenName, ship)
+    local currTokensInfo = TokenModule.GetShipTokensInfo(ship)
+    local currStack = {qty=-2, obj=nil}
+    for k,tokenInfo in pairs(currTokensInfo) do
+        if tokenInfo.token.getName() == tokenName and tokenInfo.token.getQuantity() > currStack.qty then
+            currStack.obj = tokenInfo.token
+            currStack.qty = currStack.obj.getQuantity()
+        end
+    end
+    if currStack.obj ~= nil then
+        return Vect_Sum(currStack.obj.getPosition(), {0, 0.7, 0})
+    end
+    local nearPos = TokenModule.NearPosition(tokenName, ship)
+    local nearData = TokenModule.TokenOwnerInfo(nearPos)
+    if nearData.margin < TokenModule.visibleMargin then
+        return TokenModule.BasePosition(tokenName, ship)
+    else
+        return nearPos
+    end
+end
+
+TokenModule.TokenOwnerInfo = function(tokenPos)
+    local pos = nil
+        local out = {token=nil, owner=nil, dist=0, margin=-1}
+    if type(tokenPos) == 'table' then
+        pos = tokenPos
+    elseif type(tokenPos) == 'userdata' then
+        out.token = tokenPos
+        pos = tokenPos.getPosition()
+    else
+        print('fill me pls')
+    end
+    local nearShips = XW_ObjWithinDist(pos, TokenModule.tokenReachDistance, 'ship')
+    if nearShips[1] == nil then return out end
+    local baseDist = {}
+    -- Take the base size into account for distances
+    for k,ship in pairs(nearShips) do
+        local realDist = Dist_Pos(pos, ship.getPosition())
+        if DB_isLargeBase(ship) == true then realDist = realDist-Convert_mm_igu(10) end
+        table.insert(baseDist, {ship=ship, dist=realDist})
+    end
+    local nearest = {ship=nil, dist=999}
+    local nextNearest = {ship=nil, dist=999}
+    for k,data in pairs(baseDist) do
+        if data.dist < nearest.dist then
+            nextNearest = nearest
+            nearest = data
+        elseif data.dist < nextNearest.dist then
+            nextNearest = data
+        end
+    end
+    out.owner = nearest.ship
+    out.dist = nearest.dist
+    if nextNearest.ship == nil then
+        out.margin = 999
+        print('ja jebie')
+    else
+        out.margin = (nextNearest.dist-nearest.dist)/2
+    end
+    return out
+end
+
+TokenModule.GetNearTokensInfo = function(pos, dist)
+    local nearTokens = XW_ObjWithinDist(pos, TokenModule.tokenReachDistance, 'token')
+    local shipTokensInfo = {}
+    for k,token in pairs(nearTokens) do
+        local tokenInfo = TokenModule.TokenOwnerInfo(token)
+        table.insert(shipTokensInfo, tokenInfo)
+    end
+    return shipTokensInfo
+end
+
+TokenModule.GetShipTokensInfo = function(ship)
+    -- Check for nearby tokens
+    local nearTokens = XW_ObjWithinDist(ship.getPosition(), TokenModule.tokenReachDistance, 'token')
+    local shipTokensInfo = {}
+    for k,token in pairs(nearTokens) do
+        local tokenInfo = TokenModule.TokenOwnerInfo(token)
+        if tokenInfo.owner == ship then
+            table.insert(shipTokensInfo, tokenInfo)
+        end
+    end
+    return shipTokensInfo
+end
+
+TokenModule.GetShipTokens = function(ship)
+    -- Check for nearby tokens
+    local shipTokensInfo = TokenModule.GetShipTokensInfo(ship)
+    local tokens = {}
+    for k,tokenInfo in pairs(shipTokensInfo) do
+        table.insert(tokens, tokenInfo.token)
+    end
+end
+
+TokenModule.MoveOnBase = function(token, ship)
+
+end
+
+TokenModule.ClearPosition = function(pos, dist)
+    local posTokenInfo = nil
+
+end
 
 -- Perform move designated by move_code on a ship
 -- For some moves (like barrel rolls) collisons are automatically ignored, rest considers them normally
@@ -1652,7 +1913,9 @@ MoveModule.PerformMove = function(move_code, ship, ignoreCollisions)
 
     local info = MoveData.DecodeInfo(move_code, ship)
     local finData = MoveModule.GetFinalPos(move_code, ship, ignoreCollisions)
+    local annInfo = {type=finData.finType, note=info.note, code=info.code}
     if finData.finType == 'overlap' then
+        annInfo.note = info.collNote
         print('---- chuja')
     elseif finData.finType == 'slide' then
         print('---- Dobry slajd: ' .. '"' .. move_code .. '[' .. math.round(finData.finPart) .. ']"')
@@ -1668,11 +1931,15 @@ MoveModule.PerformMove = function(move_code, ship, ignoreCollisions)
             print('---- Dobry move: ')
         else
             print('---- Move kolizja: ' .. finData.collObj.getName())
+            annInfo.note = info.collNote
+            annInfo.collidedShip = finData.collObj
         end
     else
         print('???? Dziwne rzeczy')
         print(finData.finType)
     end
+
+    MoveModule.Announce(ship, annInfo, 'all')
 
     XW_cmd.SetReady(ship)
     --[[local finPos = nil
@@ -1682,6 +1949,7 @@ MoveModule.PerformMove = function(move_code, ship, ignoreCollisions)
     if info.speed == 0 then
         ignoreCollisions = true
     end
+
 
     if ignoreCollisions ~= true then
         -- LET THE SPAGHETTI FLOW!
@@ -1863,7 +2131,7 @@ MoveModule.GetTokenOwner = function(tokenPos)
     -- Take the base size into account for distances
     for k,ship in pairs(nearShips) do
         local realDist = Dist_Pos(tokenPos, ship.getPosition())
-        if DB_isLargeBase(ship) == true then realDist = realDist-Convert_mm_igu(20) end
+        if DB_isLargeBase(ship) == true then realDist = realDist-Convert_mm_igu(10) end
         table.insert(baseDist, {ship=ship, dist=realDist})
     end
     local nearest = baseDist[1]
@@ -2001,14 +2269,17 @@ MoveModule.Announce = function(ship, info, target, prefix)
     if prefix ~= false then
         shipName = ship.getName() .. ' '
     end
-    if info.type == 'move' then
+    if info.type == 'move' or info.type == 'slide' then
         if info.collidedShip == nil then
             annString = shipName .. info.note .. ' (' .. info.code .. ')'
             annColor = MoveModule.AnnounceColor.moveClear
         else
-            annString = shipName .. info.collNote .. ' (' .. info.code .. ') but is now touching ' .. info.collidedShip.getName()
+            annString = shipName .. info.note .. ' (' .. info.code .. ') but is now touching ' .. info.collidedShip.getName()
             annColor = MoveModule.AnnounceColor.moveCollision
         end
+    elseif info.type == 'overlap' then
+        annString = shipName .. info.note .. ' (' .. info.code .. ') but there was no space to complete the move'
+        annColor = MoveModule.AnnounceColor.moveCollision
     elseif info.type == 'historyHandle' then
         annString = shipName .. info.note
         annColor = MoveModule.AnnounceColor.historyHandle
@@ -2100,24 +2371,33 @@ XW_cmd.AddCommand('cd', 'dialHandle')
 -- set_ship table: {set=dialTable, ship=shipRef}
 -- dialTable: {dial1, dial2, dial3, ...}
 function DialAPI_AssignSet(set_ship)
+
     local actSet = DialModule.GetSet(set_ship.ship)
+
     if actSet ~= nil then
         DialModule.RemoveSet(set_ship.ship)
     end
+
     local validSet = {}
+
     for k,dial in pairs(set_ship.set) do
+
         -- If there already is a dial of same description in those that are added now
         if validSet[dial.getDescription()] ~= nil then
             MoveModule.Announce(set_ship.ship, {type='error_DialModule', note='tried to assign few of same dials'}, 'all')
         else
+
             -- If dial description is (so far) unique
             validSet[dial.getDescription()] = {dial=dial, originPos=dial.getPosition()}
         end
+
         if dial.getVar('assignedShip') == nil then
             dial.call('setShip', {set_ship.ship})
         end
     end
+
     DialModule.AddSet(set_ship.ship, validSet)
+
 end
 
 -- Print active sets in play, just for debug
@@ -2451,8 +2731,8 @@ DialModule.ObjDestroyedHandle = function(obj)
     elseif obj.tag == 'Card' and obj.getDescription() ~= '' then
         if DialModule.isAssigned(obj) then DialModule.UnassignDial(obj) end
     elseif obj.getName() == 'Target Lock' then
-        for k,lockInfo in pairs(DialModule.LocksToBeSet) do
-            if lockInfo.lock == obj then table.remove(DialModule.LocksToBeSet, k) break end
+        for k,lockInfo in pairs(DialModule.locksToBeSet) do
+            if lockInfo.lock == obj then table.remove(DialModule.locksToBeSet, k) break end
         end
     end
     -- Remove ruler with ship it is on and remove ruler from list if it is manually deleted
@@ -2464,31 +2744,10 @@ DialModule.ObjDestroyedHandle = function(obj)
     end
 end
 
--- Table with bags from which we can draw stuff
-DialModule.TokenSources = {}
 
 -- Update token sources on each load
 -- Restore sets if data is loaded
 DialModule.onLoad = function(saveTable)
-    for k, obj in pairs(getAllObjects()) do
-        if obj.tag == 'Infinite' then
-            if obj.getName() == 'Focus' then DialModule.TokenSources.focus = obj
-            elseif obj.getName() == 'Evade' then DialModule.TokenSources.evade = obj
-            elseif obj.getName() == 'Stress' then DialModule.TokenSources.stress = obj
-            elseif obj.getName() == 'Target Locks' then DialModule.TokenSources.targetLock = obj
-            elseif obj.getName():find('Templates') ~= nil then
-                if obj.getName():find('Straight') ~= nil then
-                    DialModule.TokenSources['s' .. obj.getName():sub(1,1)] = obj
-                elseif obj.getName():find('Turn') ~= nil then
-                    DialModule.TokenSources['t' .. obj.getName():sub(1,1)] = obj
-                elseif obj.getName():find('Bank') ~= nil then
-                    DialModule.TokenSources['b' .. obj.getName():sub(1,1)] = obj
-                end
-            end
-        elseif obj.getName() == 'MoveLUT' then
-            MoveData.LUT.Parse(obj)
-        end
-    end
     -- Restore dial sets
     DialModule.RestoreSaveData(saveTable)
 end
@@ -2552,8 +2811,8 @@ end
 
 -- Perform an automated action
 -- Can be called externally for stuff like range ruler spawning
-DialModule.PerformAction = function(ship, type, extra)
-    local tokenActions = 'focus evade stress targetLock'
+DialModule.PerformAction = function(ship, type, playerColor)
+    local tokenActions = ' Focus Evade Stress Target Lock '
     announceInfo = {type='action'}
     -- Ruler spawning
     if type == 'ruler' then
@@ -2592,54 +2851,40 @@ DialModule.PerformAction = function(ship, type, extra)
             table.insert(DialModule.SpawnedRulers, {ruler=newRuler, ship=ship})
             announceInfo.note = 'spawned a ruler'
         end
-    elseif tokenActions:find(type) ~= nil then
-        -- Token spawning!
-        local baseSize
-        -- Get the position next to the ship base
-        if DB_isLargeBase(ship) == true then baseSize = Convert_mm_igu(mm_largeBase/2)
-        else baseSize = Convert_mm_igu(mm_smallBase/2) end
-        local dest = {baseSize+Convert_mm_igu(10), 1.5, 0}
-        -- Offset forward/backward between tokens
-        if type == 'stress' then dest[3] = dest[3] - (Convert_mm_igu(40)/math.sqrt(3))
-        elseif type == 'focus' then dest[3] = dest[3] + (Convert_mm_igu(40)/math.sqrt(3))
-        elseif type == 'targetLock' then
-            dest[3] = dest[3] + (Convert_mm_igu(40)/math.sqrt(3))
-            dest[1] = dest[1]*-1
+    elseif type == 'spawnMoveTemplate' then
+        print('temp')
+    elseif type == 'unstress' then
+        local stressInfo = {token=nil, dist=-1}
+        for k,tokenInfo in pairs(TokenModule.GetShipTokensInfo(ship)) do
+            if tokenInfo.token.getName() == 'Stress' and tokenInfo.dist > stressInfo.dist then
+                stressInfo.token = tokenInfo.token
+            end
         end
-        -- If this position has other ship than ours here closest, halve it (it's on base instead then)
-        local tempDest = Vect_Sum(Vect_RotateDeg(dest, ship.getRotation()[2]+180), ship.getPosition())
-        local destData = MoveModule.GetTokenOwner(tempDest)
-        if destData.owner ~= ship or destData.margin < Convert_mm_igu(20) then
-            dest[1] = (baseSize/2)*(dest[1]/math.abs(dest[1]))
+        if stressInfo.token == nil then
+            announceInfo.note = 'tried to shed a stress but doesn\'t have any'
+        else
+            announceInfo.note = 'sheds a stress token'
+            if stressInfo.token.getQuantity() > 0 then
+                stressInfo.token = stressInfo.token.takeObject({})
+            end
+            stressInfo.token.highlightOn({0, 0.7, 0}, 3)
+            stressInfo.token.setPositionSmooth(Vect_Sum(TokenModule.tokenSources.Stress.src.getPosition(), {0, 2, 0}))
         end
-        dest = Vect_RotateDeg(dest, ship.getRotation()[2]+180)
-        dest = Vect_Sum(dest, ship.getPosition())
-
-        if type == 'targetLock' then
-            local newToken = DialModule.TokenSources[type].takeObject({position=dest, callback='Dial_SetLocks', callback_owner=Global})
-            table.insert(DialModule.LocksToBeSet, {lock=newToken, name=ship.getName(), color=extra})
+    elseif tokenActions:find(' ' .. type .. ' ') ~= nil then
+        local dest = TokenModule.VisiblePosition(type, ship)
+        local newToken = TokenModule.TakeToken(type, playerColor, dest)
+        if type == 'Target Lock' then
+            table.insert(TokenModule.locksToBeSet, {lock=newToken, name=ship.getName(), color=playerColor})
             announceInfo.note = 'acquired a target lock'
         else
-            DialModule.TokenSources[type].takeObject({position=dest})
-            if type == 'evade' then
+            if type == 'Evade' then
                 announceInfo.note = 'takes an evade token'
             else
-                announceInfo.note = 'takes a ' .. type .. ' token'
+                announceInfo.note = 'takes a ' .. string.lower(type) .. ' token'
             end
         end
     end
     MoveModule.Announce(ship, announceInfo, 'all')
-end
-
--- Table for locks to be set and callback to call setting of them
--- It's easiest this way if we want target lock tokens to still retain functionality
---  when manually handled too
-DialModule.LocksToBeSet = {}
-function Dial_SetLocks()
-    for k,info in pairs(DialModule.LocksToBeSet) do
-        info.lock.call('manualSet', {info.color, info.name})
-    end
-    DialModule.LocksToBeSet = {}
 end
 
 -- Keep spawned rulers here so you can delete them with same button as for spawn
@@ -2678,19 +2923,22 @@ function DialClick_Undo(dial)
     end
 end
 function DialClick_Focus(dial)
-    DialModule.PerformAction(dial.getVar('assignedShip'), 'focus')
+    DialModule.PerformAction(dial.getVar('assignedShip'), 'Focus')
 end
 function DialClick_Evade(dial)
-    DialModule.PerformAction(dial.getVar('assignedShip'), 'evade')
+    DialModule.PerformAction(dial.getVar('assignedShip'), 'Evade')
 end
 function DialClick_Stress(dial)
-    DialModule.PerformAction(dial.getVar('assignedShip'), 'stress')
+    DialModule.PerformAction(dial.getVar('assignedShip'), 'Stress')
+end
+function DialClick_Unstress(dial)
+    DialModule.PerformAction(dial.getVar('assignedShip'), 'unstress')
 end
 function DialClick_TargetLock(dial, playerColor)
-    DialModule.PerformAction(dial.getVar('assignedShip'), 'targetLock', playerColor)
+    DialModule.PerformAction(dial.getVar('assignedShip'), 'Target Lock', playerColor)
 end
-function DialClick_Template(dial)
-    DialModule.PerformAction(dial.getVar('assignedShip'), 'spawnTemplate')
+function DialClick_SpawnMoveTemplate(dial)
+    DialModule.PerformAction(dial.getVar('assignedShip'), 'spawnMoveTemplate')
 end
 function DialClick_BoostS(dial)
     XW_cmd.Process(dial.getVar('assignedShip'), 's1')
@@ -2731,16 +2979,23 @@ end
 function DialClick_Ruler(dial)
     DialModule.PerformAction(dial.getVar('assignedShip'), 'ruler')
 end
-function DialClick_ToggleExpanded(dial)
+function DialClick_ToggleMainExpanded(dial)
     local befMove = false
     for k,but in pairs(dial.getButtons()) do
         if but.label == 'Move' then befMove = true end
     end
-    if DialModule.GetButtonsState(dial) ~= 2 then
-        DialModule.SetButtonsState(dial, 2)
+    if DialModule.GetMainButtonsState(dial) ~= 2 then
+        DialModule.SetMainButtonsState(dial, 2)
     else
-        if befMove == true then DialModule.SetButtonsState(dial, 0)
-        else DialModule.SetButtonsState(dial, 1) end
+        if befMove == true then DialModule.SetMainButtonsState(dial, 0)
+        else DialModule.SetMainButtonsState(dial, 1) end
+    end
+end
+function DialClick_ToggleInitialExpanded(dial)
+    if DialModule.GetInitialButtonsState(dial) == 0 then
+        DialModule.SetInitialButtonsState(dial, 1)
+    else
+        DialModule.SetInitialButtonsState(dial, 0)
     end
 end
 function DialClick_SlideStart(dial, playerColor)
@@ -2776,8 +3031,11 @@ DialModule.Buttons.move = {label='Move', click_function='DialClick_Move', height
 DialModule.Buttons.undoMove = {label='Undo', click_function='DialClick_Undo', height = 500, width=750, position={-0.32, 0.5, 1}, font_size=300}
 DialModule.Buttons.focus = {label = 'F', click_function='DialClick_Focus', height=500, width=200, position={0.9, 0.5, -1}, font_size=250}
 DialModule.Buttons.stress = {label = 'S', click_function='DialClick_Stress', height=500, width=200, position={0.9, 0.5, 0}, font_size=250}
+DialModule.Buttons.shedStress = {label = '-', click_function='DialClick_Unstress', height=500, width=200, position={0.53, 0.5, 0}, font_size=250}
 DialModule.Buttons.evade = {label = 'E', click_function='DialClick_Evade', height=500, width=200, position={0.9, 0.5, 1}, font_size=250}
-DialModule.Buttons.toggleExpanded = {label = 'A', click_function='DialClick_ToggleExpanded', height=500, width=200, position={-0.9, 0.5, 0}, font_size=250}
+DialModule.Buttons.toggleMainExpanded = {label = 'A', click_function='DialClick_ToggleMainExpanded', height=500, width=200, position={-0.9, 0.5, 0}, font_size=250}
+DialModule.Buttons.moveTemplate = {label = 'T', click_function='DialClick_SpawnMoveTemplate', height=500, width=200, position={-0.53, 0.5, 0}, font_size=250}
+DialModule.Buttons.toggleInitialExpanded = {label = 'A', click_function='DialClick_ToggleInitialExpanded', height=500, width=200, position={0.9, -0.5, 1}, rotation={180, 180, 0}, font_size=250}
 DialModule.Buttons.undo = {label = 'Q', click_function='DialClick_Undo', height=500, width=200, position={-0.9, 0.5, -1}, font_size=250}
 DialModule.Buttons.nameButton = function(ship)
     local shortName = DialModule.GetShortName(ship)
@@ -2785,6 +3043,11 @@ DialModule.Buttons.nameButton = function(ship)
     local len = string.len(shortName)
     if len*150 > nameWidth then nameWidth = len*150 end
     return {label=shortName, click_function='dummy', height=300, width=nameWidth, position={0, -0.5, -1}, rotation={180, 180, 0}, font_size=250}
+end
+DialModule.Buttons.nameButtonLifted = function(ship)
+    local regularButton = DialModule.Buttons.nameButton(ship)
+    regularButton.position[3] = regularButton.position[3]-2.2
+    return regularButton
 end
 DialModule.Buttons.boostS = {label='B', click_function='DialClick_BoostS', height=500, width=365, position={0, 0.5, -2.2}, font_size=250}
 DialModule.Buttons.boostR = {label='Br', click_function='DialClick_BoostR', height=500, width=365, position={0.75, 0.5, -2.2}, font_size=250}
@@ -2798,6 +3061,15 @@ DialModule.Buttons.rollLB = {label='Xb', click_function='DialClick_RollLB', heig
 DialModule.Buttons.ruler = {label='R', click_function='DialClick_Ruler', height=500, width=365, position={-1.5, 0.5, 2}, font_size=250}
 DialModule.Buttons.targetLock = {label='TL', click_function='DialClick_TargetLock', height=500, width=365, position={1.5, 0.5, 2}, font_size=250}
 DialModule.Buttons.slide = {label='Slide', click_function='DialClick_SlideStart', height=250, width=1600, position={2.5, 0.5, 0}, font_size=250, rotation={0, 90, 0}}
+
+DialModule.Buttons.FlipVersion = function(buttonEntry)
+    --print('Flip: ' .. buttonEntry.label)
+    local out = Lua_ShallowCopy(buttonEntry)
+    if out.rotation == nil then out.rotation = {0, 0, 0} end
+    out.rotation = {out.rotation[1]+180, out.rotation[2]+180, out.rotation[3]}
+    out.position = {-1*out.position[1], -2*out.position[2], out.position[3]}
+    return out
+end
 
 -- DELETE THIS BEFORE RELEASE
 function round(num, numDecimalPlaces)
@@ -3005,6 +3277,7 @@ DialModule.SpawnFirstActiveButtons = function(dialTable)
     dialTable.dial.createButton(DialModule.Buttons.deleteFacedown)
     dialTable.dial.createButton(DialModule.Buttons.flip)
     dialTable.dial.createButton(DialModule.Buttons.nameButton(dialTable.ship))
+    dialTable.dial.createButton(DialModule.Buttons.toggleInitialExpanded)
 end
 
 -- Spawn main buttons on a dial (move, actions, undo) when it is flipped over
@@ -3013,15 +3286,71 @@ DialModule.SpawnMainActiveButtons = function (dialTable)
     ClearButtonsPatch(dialTable.dial)
     dialTable.dial.createButton(DialModule.Buttons.deleteFaceup)
     dialTable.dial.createButton(DialModule.Buttons.move)
-    dialTable.dial.createButton(DialModule.Buttons.toggleExpanded)
+    dialTable.dial.createButton(DialModule.Buttons.moveTemplate)
+    dialTable.dial.createButton(DialModule.Buttons.toggleMainExpanded)
 end
+
+
+DialModule.GetInitialButtonsState = function(dial)
+    local state = 0
+    local buttons = dial.getButtons()
+    if buttons == nil then return -1 end
+    for k,but in pairs(buttons) do
+        if but.label == 'R' then state = 1 end
+    end
+    return state
+end
+
+DialModule.SetInitialButtonsState = function(dial, newState)
+    local actShip = dial.getVar('assignedShip')
+    local extActionsMatch = ' Br B Bl Xf X Xb TL R F S E Q Slide '  -- labels for buttons of EXTENDED set
+    local nameButton = DialModule.Buttons.nameButton(actShip)
+    local currentState = DialModule.GetInitialButtonsState(dial)
+
+        print(currentState .. ' -> ' .. newState)
+    if newState > currentState then
+            dial.createButton(DialModule.Buttons.FlipVersion(DialModule.Buttons.boostS))
+            dial.createButton(DialModule.Buttons.FlipVersion(DialModule.Buttons.boostR))
+            dial.createButton(DialModule.Buttons.FlipVersion(DialModule.Buttons.boostL))
+            dial.createButton(DialModule.Buttons.FlipVersion(DialModule.Buttons.rollR))
+            dial.createButton(DialModule.Buttons.FlipVersion(DialModule.Buttons.rollRF))
+            dial.createButton(DialModule.Buttons.FlipVersion(DialModule.Buttons.rollRB))
+            dial.createButton(DialModule.Buttons.FlipVersion(DialModule.Buttons.rollL))
+            dial.createButton(DialModule.Buttons.FlipVersion(DialModule.Buttons.rollLF))
+            dial.createButton(DialModule.Buttons.FlipVersion(DialModule.Buttons.rollLB))
+            dial.createButton(DialModule.Buttons.FlipVersion(DialModule.Buttons.ruler))
+            dial.createButton(DialModule.Buttons.FlipVersion(DialModule.Buttons.targetLock))
+            dial.createButton(DialModule.Buttons.FlipVersion(DialModule.Buttons.slide))
+            dial.createButton(DialModule.Buttons.FlipVersion(DialModule.Buttons.focus))
+            dial.createButton(DialModule.Buttons.FlipVersion(DialModule.Buttons.stress))
+            dial.createButton(DialModule.Buttons.FlipVersion(DialModule.Buttons.evade))
+            dial.createButton(DialModule.Buttons.FlipVersion(DialModule.Buttons.undo))
+            local buttons = dial.getButtons()
+            for k,but in pairs(buttons) do
+                if but.label == nameButton.label then
+                    dial.removeButton(but.index)
+                end
+            end
+            dial.createButton(DialModule.Buttons.nameButtonLifted(actShip))
+        -- if REMOVING buttons
+    elseif newState < currentState then
+        local buttons = dial.getButtons()
+        for k,but in pairs(buttons) do
+            if extActionsMatch:find(' ' .. but.label .. ' ') ~= nil or but.label == nameButton.label then
+                dial.removeButton(but.index)
+            end
+        end
+        dial.createButton(DialModule.Buttons.nameButton(actShip))
+    end
+end
+
 
 -- Check what buttons state the dial is in
 -- -1: no buttons, generally should not occur
 -- 0: just basic buttons
 -- 1: above plus FSEQ buttons
 -- 2: above plus boost, rolls, ruler and lock
-DialModule.GetButtonsState = function(dial)
+DialModule.GetMainButtonsState = function(dial)
     local state = 0
     local buttons = dial.getButtons()
     if buttons == nil then return -1 end
@@ -3032,16 +3361,18 @@ DialModule.GetButtonsState = function(dial)
     return state
 end
 
--- Adjust button set between states like explained over GetButtonsState function
-DialModule.SetButtonsState = function(dial, newState)
-    local standardActionsMatch = 'F S E Q'           -- labels for buttons of STANDARD set
-    local extActionsMatch = 'Br B Bl Xf X Xb TL R'  -- labels for buttons of EXTENDED set
 
-    local currentState = DialModule.GetButtonsState(dial)
+-- Adjust button set between states like explained over GetMainButtonsState function
+DialModule.SetMainButtonsState = function(dial, newState)
+    local standardActionsMatch = ' F S E Q -'           -- labels for buttons of STANDARD set
+    local extActionsMatch = ' Br B Bl Xf X Xb TL R Slide '  -- labels for buttons of EXTENDED set
+
+    local currentState = DialModule.GetMainButtonsState(dial)
     if newState > currentState then
         if currentState == 0 then -- BASIC -> STANDARD
             dial.createButton(DialModule.Buttons.focus)
             dial.createButton(DialModule.Buttons.stress)
+            dial.createButton(DialModule.Buttons.shedStress)
             dial.createButton(DialModule.Buttons.evade)
             dial.createButton(DialModule.Buttons.undo)
         end
@@ -3064,12 +3395,12 @@ DialModule.SetButtonsState = function(dial, newState)
         local buttons = dial.getButtons()
         if currentState == 2 then -- remove EXTENDED set ones
             for k,but in pairs(buttons) do
-                if extActionsMatch:find(but.label) ~= nil or but.label == 'Slide' then dial.removeButton(but.index) end
+                if extActionsMatch:find(' ' .. but.label .. ' ') ~= nil then dial.removeButton(but.index) end
             end
         end
         if newState == 0 then -- remove STANDARD set ones
             for k,but in pairs(buttons) do
-                if standardActionsMatch:find(but.label) ~= nil then dial.removeButton(but.index) end
+                if standardActionsMatch:find(' ' .. but.label .. ' ') ~= nil then dial.removeButton(but.index) end
             end
         end
     end
@@ -3087,16 +3418,16 @@ DialModule.SwitchMainButton = function(dial, type)
             if but.label == 'Move' then
                 dial.removeButton(but.index)
                 dial.createButton(DialModule.Buttons.undoMove)
-                if DialModule.GetButtonsState(dial) == 0 then
-                    DialModule.SetButtonsState(dial, 1)
+                if DialModule.GetMainButtonsState(dial) == 0 then
+                    DialModule.SetMainButtonsState(dial, 1)
                 end
             end
         elseif type == 'move' then
             if but.label == 'Undo' then
                 dial.removeButton(but.index)
                 dial.createButton(DialModule.Buttons.move)
-                if DialModule.GetButtonsState(dial) == 1 then
-                    DialModule.SetButtonsState(dial, 0)
+                if DialModule.GetMainButtonsState(dial) == 1 then
+                    DialModule.SetMainButtonsState(dial, 0)
                 end
             end
         end
@@ -3211,6 +3542,8 @@ function onLoad(save_state)
         local savedData = JSON.decode(save_state)
         DialModule.onLoad(savedData['DialModule'])
     end
+    MoveData.onLoad()
+    TokenModule.onLoad()
 end
 
 function onSave()
@@ -3312,28 +3645,36 @@ end
 -- SHIP DATABASE MODULE
 -- Lets us check type and base size of a ship easily
 
+function DB_getShipInfo(shipRef)
+    if shipRef.getTable('DB_shipInfo') ~= nil then
+        return shipRef.getTable('DB_shipInfo')
+    end
+    local mesh = shipRef.getCustomObject().mesh
+    for shipType, typeTable in pairs(shipTypeDatabase) do
+        for k2, model in pairs(typeTable.meshes) do
+            local ssl_switch_model = ''
+            if model:sub(1,5) == 'https' then
+                -- http variant
+                ssl_switch_model = 'http' .. model:sub(6, -1)
+            else
+                -- https variant
+                ssl_switch_model = 'https' .. model:sub(5, -1)
+            end
+            if model == mesh or ssl_switch_model == mesh then
+                local info = {shipType = shipType, largeBase = typeTable.largeBase, faction = typeTable.faction}
+                shipRef.setTable('DB_shipInfo', info)
+                return info
+            end
+        end
+    end
+    return nil
+end
 -- Return ship type like it's written on the back of a dial
 -- Return 'Unknown' is ship is not in the database
 function DB_getShipType(shipRef)
-    if shipRef.getVar('DB_shipType') ~= nil then return shipRef.getVar('DB_shipType') end
-    local mesh = shipRef.getCustomObject().mesh
-    for k,typeTable in pairs(shipTypeDatabase) do
-        for k2,model in pairs(typeTable) do
-            if type(model) == 'string' then
-                local ssl_switch_model = ''
-                if model:sub(1,5) == 'https' then
-                    -- http variant
-                    ssl_switch_model = 'http' .. model:sub(6, -1)
-                else
-                    -- https variant
-                    ssl_switch_model = 'https' .. model:sub(5, -1)
-                end
-                if model == mesh or ssl_switch_model == mesh then
-                    shipRef.setVar('DB_shipType', typeTable[1])
-                    return typeTable[1]
-                end
-            end
-        end
+    local shipInfo = DB_getShipInfo(shipRef)
+    if shipInfo ~= nil then
+        return shipInfo.shipType
     end
     return 'Unknown'
 end
@@ -3341,17 +3682,12 @@ end
 -- Return true if large base, false if small
 -- First checks database, then LGS in name, warns and treat as small if both fail
 function DB_isLargeBase(shipRef)
-    if shipRef.getVar('DB_isLargeBase') ~= nil then
-        return shipRef.getVar('DB_isLargeBase')
+    local shipInfo = DB_getShipInfo(shipRef)
+    if shipInfo ~= nil then
+        return shipInfo.largeBase
     end
-    local shipType = DB_getShipType(shipRef)
-    for k,typeTable in pairs(shipTypeDatabase) do
-        if typeTable[1] == shipType then
-            shipRef.setVar('DB_isLargeBase', typeTable[2])
-            return typeTable[2]
-        end
-    end
-    if shipRef.getName():find('LGS') ~= nil then return true
+    if shipRef.getName():find('LGS') ~= nil then
+        return true
     else
         if shipRef.getVar('DB_missingModelWarned') ~= true then
             printToAll(shipRef.getName() .. '\'s model not recognized - use LGS in name if large base and contact author about the issue', {1, 0.1, 0.1})
@@ -3366,6 +3702,11 @@ function DB_getShipTypeCallable(table)
     return DB_getShipType(table[1])
 end
 
+-- Same as above with table argument to allow call from outside Global
+function DB_getShipInfoCallable(table)
+    return DB_getShipInfo(table[1])
+end
+
 -- Get the ship size as in 'large' or 'small'
 -- 'Unknown' should be never returned (unless parent function DB_isLargeBase breaks)
 function DB_getBaseSize(shipRef)
@@ -3378,53 +3719,53 @@ end
 -- Type <=> Model (mesh) database
 -- Entry: { <type name>, <is large base?>, <model1>, <model2>, ..., <modelN>}
 shipTypeDatabase = {
-    xWing = {'X-Wing', false, 'https://paste.ee/r/54FLC', 'https://paste.ee/r/eAdkb', 'https://paste.ee/r/hxWah', 'https://paste.ee/r/ZxcTT', 'https://paste.ee/r/FfWNK', 'http://cloud-3.steamusercontent.com/ugc/82591194029070509/ECA794EC4771A195A6EB641226DF1F986041EFFF/', 'http://cloud-3.steamusercontent.com/ugc/82591194029077829/B7E898109E3F3B115DF0D60BB0CA215A727E3F38/', 'http://cloud-3.steamusercontent.com/ugc/82591194029083210/BFF5BAE2A45EC9D647E14D9041140FFE114BF2D4/', 'http://cloud-3.steamusercontent.com/ugc/82591194029107313/95BAD08906334FBA628F6628E5DE2D0D30112A53/', 'http://cloud-3.steamusercontent.com/ugc/82591194029079708/B215C5ADC2F6D83F441BA9C7659C91E3100D3BDC/'},
-    yWingReb = {'Y-Wing Rebel', false, 'https://paste.ee/r/MV6qP', 'http://cloud-3.steamusercontent.com/ugc/82591194029097150/75A486189FEDE8BEEBFBACC0D76DE926CB42E52A/'},
-    yt1300 = {'YT-1300', true, 'https://paste.ee/r/kkPoB', 'http://pastebin.com/VdHhgdFr', 'http://cloud-3.steamusercontent.com/ugc/82591194029088151/213EF50E847F62BB943430BA93094F1E794E866B/', 'http://pastebin.com/VdHhgdFr'},
-    yt2400 = {'YT-2400', true, 'https://paste.ee/r/Ff0vZ', 'http://cloud-3.steamusercontent.com/ugc/82591194029079241/206F408212849DCBB3E1934A623FD7A8844AAE47/'},
-    aWing = {'A-Wing', false, 'https://paste.ee/r/tIdib', 'https://paste.ee/r/mow3U', 'https://paste.ee/r/ntg8n', 'http://cloud-3.steamusercontent.com/ugc/82591194029101910/5B04878FCA189712681D1CF6C92F8CD178668FD2/', 'http://cloud-3.steamusercontent.com/ugc/82591194029092256/19939432DC769A3B77BA19F2541C9EA11B72C73B/', 'http://cloud-3.steamusercontent.com/ugc/82591194029099778/264B65BA198B1A004192B898AD32F48FD3D400E3/'},
-    bWing = {'B-Wing', false, 'https://paste.ee/r/8CtXr', 'http://cloud-3.steamusercontent.com/ugc/82591194029071704/78677576E07A2F091DEC4CE58129B42714E8A19E/'},
-    hwk290Reb = {'HWK-290 Rebel', false, 'https://paste.ee/r/MySkn', 'http://cloud-3.steamusercontent.com/ugc/82591194029098250/4E8A65B9C156B7882A729BC9D93B2B434D549834/'},
-    vcx100 = {'VCX-100', true, 'https://paste.ee/r/VmV6q', 'http://cloud-3.steamusercontent.com/ugc/82591194029104609/DDD1DE36F998F9175669CB459734B1A89AD3549B/'},
-    attShuttle = {'Attack Shuttle', false, 'https://paste.ee/r/jrwRJ', 'http://cloud-3.steamusercontent.com/ugc/82591194029086137/2D8471654F7BA70A5B65BB3A5DC4EB6CBE8F7C1C/'},
-    t70xWing = {'T-70 X-Wing', false, 'https://paste.ee/r/NH1KI', 'http://cloud-3.steamusercontent.com/ugc/82591194029099132/056C807B114DE0023C1B8ABD28F4D5E8F0B5D76E/'},
-    eWing = {'E-Wing', false, 'https://paste.ee/r/A57A8', 'http://cloud-3.steamusercontent.com/ugc/82591194029072231/46CA6A77D12681CA1B1B4A9D97BD6917811D561C/'},
-    kWing = {'K-Wing', false, 'https://paste.ee/r/2Airh', 'http://cloud-3.steamusercontent.com/ugc/82591194029069099/CDF24012FD0342ED8DE472CFA0C7C2748E3AF541/'},
-    z95hhReb = {'Z-95 Headhunter Rebel', false, 'https://paste.ee/r/d91Hu', 'http://cloud-3.steamusercontent.com/ugc/82591194029075380/02AE170F8A35A5619E57B3380F9F7FE0E127E567/'},
-    tieFighterReb = {'TIE Fighter Rebel', false, 'https://paste.ee/r/aCJSv', 'http://cloud-3.steamusercontent.com/ugc/82591194029072635/C7C5DAD08935A68E342BED0A8583D23901D28753/'},
-    uWing = {'U-Wing', true, 'https://paste.ee/r/D4Jjb', 'http://cloud-3.steamusercontent.com/ugc/82591194029075014/E561AA8493F86562F48EE85AB0C02F9C4F54D1B3/'},
-    arc170 = {'ARC-170', false, 'http://cloud-3.steamusercontent.com/ugc/489018224649021380/CF0BE9820D8123314E976CF69F3EA0A2F52A19AA/'},
+    ['X-Wing'] = { faction = 'Rebel', largeBase = false, meshes = {'https://paste.ee/r/54FLC', 'https://paste.ee/r/eAdkb', 'https://paste.ee/r/hxWah', 'https://paste.ee/r/ZxcTT', 'https://paste.ee/r/FfWNK', 'http://cloud-3.steamusercontent.com/ugc/82591194029070509/ECA794EC4771A195A6EB641226DF1F986041EFFF/', 'http://cloud-3.steamusercontent.com/ugc/82591194029077829/B7E898109E3F3B115DF0D60BB0CA215A727E3F38/', 'http://cloud-3.steamusercontent.com/ugc/82591194029083210/BFF5BAE2A45EC9D647E14D9041140FFE114BF2D4/', 'http://cloud-3.steamusercontent.com/ugc/82591194029107313/95BAD08906334FBA628F6628E5DE2D0D30112A53/', 'http://cloud-3.steamusercontent.com/ugc/82591194029079708/B215C5ADC2F6D83F441BA9C7659C91E3100D3BDC/'}},
+    ['Y-Wing Rebel'] = { faction = 'Rebel', largeBase = false, meshes = {'https://paste.ee/r/MV6qP', 'http://cloud-3.steamusercontent.com/ugc/82591194029097150/75A486189FEDE8BEEBFBACC0D76DE926CB42E52A/'}},
+    ['YT-1300'] = { faction = 'Rebel', largeBase = true, meshes = {'https://paste.ee/r/kkPoB', 'http://pastebin.com/VdHhgdFr', 'http://cloud-3.steamusercontent.com/ugc/82591194029088151/213EF50E847F62BB943430BA93094F1E794E866B/', 'http://pastebin.com/VdHhgdFr'}},
+    ['YT-2400'] = { faction = 'Rebel', largeBase = true, meshes = {'https://paste.ee/r/Ff0vZ', 'http://cloud-3.steamusercontent.com/ugc/82591194029079241/206F408212849DCBB3E1934A623FD7A8844AAE47/'}},
+    ['A-Wing'] = { faction = 'Rebel', largeBase = false, meshes = {'https://paste.ee/r/tIdib', 'https://paste.ee/r/mow3U', 'https://paste.ee/r/ntg8n', 'http://cloud-3.steamusercontent.com/ugc/82591194029101910/5B04878FCA189712681D1CF6C92F8CD178668FD2/', 'http://cloud-3.steamusercontent.com/ugc/82591194029092256/19939432DC769A3B77BA19F2541C9EA11B72C73B/', 'http://cloud-3.steamusercontent.com/ugc/82591194029099778/264B65BA198B1A004192B898AD32F48FD3D400E3/'}},
+    ['B-Wing'] = { faction = 'Rebel', largeBase = false, meshes = {'https://paste.ee/r/8CtXr', 'http://cloud-3.steamusercontent.com/ugc/82591194029071704/78677576E07A2F091DEC4CE58129B42714E8A19E/'}},
+    ['HWK-290 Rebel'] = { faction = 'Rebel', largeBase = false, meshes = {'https://paste.ee/r/MySkn', 'http://cloud-3.steamusercontent.com/ugc/82591194029098250/4E8A65B9C156B7882A729BC9D93B2B434D549834/'}},
+    ['VCX-100'] = { faction = 'Rebel', largeBase = true, meshes = {'https://paste.ee/r/VmV6q', 'http://cloud-3.steamusercontent.com/ugc/82591194029104609/DDD1DE36F998F9175669CB459734B1A89AD3549B/'}},
+    ['Attack Shuttle'] = { faction = 'Rebel', largeBase = false, meshes = {'https://paste.ee/r/jrwRJ', 'http://cloud-3.steamusercontent.com/ugc/82591194029086137/2D8471654F7BA70A5B65BB3A5DC4EB6CBE8F7C1C/'}},
+    ['T-70 X-Wing'] = { faction = 'Rebel', largeBase = false, meshes = {'https://paste.ee/r/NH1KI', 'http://cloud-3.steamusercontent.com/ugc/82591194029099132/056C807B114DE0023C1B8ABD28F4D5E8F0B5D76E/'}},
+    ['E-Wing'] = { faction = 'Rebel', largeBase = false, meshes = {'https://paste.ee/r/A57A8', 'http://cloud-3.steamusercontent.com/ugc/82591194029072231/46CA6A77D12681CA1B1B4A9D97BD6917811D561C/'}},
+    ['K-Wing'] = { faction = 'Rebel', largeBase = false, meshes = {'https://paste.ee/r/2Airh', 'http://cloud-3.steamusercontent.com/ugc/82591194029069099/CDF24012FD0342ED8DE472CFA0C7C2748E3AF541/'}},
+    ['Z-95 Headhunter Rebel'] = { faction = 'Rebel', largeBase = false, meshes = {'https://paste.ee/r/d91Hu', 'http://cloud-3.steamusercontent.com/ugc/82591194029075380/02AE170F8A35A5619E57B3380F9F7FE0E127E567/'}},
+    ['TIE Fighter Rebel'] = { faction = 'Rebel', largeBase = false, meshes = {'https://paste.ee/r/aCJSv', 'http://cloud-3.steamusercontent.com/ugc/82591194029072635/C7C5DAD08935A68E342BED0A8583D23901D28753/', 'http://cloud-3.steamusercontent.com/ugc/200804981461390083/2E300B481E6474A8F71781FB38D1B0CD74BBC427/'}},
+    ['U-Wing'] = { faction = 'Rebel', largeBase = true, meshes = {'https://paste.ee/r/D4Jjb', 'http://cloud-3.steamusercontent.com/ugc/82591194029075014/E561AA8493F86562F48EE85AB0C02F9C4F54D1B3/', 'http://cloud-3.steamusercontent.com/ugc/89352927638740227/F17424FAEF4C4429CE544FEF03DAE0E7EA2A672E/'}},
+    ['ARC-170'] = { faction = 'Rebel', largeBase = false, meshes = {'http://cloud-3.steamusercontent.com/ugc/489018224649021380/CF0BE9820D8123314E976CF69F3EA0A2F52A19AA/'}},
 
-    fs31Scum = {'Firespray-31 Scum', true, 'https://paste.ee/r/3INxK', 'http://cloud-3.steamusercontent.com/ugc/82591194029069521/B5F857033DD0324E7508645821F17B572BC1AF6A/'},
-    z95hhScum = {'Z-95 Headhunter Scum', false, 'https://paste.ee/r/OZrhd', 'http://cloud-3.steamusercontent.com/ugc/82591194029101027/02AE170F8A35A5619E57B3380F9F7FE0E127E567/'},
-    yWingScum = {'Y-Wing Scum', false, 'https://paste.ee/r/1T0ii', 'http://cloud-3.steamusercontent.com/ugc/82591194029068678/DD4A3DBC4B9ED3E108C39E736F9AA3DD816E1F6F/'},
-    hwk290Scum = {'HWK-290 Scum', false, 'https://paste.ee/r/tqTsw', 'http://cloud-3.steamusercontent.com/ugc/82591194029102663/71BDE5DC2D31FF4D365F210F037254E9DD62D6A7/'},
-    m3aScyk = {'M3-A Interceptor', false, 'https://paste.ee/r/mUFjk', 'http://cloud-3.steamusercontent.com/ugc/82591194029096648/6773CD675FA734358137849555B2868AC513801B/'},
-    starViper = {'StarViper', false, 'https://paste.ee/r/jpEbC', 'http://cloud-3.steamusercontent.com/ugc/82591194029085780/6B4B13CE7C78700EF474D06F44CEB27A14731011/'},
-    aggressor = {'Aggressor', true, 'https://paste.ee/r/0UFlm', 'http://cloud-3.steamusercontent.com/ugc/82591194029067417/A6D736A64063BC3BC26C10E5EED6848C1FCBADB7/'},
-    yv666 = {'YV-666', true, 'https://paste.ee/r/lLZ8W', 'http://cloud-3.steamusercontent.com/ugc/82591194029090900/DD6BFD31E1C7254018CF6B03ABA1DA40C9BD0D2D/'},
-    kihraxz = {'Kihraxz Fighter', false, 'https://paste.ee/r/E8ZT0', 'http://cloud-3.steamusercontent.com/ugc/82591194029077425/6C88D57B03EF8B0CD7E4D91FED266EC15C614FA9/'},
-    jm5k = {'JumpMaster 5000', true, 'https://paste.ee/r/1af5C', 'http://cloud-3.steamusercontent.com/ugc/82591194029067863/A8F7079195681ECD24028AE766C8216E6C27EE21/'},
-    g1a = {'G-1A StarFighter', false, 'https://paste.ee/r/aLVFD', 'http://cloud-3.steamusercontent.com/ugc/82591194029072952/254A466DCA5323546173CA6E3A93EFD37A584FE6/'},
-    lancer = {'Lancer-Class Pursuit Craft', true, 'https://paste.ee/r/Dp2Ge', 'http://cloud-3.steamusercontent.com/ugc/82591194029076583/E561AA8493F86562F48EE85AB0C02F9C4F54D1B3/'},
-    quad = {'Quadjumper', false, 'https://paste.ee/r/njJYd', 'http://cloud-3.steamusercontent.com/ugc/82591194029099470/6F4716CB145832CC47231B4A30F26153C90916AE/'},
-    protectorate = {'Protectorate Starfighter', false, 'https://paste.ee/r/GmKW8', 'http://cloud-3.steamusercontent.com/ugc/82591194029065993/9838180A02D9960D4DE949001BBFD05452DA90D2/'},
+    ['Firespray-31 Scum'] = { faction = 'Scum', largeBase = true, meshes = {'https://paste.ee/r/3INxK', 'http://cloud-3.steamusercontent.com/ugc/82591194029069521/B5F857033DD0324E7508645821F17B572BC1AF6A/'}},
+    ['Z-95 Headhunter Scum'] = { faction = 'Scum', largeBase = false, meshes = {'https://paste.ee/r/OZrhd', 'http://cloud-3.steamusercontent.com/ugc/82591194029101027/02AE170F8A35A5619E57B3380F9F7FE0E127E567/'}},
+    ['Y-Wing Scum'] = { faction = 'Scum', largeBase = false, meshes = {'https://paste.ee/r/1T0ii', 'http://cloud-3.steamusercontent.com/ugc/82591194029068678/DD4A3DBC4B9ED3E108C39E736F9AA3DD816E1F6F/'}},
+    ['HWK-290 Scum'] = { faction = 'Scum', largeBase = false, meshes = {'https://paste.ee/r/tqTsw', 'http://cloud-3.steamusercontent.com/ugc/82591194029102663/71BDE5DC2D31FF4D365F210F037254E9DD62D6A7/'}},
+    ['M3-A Interceptor'] = { faction = 'Scum', largeBase = false, meshes = {'https://paste.ee/r/mUFjk', 'http://cloud-3.steamusercontent.com/ugc/82591194029096648/6773CD675FA734358137849555B2868AC513801B/'}},
+    ['StarViper'] = { faction = 'Scum', largeBase = false, meshes = {'https://paste.ee/r/jpEbC', 'http://cloud-3.steamusercontent.com/ugc/82591194029085780/6B4B13CE7C78700EF474D06F44CEB27A14731011/'}},
+    ['Aggressor'] = { faction = 'Scum', largeBase = true, meshes = {'https://paste.ee/r/0UFlm', 'http://cloud-3.steamusercontent.com/ugc/82591194029067417/A6D736A64063BC3BC26C10E5EED6848C1FCBADB7/'}},
+    ['YV-666'] = { faction = 'Scum', largeBase = true, meshes = {'https://paste.ee/r/lLZ8W', 'http://cloud-3.steamusercontent.com/ugc/82591194029090900/DD6BFD31E1C7254018CF6B03ABA1DA40C9BD0D2D/'}},
+    ['Kihraxz Fighter'] = { faction = 'Scum', largeBase = false, meshes = {'https://paste.ee/r/E8ZT0', 'http://cloud-3.steamusercontent.com/ugc/82591194029077425/6C88D57B03EF8B0CD7E4D91FED266EC15C614FA9/'}},
+    ['JumpMaster 5000'] = { faction = 'Scum', largeBase = true, meshes = {'https://paste.ee/r/1af5C', 'http://cloud-3.steamusercontent.com/ugc/82591194029067863/A8F7079195681ECD24028AE766C8216E6C27EE21/'}},
+    ['G-1A StarFighter'] = { faction = 'Scum', largeBase = false, meshes = {'https://paste.ee/r/aLVFD', 'http://cloud-3.steamusercontent.com/ugc/82591194029072952/254A466DCA5323546173CA6E3A93EFD37A584FE6/'}},
+    ['Lancer-Class Pursuit Craft'] = { faction = 'Scum', largeBase = true, meshes = {'https://paste.ee/r/Dp2Ge', 'http://cloud-3.steamusercontent.com/ugc/82591194029076583/E561AA8493F86562F48EE85AB0C02F9C4F54D1B3/', 'http://cloud-3.steamusercontent.com/ugc/89352769134140020/49113B3BA0A5C67FD7D40A3F61B6AFAFF02E0D1F/'}},
+    ['Quadjumper'] = { faction = 'Scum', largeBase = false, meshes = {'https://paste.ee/r/njJYd', 'http://cloud-3.steamusercontent.com/ugc/82591194029099470/6F4716CB145832CC47231B4A30F26153C90916AE/', 'http://cloud-3.steamusercontent.com/ugc/89352927637054865/CA43D9DEC1EF65DA30EC657EC6A9101E15905C78/'}},
+    ['Protectorate Starfighter'] = { faction = 'Scum', largeBase = false, meshes = {'https://paste.ee/r/GmKW8', 'http://cloud-3.steamusercontent.com/ugc/82591194029065993/9838180A02D9960D4DE949001BBFD05452DA90D2/', 'http://cloud-3.steamusercontent.com/ugc/89352769138031546/C70B323524602140897D8E195C19522DB450A7E0/'}},
 
-    tieFighter = {'TIE Fighter', false, 'https://paste.ee/r/Yz0kt', 'http://cloud-3.steamusercontent.com/ugc/82591194029106682/C7C5DAD08935A68E342BED0A8583D23901D28753/'},
-    tieCeptor= {'TIE Interceptor', false, 'https://paste.ee/r/cedkZ', 'https://paste.ee/r/JxWNX', 'http://cloud-3.steamusercontent.com/ugc/82591194029074075/3AAF855C4A136C58E933F7409D0DB2C73E1958A9/', 'http://cloud-3.steamusercontent.com/ugc/82591194029086817/BD640718BFFAC3E4B5DF6C1B0220FB5A87E5B13C/'},
-    spaceCow = {'Lambda-Class Shuttle', true, 'https://paste.ee/r/4uxZO', 'http://cloud-3.steamusercontent.com/ugc/82591194029069944/4B8CB031A438A8592F0B3EF8FA0473DBB6A5495A/'},
-    fs31Imp = {'Firespray-31 Imperial', true, 'https://paste.ee/r/p3iYR', 'http://cloud-3.steamusercontent.com/ugc/82591194029101385/B5F857033DD0324E7508645821F17B572BC1AF6A/'},
-    tieBomber = {'TIE Bomber', false, 'https://paste.ee/r/5A0YG', 'http://cloud-3.steamusercontent.com/ugc/82591194029070985/D0AF97C6FB819220CF0E0E93137371E52B77E2DC/'},
-    tiePhantom = {'TIE Phantom', false, 'https://paste.ee/r/JN16g', 'http://cloud-3.steamusercontent.com/ugc/82591194029085339/CD9FEC659CF2EB67EE15B525007F784FB13D62B7/'},
-    vtDecimator = {'VT-49 Decimator', true, 'https://paste.ee/r/MJOFI', 'http://cloud-3.steamusercontent.com/ugc/82591194029091549/10F641F82963B26D42E062ED8366A4D38C717F73/'},
-    tieAdv = {'TIE Advanced', false, 'https://paste.ee/r/NeptF', 'http://cloud-3.steamusercontent.com/ugc/82591194029098723/CAF618859C1894C381CA48101B2D2D05B14F83C0/'},
-    tiePunisher = {'TIE Punisher', false, 'https://paste.ee/r/aVGkQ', 'http://cloud-3.steamusercontent.com/ugc/82591194029073355/7A1507E4D88098D19C8EAFE4A763CC33A5EC35CB/'},
-    tieDefender = {'TIE Defender', false, 'https://paste.ee/r/0QVhZ', 'http://cloud-3.steamusercontent.com/ugc/82591194029067091/F2165ABE4580BD5CCECF258CCE790CD9A942606F/'},
-    tieFoFighter = {'TIE/fo Fighter', false, 'http://pastebin.com/jt2AzA8t'},
-    tieAdvProt = {'TIE Adv. Prototype', false, 'https://paste.ee/r/l7cuZ', 'http://cloud-3.steamusercontent.com/ugc/82591194029089434/A4DA1AD96E4A6D65CC6AE4F745EDA966BA4EF85A/'},
-    tieStriker = {'TIE Striker', false, 'http://cloud-3.steamusercontent.com/ugc/200804896212875955/D04F1FF5B688EAB946E514650239E7772F4DC64E/'},
-    tieSfFighter = {'TIE/sf Fighter', false, 'http://pastebin.com/LezDjunY'},
-    upsilonShuttle = {'Upsilon Class Shuttle', true, 'http://pastebin.com/nsHXF9XV'}
+    ['TIE Fighter'] = { faction = 'Imperial', largeBase = false, meshes = {'https://paste.ee/r/Yz0kt', 'http://cloud-3.steamusercontent.com/ugc/82591194029106682/C7C5DAD08935A68E342BED0A8583D23901D28753/'}},
+    ['TIE Interceptor'] = { faction = 'Imperial', largeBase = false, meshes = {'https://paste.ee/r/cedkZ', 'https://paste.ee/r/JxWNX', 'http://cloud-3.steamusercontent.com/ugc/82591194029074075/3AAF855C4A136C58E933F7409D0DB2C73E1958A9/', 'http://cloud-3.steamusercontent.com/ugc/82591194029086817/BD640718BFFAC3E4B5DF6C1B0220FB5A87E5B13C/'}},
+    ['Lambda-Class Shuttle'] = { faction = 'Imperial', largeBase = true, meshes = {'https://paste.ee/r/4uxZO', 'http://cloud-3.steamusercontent.com/ugc/82591194029069944/4B8CB031A438A8592F0B3EF8FA0473DBB6A5495A/'}},
+    ['Firespray-31 Imperial'] = { faction = 'Imperial', largeBase = true, meshes = {'https://paste.ee/r/p3iYR', 'http://cloud-3.steamusercontent.com/ugc/82591194029101385/B5F857033DD0324E7508645821F17B572BC1AF6A/'}},
+    ['TIE Bomber'] = { faction = 'Imperial', largeBase = false, meshes = {'https://paste.ee/r/5A0YG', 'http://cloud-3.steamusercontent.com/ugc/82591194029070985/D0AF97C6FB819220CF0E0E93137371E52B77E2DC/'}},
+    ['TIE Phantom'] = { faction = 'Imperial', largeBase = false, meshes = {'https://paste.ee/r/JN16g', 'http://cloud-3.steamusercontent.com/ugc/82591194029085339/CD9FEC659CF2EB67EE15B525007F784FB13D62B7/'}},
+    ['VT-49 Decimator'] = { faction = 'Imperial', largeBase = true, meshes = {'https://paste.ee/r/MJOFI', 'http://cloud-3.steamusercontent.com/ugc/82591194029091549/10F641F82963B26D42E062ED8366A4D38C717F73/'}},
+    ['TIE Advanced'] = { faction = 'Imperial', largeBase = false, meshes = {'https://paste.ee/r/NeptF', 'http://cloud-3.steamusercontent.com/ugc/82591194029098723/CAF618859C1894C381CA48101B2D2D05B14F83C0/', 'http://cloud-3.steamusercontent.com/ugc/82591194029104263/D0F4E672CBFA645B586FFC94A334A8364B30FD38/', 'http://cloud-3.steamusercontent.com/ugc/82591194029080088/D0F4E672CBFA645B586FFC94A334A8364B30FD38/'}},
+    ['TIE Punisher'] = { faction = 'Imperial', largeBase = false, meshes = {'https://paste.ee/r/aVGkQ', 'http://cloud-3.steamusercontent.com/ugc/82591194029073355/7A1507E4D88098D19C8EAFE4A763CC33A5EC35CB/'}},
+    ['TIE Defender'] = { faction = 'Imperial', largeBase = false, meshes = {'https://paste.ee/r/0QVhZ', 'http://cloud-3.steamusercontent.com/ugc/82591194029067091/F2165ABE4580BD5CCECF258CCE790CD9A942606F/'}},
+    ['TIE/fo Fighter'] = { faction = 'Imperial', largeBase = false, meshes = {'http://pastebin.com/jt2AzA8t'}},
+    ['TIE Adv. Prototype'] = { faction = 'Imperial', largeBase = false, meshes = {'https://paste.ee/r/l7cuZ', 'http://cloud-3.steamusercontent.com/ugc/82591194029089434/A4DA1AD96E4A6D65CC6AE4F745EDA966BA4EF85A/'}},
+    ['TIE Striker'] = { faction = 'Imperial', largeBase = false, meshes = {'http://cloud-3.steamusercontent.com/ugc/200804896212875955/D04F1FF5B688EAB946E514650239E7772F4DC64E/'}},
+    ['TIE/sf Fighter'] = { faction = 'Imperial', largeBase = false, meshes = {'http://pastebin.com/LezDjunY'}},
+    ['Upsilon Class Shuttle'] = { faction = 'Imperial', largeBase = true, meshes = {'http://pastebin.com/nsHXF9XV'}}
 
 }
 -- END SHIP DATABASE MODULE
