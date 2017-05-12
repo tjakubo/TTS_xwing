@@ -1,6 +1,6 @@
 function onLoad(save_state)
     local sPos = self.getPosition()
-    self.setPosition({sPos[1], -8, sPos[3]})
+    self.setPosition({sPos[1], -3, sPos[3]})
     self.setRotation({0, 0, 0})
     self.interactable = false
     self.tooltip = false
