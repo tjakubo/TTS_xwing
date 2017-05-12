@@ -331,6 +331,7 @@ end
 
 -- Add a blank (name only) entry to the main pilots table
 Builder.AddPilot = function(pilotName)
+    pilotName = Builder.ErrataPass(pilotName)
     if Builder.pilotCount[pilotName] == nil then
         Builder.pilotCount[pilotName] = {}
     end
@@ -352,6 +353,7 @@ end
 -- Add an empty upgrade entry (name only) to the pilot at given index
 -- If index not provided, adds to the last pilot
 Builder.AddUpgrade = function(upgName, pilotIndex)
+    upgName = Builder.ErrataPass(upgName)
     if pilotIndex == nil or pilotIndex > #Builder.pilots then
         pilotIndex = #Builder.pilots
     end
@@ -569,7 +571,7 @@ Builder.ParseSquad.uk_Browse = function(input)
         word = Builder.TrimWord(word)
         -- Replace special characters
         word = word:gsub('[\u{201C}\u{201D}]', '"')
-        word = word:gsub('\u{201D}', '\'')
+        word = word:gsub('\u{2019}', '\'')
 
         local itemName = word:sub(1, -3)
         local delim = word:sub(-1, -1)
@@ -767,6 +769,26 @@ Builder.MakeNamesUnique = function()
     end
 end
 
+-- Table with builder names corrections
+-- VERSION PRINTED ON CARD IS ALWAYS THE CORRECT ONE
+Builder.Errata = {}
+Builder.Errata['IG88-A'] = 'IG-88A'
+Builder.Errata['IG88-B'] = 'IG-88B'
+Builder.Errata['IG88-C'] = 'IG-88C'
+Builder.Errata['IG88-D'] = 'IG-88D'
+Builder.Errata['Fire Control System'] = 'Fire-Control System'
+Builder.Errata['Burnout Slam'] = 'Burnout SLAM'
+
+-- Check if a name should be corrected
+-- Return correct version (same if no correction entry)
+Builder.ErrataPass = function(name)
+  local corr = Builder.Errata[name]
+  if corr ~= nil and type(corr) == 'string' then
+    return corr
+  end
+  return name
+end
+
 -- Fil ship types table
 -- This needs to be done once they are spawned (also all choices resolved)
 --  since we need physical models with mesh attribute there
@@ -901,8 +923,21 @@ end
 Builder.SpawnMisc = function()
     Builder.SpawnShields()
     Builder.SpawnExtraMunitions()
+    Builder.SpawnExtraIllicit()
     Builder.SpawnConditionCards()
+    Builder.SpawnArcIndicators()
     Builder.AdvanceState(Builder.states.MiscSpawned)
+end
+
+-- Spawn arc indicator for Lancer-Class Pursuit Crafts
+Builder.SpawnArcIndicators = function()
+    if Builder.ships['Lancer-Class Pursuit Craft'] ~= nil then
+        for k, pIndex in pairs(Builder.ships['Lancer-Class Pursuit Craft']) do
+            local ship = Builder.pilots[pIndex].sRef
+            local newIndicator = Spawner.Spawn('Arc Indicator', Builder.LocalPos({0, 0, 0}, ship), {0, 90, 0})
+            table.insert(Builder.misc.other, {ref=newIndicator, com='Arc Indicator'})
+        end
+    end
 end
 
 -- Spawn condition cards next to pilot cards
@@ -986,6 +1021,39 @@ Builder.SpawnExtraMunitions = function()
                 if applicableUpgrades[uTable.name] == true then
                     local newEMToken = Spawner.Spawn('Extra Munitions', Builder.LocalPos(offset, uTable.ref, 0.1), rot)
                     table.insert(Builder.misc.tokens, {tRef=newEMToken, pRef=uTable.ref})
+                end
+            end
+        end
+    end
+end
+
+-- Spawn EI token on each listed upgrade if Jabba the Hutt is present anywhere in the squad
+Builder.SpawnExtraIllicit = function()
+    local applicableUpgrades = {}
+    applicableUpgrades['"Hot Shot" Blaster'] = true
+    applicableUpgrades['Inertial Dampeners'] = true
+    applicableUpgrades['Glitterstim'] = true
+    applicableUpgrades['Cloaking Device'] = true
+    applicableUpgrades['Rigged Cargo Chute'] = true
+    applicableUpgrades['Burnout SLAM'] = true
+    applicableUpgrades['EMP Device'] = true
+    applicableUpgrades['Scavenger Crane'] = true
+    applicableUpgrades['Black Market Slicer Tools'] = true
+    applicableUpgrades['Dead Man\'s Switch'] = true
+    applicableUpgrades['Feedback Array'] = true
+
+    local jabbaPresent = Builder.HasUpgrade('Jabba the Hutt', 'any')
+
+    if jabbaPresent == true then
+        for k=1,#Builder.pilots,1 do
+            local upgrades = Builder.GetUpgrades(k)
+            local sRot = self.getRotation()
+            local rot = {sRot[1], sRot[2], sRot[3]}
+            local offset = {0, 0.2, 0.65}
+            for k2,uTable in pairs(upgrades) do
+                if applicableUpgrades[uTable.name] == true then
+                    local newEIToken = Spawner.Spawn('Extra Illicit', Builder.LocalPos(offset, uTable.ref, 0.1), rot)
+                    table.insert(Builder.misc.tokens, {tRef=newEIToken, pRef=uTable.ref})
                 end
             end
         end
@@ -1201,10 +1269,6 @@ end
 
 -- INITIALIZE BAG
 function init()
-    -- Get the note
-    Spawner.Fill(self, 'Upgrade: ')
-    local rot = {self.getRotation()[1], self.getRotation()[2]+180, self.getRotation()[3]}
-    Builder.noteObj = Spawner.Spawn('Upgrade: Spawn Me', Builder.LocalPos({-15, 0.5, 2}), rot)
     -- Make sure all sources are ready
     if Builder.SourcesReady() ~= true then
         Builder.FillSources()
@@ -1214,11 +1278,44 @@ function init()
             return
         end
     end
+
+    local sObj = self.getObjects()
+    local minorBags = {}
+    local hOff = -3
+
+    local sbm = nil
+    for k,obj in pairs(getAllObjects()) do
+        if obj.getName() == 'Squad Builder module' then
+            sbm = obj
+        end
+    end
+
+    for k, objInfo in pairs(sObj) do
+        if objInfo.name:find('Bag') ~= nil then
+            local nPos = Builder.LocalPos({0, 0, 0}, self, hOff)
+            local newObj = self.takeObject({guid=objInfo.guid, position=nPos})
+            newObj.lock()
+            newObj.interactable = false
+            newObj.tooltip = false
+            newObj.setPosition(nPos)
+            sbm.call('builderAddChild', {newObj})
+            table.insert(minorBags, newObj)
+        end
+    end
+
     -- Pass the sources to the spawner
     Spawner.Fill(Builder.sources['Ship Models Bag'], 'Ship: ')
     Spawner.Fill(Builder.sources['Pilot Cards Bag'])
     Spawner.Fill(Builder.sources['Accesories Bag'])
+    for k,bag in pairs(minorBags) do
+        Spawner.Fill(bag, 'Upgrade: ')
+    end
     Builder.Log('Source bags ready')
+
+    -- Get the note
+    Spawner.Fill(self)
+    local rot = {self.getRotation()[1], self.getRotation()[2]+180, self.getRotation()[3]}
+    Builder.noteObj = Spawner.Spawn('Spawn Me', Builder.LocalPos({-15, 0.5, 2}), rot)
 
     -- Change button to spawning function:
     self.clearButtons()
@@ -1286,4 +1383,4 @@ shipStatsDatabase['TIE/fo Fighter'] = { shieldCount=1 }
 shipStatsDatabase['TIE Adv. Prototype'] = { shieldCount=2 }
 shipStatsDatabase['TIE Striker'] = { shieldCount=0 }
 shipStatsDatabase['TIE/sf Fighter'] = { shieldCount=3 }
-shipStatsDatabase['Upsilon Class Shuttle'] = { shieldCount=5 }
+shipStatsDatabase['Upsilon Class Shuttle'] = { shieldCount=6 }

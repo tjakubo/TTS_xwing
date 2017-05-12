@@ -156,6 +156,7 @@ AssignModule.Assign = function(zoneColor, playerColor)
         return {pos[1], pos[2], pos[3] - 2*math.sgn(pos[3])}
     end
     local bPos = bPosStep(PosData[zoneColor](PosData.buttonCorner))
+    bPos[2] = 1.5
 
     -- If there are valid dial bags on the table, take them
     local playerStuff = XW_ObjWithinRect({bPos[1]/2, 0, bPos[3]/2}, math.abs(bPos[1])+1, math.abs(bPos[3])+1)
@@ -189,6 +190,7 @@ AssignModule.Assign = function(zoneColor, playerColor)
     -- Move the dial bags to desired position
     for type,data in pairs(dialData) do
         data.dialBag.setPositionSmooth(bPos)
+        data.dialBag.unlock()
         bPos = bPosStep(bPos)
     end
 
@@ -222,6 +224,12 @@ AssignModule.Assign = function(zoneColor, playerColor)
         for k,ship in pairs(data.ships) do
             local newStack = data.dialBag.takeObject({position=stPos, callback='expandSet', callback_owner=self, params={ship = ship, scale = {currScale, 1, currScale}}})
             ship.setPositionSmooth(shipPos(stPos))
+            local rot = 180
+            if math.sgn(stPos[3]) > 0 then
+                rot = 0
+            end
+            ship.setRotationSmooth({0, rot, 0})
+            ship.highlightOn({0, 1, 0}, 1)
             stPos = stPosStep(stPos)
         end
     end

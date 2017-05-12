@@ -526,6 +526,7 @@ XW_cmd.SetBusy = function(obj)
     if XW_cmd.isReady(obj) ~= true then
         print('Nested process on ' .. obj.getName())
     end
+        print('busy ' .. obj.getName())
     obj.setVar('XW_cmd_busy', true)
 end
 
@@ -534,6 +535,7 @@ XW_cmd.SetReady = function(obj)
     if XW_cmd.isReady(obj) == true then
         print('Double ready on ' .. obj.getName())
     end
+    print('ready ' .. obj.getName())
     obj.setVar('XW_cmd_busy', false)
 end
 --------
@@ -791,6 +793,13 @@ MoveData.DecodeInfo = function (move_code, ship)
             info.note = 'flew reverse ' .. info.speed
             info.collNote = 'tried to fly reverse ' .. info.speed
         end
+        if info.speed == 0 then
+            if info.extra == 'koiogran' then
+                info.note = 'turned around'
+            else
+                info.note = 'is stationary'
+            end
+        end
         if info.speed > 5 then info.type = 'invalid' end
         -- Banks, regular stuff
     elseif move_code:sub(1,1) == 'b' then
@@ -947,14 +956,23 @@ MoveModule.onSave = function()
     return MoveModule.GetSaveData()
 end
 
-MoveModule.EntryToPos = function(entry, ship)
+MoveModule.EntryToPos = function(entry, shipPos)
+    local basePos = nil
+    local baseRot = nil
+    if type(shipPos) == 'userdata' then
+        basePos = shipPos.getPosition()
+        baseRot = shipPos.getRotation()
+    elseif type(shipPos) == 'table' then
+        basePos = shipPos.pos
+        baseRot = shipPos.rot
+    end
     --print('EntryToPos: ' .. entry[1] .. ' : ' .. entry[2] .. ' : ' .. entry[3] .. ' : ' .. entry[4] .. ' : ' .. ship.getName())
     local finalPos = MoveData.ConvertDataToIGU(entry)
-    local finalRot = entry[4] + ship.getRotation()[2]
+    local finalRot = entry[4] + baseRot[2]
     --print('EntryToPos finalPos1: ' .. finalPos[1] .. ' : '  .. finalPos[2] .. ' : ' .. finalPos[3])
     --print('EntryToPos finalRot: ' .. finalRot)
-    finalPos = Vect_RotateDeg(finalPos, ship.getRotation()[2]+180)
-    finalPos = Vect_Offset(ship.getPosition(), finalPos)
+    finalPos = Vect_RotateDeg(finalPos, baseRot[2]+180)
+    finalPos = Vect_Sum(basePos, finalPos)
     --print('EntryToPos finalPos2: ' .. finalPos[1] .. ' : ' ..  finalPos[2] .. ' : ' .. finalPos[3])
     return {pos=finalPos, rot={0, finalRot, 0}}
 end
@@ -1189,7 +1207,7 @@ MoveModule.RedoMove = function(ship)
             histData.actKey = histData.actKey+1
             local currEntry = histData.history[histData.actKey]
             MoveModule.MoveShip(ship, {finPos={pos=currEntry.pos, rot=currEntry.rot}, noSave=true})
-            announceInfo.note = 'performed an redo of (' .. currEntry.move .. ')'
+            announceInfo.note = 'performed a redo of (' .. currEntry.move .. ')'
         end
     end
     MoveModule.Announce(announceInfo, 'all', ship)
@@ -1198,13 +1216,22 @@ end
 
 -- Get the last move code from ship history
 MoveModule.GetLastMove = function(ship)
-    local move = 'none'
     local histData = MoveModule.GetHistory(ship)
     if histData.actKey < 1 then
         --print('lmrn')
         return {move='none'}
     else
         return Lua_ShallowCopy(histData.history[histData.actKey])
+    end
+end
+
+MoveModule.GetOldMove = function(ship, numMovesBack)
+    local histData = MoveModule.GetHistory(ship)
+    if histData.actKey-numMovesBack < 1 then
+        --print('lmrn')
+        return {move='none'}
+    else
+        return Lua_ShallowCopy(histData.history[histData.actKey-numMovesBack])
     end
 end
 
@@ -1265,7 +1292,7 @@ function restWaitCoroutine()
     -- Save this position if last move code was provided
     --if waitData.lastMove ~= nil then MoveModule.AddHistoryEntry(actShip, {pos=actShip.getPosition(), rot=actShip.getRotation(), move=waitData.lastMove}, true) end
     -- Free the object so it can do other stuff
-    --print(actShip.getName() .. ' RESTING')
+    print(actShip.getName() .. ' RESTING')
     actShip.highlightOn({0, 1, 0}, 0.2)
     XW_cmd.SetReady(actShip)
     -- TO_DO: Set busy here and set ready in process
@@ -2416,7 +2443,7 @@ MoveModule.Announce = function(info, target, shipPrefix)
             shipName = shipPrefix.getName() .. ' '
         end
     end
-    if info.type == 'move' or info.type == 'slide' then
+    if info.type == 'move' or info.type == 'slide' or info.type == 'stationary' then
         if info.collidedShip == nil then
             annString = shipName .. info.note .. ' (' .. info.code .. ')'
             annColor = MoveModule.AnnounceColor.moveClear
@@ -2885,6 +2912,12 @@ DialModule.ObjDestroyedHandle = function(obj)
             table.remove(DialModule.SpawnedRulers, k)
         end
     end
+    for k,info in pairs(DialModule.SpawnedTemplates) do
+        if info.ship == obj or info.template == obj then
+            info.template.destruct()
+            table.remove(DialModule.SpawnedTemplates, k)
+        end
+    end
 end
 
 
@@ -2973,43 +3006,24 @@ DialModule.PerformAction = function(ship, type, playerColor)
     announceInfo = {type='action'}
     -- Ruler spawning
     if type == 'ruler' then
-        local rulerExisted = false
-        for k,info in pairs(DialModule.SpawnedRulers) do
-            if info.ship == ship then
-                -- Ruler existed
-                info.ruler.destruct()
-                table.remove(DialModule.SpawnedRulers, k)
-                rulerExisted = true
-                return
-            end
-        end
-        if rulerExisted == false then
-            -- New ruler to be spawned
-            local obj_parameters = {}
-            obj_parameters.type = 'Custom_Model'
-            obj_parameters.position = ship.getPosition()
-            obj_parameters.rotation = { 0, ship.getRotation()[2], 0 }
-            local newRuler = spawnObject(obj_parameters)
-            local custom = {}
-            if DB_isLargeBase(ship) == true then
-                custom.mesh = 'http://pastebin.com/raw/sZkuCV8a'
-                custom.collider = 'http://pastebin.com/raw/zucpQryb'
-                scale = {0.623, 0.623, 0.623}
-            else
-                custom.mesh = 'http://pastebin.com/raw/p3cjDpBk'
-                custom.collider = 'http://pastebin.com/raw/5G8JN2B6'
-                scale = {0.629, 0.629, 0.629}
-            end
-            newRuler.setCustomObject(custom)
-            newRuler.lock()
-            newRuler.setScale(scale)
-            local button = {click_function = 'Ruler_SelfDestruct', label = 'DEL', position = {0, 0.5, 0}, rotation =  {0, 0, 0}, width = 900, height = 900, font_size = 250}
-            newRuler.createButton(button)
-            table.insert(DialModule.SpawnedRulers, {ruler=newRuler, ship=ship})
+        if DialModule.DeleteRuler(ship) == false then
+            DialModule.SpawnRuler(ship)
             announceInfo.note = 'spawned a ruler'
+        else
+            return
         end
-    elseif type == 'spawnMoveTemplate' then
-        print('temp')
+    elseif type:find('spawnMoveTemplate') ~= nil then
+        if DialModule.DeleteTemplate(ship) == false then
+            local scPos = type:find(':')
+            local dialCode = type:sub(scPos+1,-1)
+            if DialModule.SpawnTemplate(ship, dialCode) ~= nil then
+                announceInfo.note = 'spawned a move template'
+            else
+                announceInfo.note = 'looks at you weird'
+            end
+        else
+            return
+        end
     elseif type == 'unstress' then
         local stressInfo = {token=nil, dist=-1}
         for k,tokenInfo in pairs(TokenModule.GetShipTokensInfo(ship)) do
@@ -3055,6 +3069,131 @@ function Ruler_SelfDestruct(obj)
     obj.destruct()
 end
 
+-- ================== ON DESTROY REMOVE!!!!!!!!!!
+DialModule.SpawnedTemplates = {}
+
+
+DialModule.TemplateData = {}
+DialModule.TemplateData.straight = {}
+DialModule.TemplateData.straight[1] = {0, 0, 20, 0}
+DialModule.TemplateData.straight[2] = {0, 0, 40, 0}
+DialModule.TemplateData.straight[3] = {0, 0, 60, 0}
+DialModule.TemplateData.straight[4] = {0, 0, 80, 0}
+DialModule.TemplateData.straight[5] = {0, 0, 100, 0}
+DialModule.TemplateData.bank = {}
+DialModule.TemplateData.bank.leftRot = 45
+DialModule.TemplateData.bank.trim = { left = {{-2,0,-4,0}, {-5.5,0,-5.2,0}, {-9.3,0,-6.45,0}}, right={{4.2,0,1.2,0}, {7.8,0,-0.3,0}, {11.5,0,-1.4,0}} }
+DialModule.TemplateData.bank[1] = {80*(1-math.cos(math.pi/8)), 0, 80*math.sin(math.pi/8), 180}
+DialModule.TemplateData.bank[2] = {130*(1-math.cos(math.pi/8)), 0, 130*math.sin(math.pi/8), 180}
+DialModule.TemplateData.bank[3] = {180*(1-math.cos(math.pi/8)), 0, 180*math.sin(math.pi/8), 180}
+DialModule.TemplateData.turn = {}
+DialModule.TemplateData.turn.leftRot = 90
+DialModule.TemplateData.turn.trim = { left = {{0,-2.5,0,0}, {-3,-2.5,-3.66,0}, {-4.7,-2.5,-7.5,0}}, right={{0,-2.5,0,0}, {3,-2.5,-4.1,0}, {4.5,-2.5,-7.8,0}} }
+DialModule.TemplateData.turn[1] = {35*(1-math.cos(math.pi/4))+2, 0, 35*math.sin(math.pi/4)-2, 180}
+DialModule.TemplateData.turn[2] = {62.5*(1-math.cos(math.pi/4))+5, 0, 62.5*math.sin(math.pi/4)-4, 180}
+DialModule.TemplateData.turn[3] = {90*(1-math.cos(math.pi/4))+9, 0, 90*math.sin(math.pi/4)-6, 180}
+
+DialModule.TemplateData.baseOffset = {}
+DialModule.TemplateData.baseOffset.small = {0, 0, 20, 0}
+DialModule.TemplateData.baseOffset.large = {0, 0, 40, 0}
+
+DialModule.SpawnTemplate = function(ship, dialCode)
+    local moveCode = dialCode:sub(1, -3)
+    local moveInfo = MoveData.DecodeInfo(moveCode, ship)
+    if moveInfo.speed == 0 then
+        return nil
+    end
+    local tempEntry = DialModule.TemplateData[moveInfo.type][moveInfo.speed]
+    print('ST: ' .. ship.getName() .. ' : ' .. dialCode)
+    tempEntry = Vect_Sum(tempEntry, DialModule.TemplateData.baseOffset[DB_getBaseSize(ship)])
+    local ref = ship
+    if dialCode:sub(-1,-1) == 'A' then
+        ref = MoveModule.GetOldMove(ship, 1)
+    end
+
+    if moveInfo.dir == 'left' then
+        tempEntry = MoveData.LeftVariant(tempEntry)
+        tempEntry[4] = tempEntry[4] + 180 - DialModule.TemplateData[moveInfo.type].leftRot
+    end
+    if moveInfo.extra == 'reverse' then
+        tempEntry = MoveData.ReverseVariant(tempEntry)
+        if moveInfo.type ~= 'straight' then
+            tempEntry[4] = tempEntry[4] - DialModule.TemplateData[moveInfo.type].leftRot
+        end
+    end
+    if moveInfo.dir ~= nil then
+        if moveInfo.extra ~= 'reverse' then
+            tempEntry = Vect_Sum(tempEntry, DialModule.TemplateData[moveInfo.type].trim[moveInfo.dir][moveInfo.speed])
+        else
+            if moveInfo.dir == 'right' then
+                moveInfo.dir = 'left'
+            elseif moveInfo.dir == 'left' then
+                moveInfo.dir = 'right'
+            end
+            --tempEntry = Vect_Sum(tempEntry, MoveData.ReverseVariant(DialModule.TemplateData[moveInfo.type].trim[moveInfo.dir][moveInfo.speed]))
+            tempEntry = Vect_Sum(tempEntry, Vect_Scale(DialModule.TemplateData[moveInfo.type].trim[moveInfo.dir][moveInfo.speed], -1))
+        end
+    end
+    print('Y: ' .. tempEntry[2])
+    local finPos = MoveModule.EntryToPos(tempEntry, ref)
+    print(finPos.pos[2])
+    local src = TokenModule.tokenSources[moveInfo.type:sub(1,1) .. moveInfo.speed]
+    local newTemplate = src.takeObject({position=finPos.pos, rotation=finPos.rot})
+    newTemplate.lock()
+    newTemplate.setPosition(finPos.pos)
+    newTemplate.setRotation(finPos.rot)
+    table.insert(DialModule.SpawnedTemplates, {template=newTemplate, ship=ship})
+    return newTemplate
+end
+
+DialModule.DeleteTemplate = function(ship)
+    for k,info in pairs(DialModule.SpawnedTemplates) do
+        if info.ship == ship then
+            info.template.destruct()
+            table.remove(DialModule.SpawnedTemplates, k)
+            return true
+        end
+    end
+    return false
+end
+
+DialModule.SpawnRuler = function(ship)
+        -- New ruler to be spawned
+        local obj_parameters = {}
+        obj_parameters.type = 'Custom_Model'
+        obj_parameters.position = ship.getPosition()
+        obj_parameters.rotation = { 0, ship.getRotation()[2], 0 }
+        local newRuler = spawnObject(obj_parameters)
+        local custom = {}
+        if DB_isLargeBase(ship) == true then
+            custom.mesh = 'http://pastebin.com/raw/sZkuCV8a'
+            custom.collider = 'http://pastebin.com/raw/zucpQryb'
+            scale = {0.623, 0.623, 0.623}
+        else
+            custom.mesh = 'http://pastebin.com/raw/p3cjDpBk'
+            custom.collider = 'http://pastebin.com/raw/5G8JN2B6'
+            scale = {0.629, 0.629, 0.629}
+        end
+        newRuler.setCustomObject(custom)
+        newRuler.lock()
+        newRuler.setScale(scale)
+        local button = {click_function = 'Ruler_SelfDestruct', label = 'DEL', position = {0, 0.5, 0}, rotation =  {0, 0, 0}, width = 900, height = 900, font_size = 250}
+        newRuler.createButton(button)
+        table.insert(DialModule.SpawnedRulers, {ruler=newRuler, ship=ship})
+        return newRuler
+end
+
+DialModule.DeleteRuler = function(ship)
+    for k,info in pairs(DialModule.SpawnedRulers) do
+        if info.ship == ship then
+            info.ruler.destruct()
+            table.remove(DialModule.SpawnedRulers, k)
+            return true
+        end
+    end
+    return false
+end
+
 
 -- DIAL BUTTON CLICK FUNCTIONS (self-explanatory)
 function DialClick_Delete(dial)
@@ -3095,7 +3234,11 @@ function DialClick_TargetLock(dial, playerColor)
     DialModule.PerformAction(dial.getVar('assignedShip'), 'Target Lock', playerColor)
 end
 function DialClick_SpawnMoveTemplate(dial)
-    DialModule.PerformAction(dial.getVar('assignedShip'), 'spawnMoveTemplate')
+    local befAfter = '_A'
+    for k,but in pairs(dial.getButtons()) do
+        if but.label == 'Move' then befAfter = '_B' end
+    end
+    DialModule.PerformAction(dial.getVar('assignedShip'), 'spawnMoveTemplate:' .. dial.getDescription() .. befAfter)
 end
 function DialClick_BoostS(dial)
     XW_cmd.Process(dial.getVar('assignedShip'), 's1')
@@ -3156,27 +3299,7 @@ function DialClick_ToggleInitialExpanded(dial)
     end
 end
 function DialClick_SlideStart(dial, playerColor)
-    if dial.getVar('Slide_ongoing') == true then
-        dial.setVar('Slide_ongoing', false)
-    else
-        local ship = dial.getVar('assignedShip')
-        if XW_cmd.isReady(ship) ~= true then return end
-        local lastMove = MoveModule.GetLastMove(ship)
-        print('DialClick_SlideStart lastMove.move: ' .. lastMove.move)
-        if lastMove.part ~= nil and MoveData.IsSlideMove(lastMove.move) then
-            dial.setVar('Slide_ongoing', true)
-            local slideRange = DialModule.GetSlideRange(ship, lastMove.move, lastMove.part)
-            table.insert(DialModule.slideDataQueue, {dial=dial, ship=ship, pColor=playerColor, range=slideRange})
-            MoveModule.QueueShipTokensMove(ship)
-            XW_cmd.SetBusy(ship)
-            MoveModule.Announce({type='move', note='manually adjusted base slide on his last move', code=lastMove.move}, 'all', ship)
-            startLuaCoroutine(Global, 'SlideCoroutine')
-        elseif lastMove.code == 'manual slide' then
-            printToColor(ship.getName() .. ' needs to undo the manual slide before adjusting again', playerColor, {1, 0.5, 0.1})
-        else
-            printToColor(ship.getName() .. '\'s last move (' .. lastMove.move .. ') does not allow sliding!', playerColor, {1, 0.5, 0.1})
-        end
-    end
+    DialModule.StartSlide(dial, playerColor)
 end
 
 -- Dial buttons definitions (centralized so it;s easier to adjust)
@@ -3232,6 +3355,31 @@ end
 function round(num, numDecimalPlaces)
     local mult = 10^(numDecimalPlaces or 0)
     return math.floor(num * mult + 0.5) / mult
+end
+
+DialModule.StartSlide = function(dial, playerColor)
+    if dial.getVar('Slide_ongoing') == true then
+        dial.setVar('Slide_ongoing', false)
+    else
+        local ship = dial.getVar('assignedShip')
+        if XW_cmd.isReady(ship) ~= true then return end
+        local lastMove = MoveModule.GetLastMove(ship)
+        print('DialClick_SlideStart lastMove.move: ' .. lastMove.move)
+        if lastMove.part ~= nil and MoveData.IsSlideMove(lastMove.move) then
+            dial.setVar('Slide_ongoing', true)
+            local slideRange = DialModule.GetSlideRange(ship, lastMove.move, lastMove.part)
+            table.insert(DialModule.slideDataQueue, {dial=dial, ship=ship, pColor=playerColor, range=slideRange})
+            TokenModule.QueueShipTokensMove(ship)
+            XW_cmd.SetBusy(ship)
+            MoveModule.Announce({type='move', note='manually adjusted base slide on his last move', code=lastMove.move}, 'all', ship)
+            startLuaCoroutine(Global, 'SlideCoroutine')
+            MoveModule.WaitForResting(ship)
+        elseif lastMove.code == 'manual slide' then
+            printToColor(ship.getName() .. ' needs to undo the manual slide before adjusting again', playerColor, {1, 0.5, 0.1})
+        else
+            printToColor(ship.getName() .. '\'s last move (' .. lastMove.move .. ') does not allow sliding!', playerColor, {1, 0.5, 0.1})
+        end
+    end
 end
 
 -- Get slide range of a ship based on his last move
@@ -3305,7 +3453,6 @@ function SlideCoroutine()
         local pPos = Player[pColor].getPointerPosition()
         local syRot = dial.getRotation()[2]
         local dtp = Vect_Between(dial.getPosition(), pPos)
-        --local dtp = Vect_Sum(pPos, Vect_Scale(sPos, -1))
         local rdtp = Vect_RotateDeg(dtp, -1*syRot-180)
         local dScale = dial.getScale()[1]
         return {shift=rdtp[3]/dScale, sideslip=(rdtp[1]/dScale - 3.566)}
@@ -3349,11 +3496,6 @@ function SlideCoroutine()
         end
 
         -- Normalize the shift to [0-3] range
-        --[[if adjMeas > 1.5 then
-            adjMeas = 1.5
-        elseif adjMeas < -1.5 then
-            adjMeas = -1.5
-        end]]--
         adjMeas = Var_Clamp(adjMeas, -1.5, 1.5)
         adjMeas = adjMeas + 1.5
 
@@ -3402,9 +3544,8 @@ function SlideCoroutine()
     until Player[pColor] == nil or ship == nil or dial.getVar('Slide_ongoing') ~= true or dial == nil
     if Player[pColor] ~= nil then broadcastToColor(ship.getName() .. '\'s slide adjust ended!', pColor, {0.5, 1, 0.5}) end
     dial.setVar('Slide_ongoing', false)
-    ship.setVar('Slide_ongoing', true)
-    --table.insert(MoveModule.restWaitQueue, {ship=ship, lastMove='manual slide'})
-    --startLuaCoroutine(Global, 'restWaitCoroutine')
+    ship.setVar('Slide_ongoing', false)
+    MoveModule.AddHistoryEntry(ship, {pos=ship.getPosition(), rot=ship.getRotation(), move='manual slide'})
     return 1
 end
 
@@ -3570,7 +3711,7 @@ DialModule.SwitchMainButton = function(dial, type)
     local buttons = dial.getButtons()
     for k,but in pairs(buttons) do
         if type=='none' then
-            if but.label == 'Undo' then
+            if but.label == 'Undo' or but.label == 'T' then
                 dial.removeButton(but.index)
             end
         elseif type == 'undo' then
@@ -3597,7 +3738,7 @@ end
 -- If there is one, return it to origin
 DialModule.MakeNewActive = function(ship, dial)
     local actSet = DialModule.GetSet(ship)
-    if actSet.dialSet[dial.getDescription()].dial == dial then
+    if actSet.dialSet[dial.getDescription()] ~= nil and actSet.dialSet[dial.getDescription()].dial == dial then
         if actSet.activeDial ~= nil then
             DialModule.RestoreActive(ship)
         end
@@ -3611,6 +3752,7 @@ DialModule.RestoreActive = function(ship)
     if actSet ~= nil and actSet.ship == ship and actSet.activeDial ~= nil then
         actSet.activeDial.dial.clearButtons()
         ClearButtonsPatch(actSet.activeDial.dial)
+        DialModule.DeleteTemplate(ship)
         actSet.activeDial.dial.setPosition(actSet.activeDial.originPos)
         actSet.activeDial.dial.setRotation(Dial_FaceupRot(actSet.activeDial.dial))
         actSet.activeDial = nil
