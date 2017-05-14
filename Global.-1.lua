@@ -519,6 +519,7 @@ XW_cmd.SetReady = function(obj)
     end
     obj.setVar('XW_cmd_busy', false)
 end
+
 --------
 -- MOVEMENT DATA MODULE
 -- Stores and processes data about moves
@@ -550,7 +551,7 @@ MoveData.LUT.Parse = function(object)
     MoveData.LUT.Data = object.call('ParseLUT', {})
 end
 
--- Contstruct data from a lookup table entry
+-- Construct data from a lookup table entry
 -- Move info provided from MoveData.DecodeInfo
 -- Return format: {xPos_offset, yPos_offset, zPos_offset, yRot_offset}
 -- Linear interpolation between points in lookup table
@@ -875,7 +876,8 @@ MoveData.DecodeInfo = function (move_code, ship)
     return info
 end
 
--- ============
+-- Get the offset data for a full move
+-- Return format: {xPos_offset, yPos_offset, zPos_offset, yRot_offset}
 MoveData.DecodeFullMove = function(move_code, ship)
     local data = {}
     local info = MoveData.DecodeInfo(move_code, ship)
@@ -894,30 +896,32 @@ end
 -- Value is largely irrelevant since part can be a fraction (any kind of number really)
 MoveData.partMax = 1000
 
+-- Get the offset data for a partial move
+-- Return format: {xPos_offset, yPos_offset, zPos_offset, yRot_offset}
 MoveData.DecodePartMove = function(move_code, ship, part)
-
     local data = {}
     local info = MoveData.DecodeInfo(move_code, ship)
-
-    -- handle part out of (0, PartMax) bounds
-    --if part >= MoveData.partMax then return MoveData.DecodeFullMove(move_code, ship)
     part = Var_Clamp(part, 0, MoveData.partMax)
     if info.type == 'invalid' then
         print('MoveData.DecodePartMove: invalid move type')
         return {0, 0, 0, 0}
     end
     data = MoveData.LUT.ConstructData(info, part)
-    --print('APbas')
     data = MoveData.ApplyBasicModifiers(data, info)
     return data
 end
 
+-- Get the offset data for a partial slide
+-- Return format: {xPos_offset, yPos_offset, zPos_offset, yRot_offset}
 MoveData.DecodePartSlide = function(move_code, ship, part)
     local info = MoveData.DecodeInfo(move_code, ship)
     local slideOrigin = MoveData.SlideMoveOrigin(info)
     local offset = MoveData.SlidePartOffset(info, part)
     return Vect_Sum(slideOrigin, offset)
 end
+
+-- END MOVEMENT DATA MODULE
+--------
 
 
 --------
@@ -926,10 +930,15 @@ end
 
 MoveModule = {}
 
+-- Called when game is saved
+-- Returns table for encoding
 MoveModule.onSave = function()
     return MoveModule.GetSaveData()
 end
 
+-- Convert a typical entry from MoveData functions
+-- (this: {xPos_offset, yPos_offset, zPos_offset, yRot_offset} )
+-- to a real ship position in world
 MoveModule.EntryToPos = function(entry, shipPos)
     local basePos = nil
     local baseRot = nil
@@ -940,53 +949,49 @@ MoveModule.EntryToPos = function(entry, shipPos)
         basePos = shipPos.pos
         baseRot = shipPos.rot
     end
-    --print('EntryToPos: ' .. entry[1] .. ' : ' .. entry[2] .. ' : ' .. entry[3] .. ' : ' .. entry[4] .. ' : ' .. ship.getName())
     local finalPos = MoveData.ConvertDataToIGU(entry)
     local finalRot = entry[4] + baseRot[2]
-    --print('EntryToPos finalPos1: ' .. finalPos[1] .. ' : '  .. finalPos[2] .. ' : ' .. finalPos[3])
-    --print('EntryToPos finalRot: ' .. finalRot)
     finalPos = Vect_RotateDeg(finalPos, baseRot[2]+180)
     finalPos = Vect_Sum(basePos, finalPos)
-    --print('EntryToPos finalPos2: ' .. finalPos[1] .. ' : ' ..  finalPos[2] .. ' : ' .. finalPos[3])
     return {pos=finalPos, rot={0, finalRot, 0}}
 end
 
--- Simply get the final position for a 'ship' if it did a move (standard move code)
+-- Get the position for a ship if it did a full move
 -- Returned position and rotation are ready to feed TTS functions with
 MoveModule.GetFullMove = function(move, ship)
     local entry = MoveData.DecodeFullMove(move, ship)
     return MoveModule.EntryToPos(entry, ship)
 end
 
--- Simply get the final position for a 'ship' if it did a part of a move (standard move code)
+-- Get the position for a ship if it did a part of a move
 -- Returned position and rotation are ready to feed TTS functions with
 MoveModule.GetPartMove = function(move, ship, part)
-    --print('GetPartMove: ' .. move .. ' : ' .. ship.getName() .. ' : ' .. part )
     local entry = MoveData.DecodePartMove(move, ship, part)
-    --print('GetPartMove entry: ' .. entry[1] .. ' : ' .. entry[2] .. ' : ' .. entry[3] .. ' : ' .. entry[4])
     return MoveModule.EntryToPos(entry, ship)
 end
 
+-- Get the position for a ship if it did a part of a slide
+-- Returned position and rotation are ready to feed TTS functions with
 MoveModule.GetPartSlide = function(move, ship, part)
     local entry = MoveData.DecodePartSlide(move, ship, part)
     return MoveModule.EntryToPos(entry, ship)
 end
 
---TO_DO Part (0 - MoveData.partMax) to (1 - dataNum) index range
-
 -- HISTORY HANDLING:
 -- Lets us undo, redo and save positions a ship was seen at
 
+-- History table: {ship=shipRef, actKey=keyOfHistoryEntryShipWasLastSeenAt (._.), history=entryList}
+-- Entry list: {entry1, entry2, entry3, ...}
+-- Entry: {pos=position, rot=rotation, move=moveThatGotShipHere, part=partOfMovePerformed}
 MoveModule.moveHistory = {}
+
+-- Hostory-related commads
 XW_cmd.AddCommand('[qz]', 'historyHandle')
 XW_cmd.AddCommand('undo', 'historyHandle')
 XW_cmd.AddCommand('redo', 'historyHandle')
 XW_cmd.AddCommand('keep', 'historyHandle')
 
 -- Return history of a ship
--- History table: {ship=shipRef, actKey=keyOfHistoryEntryShipWasLastSeenAt (._.), history=entryList}
--- Entry list: {entry1, entry2, entry3, ...}
--- Entry: {pos=position, rot=rotation, move=moveThatGotShipHere, part=partOfMovePerformed}
 MoveModule.GetHistory = function(ship)
     for k,hist in pairs(MoveModule.moveHistory) do
         if hist.ship == ship then
@@ -996,52 +1001,6 @@ MoveModule.GetHistory = function(ship)
     table.insert(MoveModule.moveHistory, {ship=ship, actKey=0, history={}})
     return MoveModule.GetHistory(ship)
 end
-
-MoveModule.GetSaveData = function()
-    local currHistory = {}
-    for k,hist in pairs(MoveModule.moveHistory) do
-        if hist.history[1] ~= nil then
-            local currEntry = MoveModule.GetLastMove(hist.ship)
-            currEntry.pos = TTS_Serialize(currEntry.pos)
-            currEntry.rot = TTS_Serialize(currEntry.rot)
-            table.insert(currHistory, {ship=hist.ship.getGUID(), actKey=1, history={currEntry}})
-        end
-    end
-    if currHistory[1] == nil then return nil else
-    return currHistory end
-end
-
-MoveModule.onLoad = function(saveTable)
-    MoveModule.RestoreSaveData(saveTable)
-end
-
-
-MoveModule.RestoreSaveData = function(saveTable)
-    if saveTable == nil then
-        return
-    end
-    local annInfo = {}
-    annInfo.type = 'info'
-    local count = 0
-    local missCount = 0
-    for k,hist in pairs(saveTable) do
-        hist.ship = getObjectFromGUID(hist.ship)
-        if hist.ship == nil then
-            missCount = missCount + 1
-        else
-            count = count + 1
-            table.insert(MoveModule.moveHistory, hist)
-        end
-    end
-    annInfo.note = 'LOAD: Restored last position save for ' .. count .. ' ship(s)'
-    if missCount > 0 then
-        annInfo.note = ' (' .. missCount .. ' ship model(s) missing)'
-    end
-    if count > 0 or missCount > 0 then
-        MoveModule.Announce(annInfo, 'all')
-    end
-end
--- ON DELETE SHIP DELETE HISTORY
 
 -- Erase all history "forward" from the current state
 -- Happens when you undo and then do a move - all positions you undid are lost
@@ -1075,25 +1034,26 @@ MoveModule.PrintHistory = function(ship)
     end
 end
 
+-- Save <some> ship position to the history
+-- Saves on the position after current and deletes any past that
+MoveModule.AddHistoryEntry = function(ship, entry)
+    local histData = MoveModule.GetHistory(ship)
+    histData.actKey = histData.actKey+1
+    histData.history[histData.actKey] = entry
+    MoveModule.ErasePastCurrent(ship)
+
+    -- I have no idea what I had in mind with that below comment, but I'll leave it just in case:
+    ---------- (its not current ????????)
+end
+
 -- How much position can be offset to be considered 'same'
 MoveModule.undoPosCutoff = Convert_mm_igu(1)
 -- How much rotation can be offset to be considered 'same'
 MoveModule.undoRotCutoffDeg = 1
 
--- Save <some> ship position to the history
--- Can be quiet when not explicitly called by the user
-MoveModule.AddHistoryEntry = function(ship, entry)
-    local histData = MoveModule.GetHistory(ship)
-    -- Don't add an entry if it's current position/rotation
-    histData.actKey = histData.actKey+1
-    histData.history[histData.actKey] = entry
-    MoveModule.ErasePastCurrent(ship)
-    ---------- (its not current ????????)
-end
-
+-- Check if the ship is on the curent history position (tolerance above)
 MoveModule.IsAtSavedState = function(ship)
     local histData = MoveModule.GetHistory(ship)
-    -- Don't add an entry if it's current position/rotation
     if histData.actKey > 0 then
         local currEntry = histData.history[histData.actKey]
         local dist = Dist_Pos(ship.getPosition(), currEntry.pos)
@@ -1138,17 +1098,16 @@ MoveModule.UndoMove = function(ship)
     else
         -- There is history
         local currEntry = histData.history[histData.actKey]
+        -- current position not matching history
         if not MoveModule.IsAtSavedState(ship) then
             MoveModule.MoveShip(ship, {finPos={pos=currEntry.pos, rot=currEntry.rot}, noSave=true})
             announceInfo.note = 'moved to the last saved position'
         else
-            -- Current posiion/rotation is matching last entry
+        -- current position matching current histor
             if histData.actKey > 1 then
-                -- Move to previuso saved position
                 local undidMove = currEntry.move
                 histData.actKey = histData.actKey - 1
                 currEntry = histData.history[histData.actKey]
-                -- Queue tokens for movement, but disable position saving
                 MoveModule.MoveShip(ship, {finPos={pos=currEntry.pos, rot=currEntry.rot}, noSave=true})
                 announceInfo.note = 'performed an undo of (' .. undidMove .. ')'
             else
@@ -1158,13 +1117,10 @@ MoveModule.UndoMove = function(ship)
         end
     end
     MoveModule.Announce(announceInfo, 'all', ship)
-    -- Flag ship as done processing if it didn't move (and didn't get queued for rest wait)
     return shipMoved
 end
 
 -- Move a ship to next state from the history
--- Return true if action was taken
--- Return false if there is no more data
 MoveModule.RedoMove = function(ship)
     local histData = MoveModule.GetHistory(ship)
     local announceInfo = {type='historyHandle'}
@@ -1199,6 +1155,7 @@ MoveModule.GetLastMove = function(ship)
     end
 end
 
+-- Get some old move from ship history (arg in number of moves back)
 MoveModule.GetOldMove = function(ship, numMovesBack)
     local histData = MoveModule.GetHistory(ship)
     if histData.actKey-numMovesBack < 1 then
@@ -1209,26 +1166,80 @@ MoveModule.GetOldMove = function(ship, numMovesBack)
     end
 end
 
--- This tidbit lets us wait till ships lands WITHOUT checking for this condition
---  on everything all the time
+-- Handle destroyed objects (delete their history)
+MoveModule.ObjDestroyedHandle = function(obj)
+    if not XW_ObjMatchType(obj, 'ship') then return end
+    for k,hist in pairs(MoveModule.moveHistory) do
+        if hist.ship == ship then
+            table.remove(ModeModule.moveHistory, k)
+            break
+        end
+    end
+end
 
--- Queue containing stuff to watch
+-- Get the history table with "serialized" positions/rotations
+-- I hate this so much
+-- Devs, fix your shit, goddamnit
+MoveModule.GetSaveData = function()
+    local currHistory = {}
+    for k,hist in pairs(MoveModule.moveHistory) do
+        if hist.history[1] ~= nil then
+            local currEntry = MoveModule.GetLastMove(hist.ship)
+            currEntry.pos = TTS_Serialize(currEntry.pos)
+            currEntry.rot = TTS_Serialize(currEntry.rot)
+            table.insert(currHistory, {ship=hist.ship.getGUID(), actKey=1, history={currEntry}})
+        end
+    end
+    if currHistory[1] == nil then return nil else
+    return currHistory end
+end
 
--- Ships waiting to be level (resting)
--- entry: {ship=shipRef, lastMove=lastMoveCode}
--- if last move code is nil, do not save to history
--- elements pop from here as coroutines start
+-- On load, restore data
+MoveModule.onLoad = function(saveTable)
+    MoveModule.RestoreSaveData(saveTable)
+end
+
+-- REstore provided table and notify of the results
+MoveModule.RestoreSaveData = function(saveTable)
+    if saveTable == nil then
+        return
+    end
+    local annInfo = {}
+    annInfo.type = 'info'
+    local count = 0
+    local missCount = 0
+    for k,hist in pairs(saveTable) do
+        hist.ship = getObjectFromGUID(hist.ship)
+        if hist.ship == nil then
+            missCount = missCount + 1
+        else
+            count = count + 1
+            table.insert(MoveModule.moveHistory, hist)
+        end
+    end
+    annInfo.note = 'LOAD: Restored last position save for ' .. count .. ' ship(s)'
+    if missCount > 0 then
+        annInfo.note = ' (' .. missCount .. ' ship model(s) missing)'
+    end
+    if count > 0 or missCount > 0 then
+        MoveModule.Announce(annInfo, 'all')
+    end
+end
+
+-- This part controls the waiting part of moving
+-- Basically, if anything needs to be done after the ship rests, this can trigger it
+
+-- Ships waiting to be resting
 MoveModule.restWaitQueue = {}
 
 -- Tokens waiting to be moved with ships
--- entry: {tokens={t1,t2,...}, ship=shipWaitingFor}
---t1: {ref=tRef, relPos = pos, relRot = rot}
+-- Entry: {tokens={t1,t2,...}, ship=shipWaitingFor}
+-- t1: {ref=tRef, relPos = pos, relRot = rot}
 -- elements wait here until ships are ready
 MoveModule.tokenWaitQueue = {}
 
 -- This completes when a ship is resting at a table level
--- Ships token moving, saving positons for undo, locking model
--- also yanks it down if TTS decides it should just hang out resting midair
+-- Does token movement and ship locking after
 function restWaitCoroutine()
     if MoveModule.restWaitQueue[1] == nil then
         return 1
@@ -1237,10 +1248,12 @@ function restWaitCoroutine()
     local waitData = MoveModule.restWaitQueue[#MoveModule.restWaitQueue]
     local actShip = waitData.ship
     table.remove(MoveModule.restWaitQueue, #MoveModule.restWaitQueue)
-    --=======================
+
+    -- Wait
     repeat
         coroutine.yield(0)
     until actShip.resting == true and actShip.isSmoothMoving() == false and actShip.held_by_color == nil and actShip.getVar('Slide_ongoing') ~= true
+
     local newTokenTable = {}
     for k,tokenSetInfo in pairs(MoveModule.tokenWaitQueue) do
         -- Move and pop waiting tokens
@@ -1261,44 +1274,28 @@ function restWaitCoroutine()
             table.insert(newTokenTable, tokenSetInfo)
         end
     end
+
     MoveModule.tokenWaitQueue = newTokenTable
     actShip.lock()
-    -- Save this position if last move code was provided
-    --if waitData.lastMove ~= nil then MoveModule.AddHistoryEntry(actShip, {pos=actShip.getPosition(), rot=actShip.getRotation(), move=waitData.lastMove}, true) end
-    -- Free the object so it can do other stuff
-    print(actShip.getName() .. ' RESTING')
     actShip.highlightOn({0, 1, 0}, 0.1)
     XW_cmd.SetReady(actShip)
-    -- TO_DO: Set busy here and set ready in process
     return 1
 end
 
-
--- TO_DO if large base switches to base size table
 -- Check if provided ship in a provided position/rotation would collide with anything from the provided table
+-- Return: {coll=collObject, minMargin=howFarCollisionIsStillCertain, numCheck=numCollideChecks}
 MoveModule.CheckCollisions = function(ship, shipPosRot, collShipTable)
     local info = {coll=nil, minMargin=0, numCheck=0}
     local shipInfo = {pos=shipPosRot.pos, rot=shipPosRot.rot, ship=ship}
-    local certShipReach = nil -- distance at which other ships MUST bump it
-    local maxShipReach = nil  -- distance at which other ships CAN bump it
-    if DB_isLargeBase(ship) == true then
-        certShipReach = Convert_mm_igu(mm_largeBase/2)
-        maxShipReach = Convert_mm_igu(mm_largeBase*math.sqrt(2)/2)
-    else
-        certShipReach = Convert_mm_igu(mm_smallBase/2)
-        maxShipReach = Convert_mm_igu(mm_smallBase*math.sqrt(2)/2)
-    end
+    local shipSize = DB_getBaseSize(ship)
+    local certShipReach = Convert_mm_igu(mm_baseSize[shipSize]/2)              -- distance at which other ships MUST bump it
+    local maxShipReach = Convert_mm_igu(mm_baseSize[shipSize]*math.sqrt(2)/2)  -- distance at which other ships CAN bump it
 
     for k, collShip in pairs(collShipTable) do
-        local certBumpDist = nil -- distance at which these two particular ships ships MUST bump
-        local maxBumpDist = nil  -- distance at which these two particular ships ships CAN bump
-        if DB_isLargeBase(collShip) == true then
-            certBumpDist = certShipReach + Convert_mm_igu(mm_largeBase/2)
-            maxBumpDist = maxShipReach + Convert_mm_igu(mm_largeBase*math.sqrt(2)/2)
-        else
-            certBumpDist = certShipReach + Convert_mm_igu(mm_smallBase/2)
-            maxBumpDist = maxShipReach + Convert_mm_igu(mm_smallBase*math.sqrt(2)/2)
-        end
+        local collShipSize = DB_getBaseSize(collShip)
+        local certBumpDist = certShipReach + Convert_mm_igu(mm_baseSize[collShipSize]/2)              -- distance at which these two particular ships ships MUST bump
+        local maxBumpDist = maxShipReach + Convert_mm_igu(mm_baseSize[collShipSize]*math.sqrt(2)/2)  -- distance at which these two particular ships ships CAN bump
+
         local dist = Dist_Pos(shipPosRot.pos, collShip.getPosition())
         if dist < maxBumpDist then
             if dist < certBumpDist then
@@ -1323,52 +1320,59 @@ MoveModule.CheckCollisions = function(ship, shipPosRot, collShipTable)
     return info
 end
 
-MoveModule.partResolutionRough = 1/100
-MoveModule.partResolutionFine = 1/1000
+MoveModule.partResolutionRough = 1/100  -- Resolution for rough checks (guaranteed)
+MoveModule.partResolutionFine = 1/1000  -- Resolution for fine checks  (for forward adjust)
+
+-- Get first free part of a move for a ship
+-- Args:
+-- info, ship <- move info as per MoveData.DecodeInfo and ship reference
+-- partFun    <- function that calculates target position for (move, ship, part)
+-- partRange  <- {from=val, to=val} range of parts to check, can be descending or ascending
+-- moveLength <- yeah
+-- fullFun    <- OPTIONAL function that calculates target position for full move (checked once first)
+-- Return:
+--============================================
 MoveModule.GetFreePart = function(info, ship, partFun, partRange, moveLength, fullFun)
     if moveLength == nil then moveLength = 0 end
     moveLength = Convert_mm_igu(moveLength)
     local out = {part = nil, info = nil, collObj = nil}
     local checkNum = {full=0, rough=0, fine=0}
+
+    -- Get ships that *can* possibly collide during this move
     local certShipReach = Convert_mm_igu(mm_baseSize[info.size])/2
     local maxShipReach = Convert_mm_igu(mm_baseSize[info.size]*math.sqrt(2))/2
-
     local moveReach = math.max( Dist_Pos(partFun(info.code, ship, MoveData.partMax/2).pos, partFun(info.code, ship, MoveData.partMax).pos),
                                 Dist_Pos(partFun(info.code, ship, MoveData.partMax/2).pos, partFun(info.code, ship, 0).pos) )
-
-
-    --print('MoveModule.GetFreePart range breakdown: ' .. Convert_igu_mm(moveReach) .. ' + ' .. Convert_igu_mm(maxShipReach) .. ' + ' .. mm_largeBase*math.sqrt(2)/2 .. ' + 10')
-
     local collShipRange = moveReach + maxShipReach + Convert_mm_igu(mm_largeBase*math.sqrt(2))/2 + Convert_mm_igu(10)
     local collShips = XW_ObjWithinDist(partFun(info.code, ship, MoveData.partMax/2).pos, collShipRange, 'ship', {ship})
-    --print('MoveModule.GetFreePart cShipList: ')
-    --for k, ship in pairs(collShips) do print('  -- ' .. ship.getName()) end
 
+    -- Check if the full move function is clear (if provided)
     if fullFun ~= nil then
         fullInfo = MoveModule.CheckCollisions(ship, fullFun(info.code, ship), collShips)
         checkNum.full = checkNum.full + fullInfo.numCheck
         if fullInfo.coll == nil then
             out.info = 'full'
             return out
+        -- If move can't be done partially and either full move collides or none provided, return
         elseif info.noPartial == true then
+            out.info = 'overlap'
+            return out
+        end
+    else
+        if info.noPartial == true then
             out.info = 'overlap'
             return out
         end
     end
 
+    -- Current part and part delts for ROUGH CHECKING
     local actPart = partRange.from
     local partDelta = math.sgn(partRange.to - partRange.from)*(MoveData.partMax*MoveModule.partResolutionRough)
     local minPartDelta = math.abs(partDelta)
-        -- There was a collision!
     local collision = false
 
-    --print('GetFreePart rough ranges: ' .. partRange.from .. ' : ' .. partRange.to .. ' :: ' .. partDelta)
-
-    -- First, we will check collisions every 1/100th of a move
-    -- BUT WITH A CATCH
+    -- Collision check, then part delta step or margin step
     repeat
-        --print('GetFreePart rough iter: ' .. actPart)
-
         local nPos = partFun(info.code, ship, actPart)
         local collInfo = MoveModule.CheckCollisions(ship, nPos, collShips)
         checkNum.rough = checkNum.rough + collInfo.numCheck
@@ -1378,38 +1382,28 @@ MoveModule.GetFreePart = function(info, ship, partFun, partRange, moveLength, fu
             distToSkip = collInfo.minMargin
             -- If there is a distance we can travel that assures collison will not end
             if distToSkip > 0 then
-                -- Calculate how big part it is and skip away!
-                -- This saves A LOT of iterations, for real
+                -- Calculate how big part it is and skip away
                 partDelta = math.sgn(partDelta)*((distToSkip * MoveData.partMax)/moveLength)
-                --print('GetFreePart rough to_skip:' .. distToSkip)
-
                 if math.abs(partDelta) < minPartDelta then partDelta = math.sgn(partDelta)*minPartDelta end
-                -- Else we're back at 1/100th of a move back
             else
                 partDelta = math.sgn(partDelta)*minPartDelta
             end
         else
             collision = false
         end
-
         if collision == true then
             out.collObj = collInfo.coll
             actPart = actPart + partDelta
         end
+    -- until we're out of collisions OR we're out of part range
     until collision == false or ((partRange.to - actPart)*math.sgn(partDelta) < 0) or partDelta == 0
---print('GetFreePart rough FINISH: ' .. actPart)
------ <=====
 
-
-    -- Right now, we're out of any collisions or at part 0 (no move)
-    -- Go 1/1000th of a move forward until we have a collision, then skip to last free 1/1000th
     if collision == false and partDelta ~= 0 and actPart ~= partRange.from then
+        -- Right now, we're out of any collisions or at part 0 (no move)
+        -- Go fineResolution of a move forward until we have a collision, then skip one back
         partDelta = math.sgn(partRange.to - partRange.from)*(MoveData.partMax*MoveModule.partResolutionFine)*-1
-        --print('GetFreePart fine ranges: ' .. partRange.from .. ' : ' .. actPart .. ' : ' .. partRange.to .. ' :: ' .. partDelta)
-
         local collInfo
         repeat
-            --print('GetFreePart fine iter: ' .. actPart .. ' [to ' .. out.collObj.getName() .. ']')
             local nPos = partFun(info.code, ship, actPart)
             collInfo = MoveModule.CheckCollisions(ship, nPos, {out.collObj})
             checkNum.fine = checkNum.fine + collInfo.numCheck
@@ -1424,19 +1418,19 @@ MoveModule.GetFreePart = function(info, ship, partFun, partRange, moveLength, fu
         out.collObj = collInfo.coll -- This is what we hit
         out.part = actPart
     elseif collision == false then
-        --print('GetFreePart fine SKIP: dP zero or first')
+        -- This happens if rough check didn't do anything (first part free, but no fullMove function)
         out.part = actPart
         out.info = 'first'
     elseif collision == true then
-        --print('GetFreePart fine SKIP: not exited overlap')
+        -- This happens if rough check didn't escape collisions (no free part)
         out.info = 'overlap'
         out.part = partRange.to
     end
-    print('-- GetFreePart CHECK_COUNT: ' .. checkNum.rough+checkNum.fine .. ' (' .. checkNum.rough .. ' + ' .. checkNum.fine .. ')')
+    --print('-- GetFreePart CHECK_COUNT: ' .. checkNum.rough+checkNum.fine .. ' (' .. checkNum.rough .. ' + ' .. checkNum.fine .. ')')
     return out
 end
 
--- TO_DO return finPos from GetFreePart
+-- Get the (now for real) FINAL position for a give move, including partial move and collisions
 MoveModule.GetFinalPosData = function(move_code, ship, ignoreCollisions)
     local out = {finPos = nil, collObj = nil, finType = nil, finPart = nil}
     local info = MoveData.DecodeInfo(move_code, ship)
@@ -1444,10 +1438,11 @@ MoveModule.GetFinalPosData = function(move_code, ship, ignoreCollisions)
     -- Don't bother with collisions if it's stationary
     if info.speed == 0 then
         ignoreCollisions = true
-        --print('IC')
     end
 
+    -- NON-COLLISION VERSION
     if ignoreCollisions then
+        -- If move can slide at the end, get final position including 'backward'/'forward' modifiers
         if info.slideMove then
             local initPart = MoveData.partMax/2
             if info.extra == 'forward' then
@@ -1460,31 +1455,33 @@ MoveModule.GetFinalPosData = function(move_code, ship, ignoreCollisions)
             out.finPart = initPart
             return out
         else
+        -- If can't slide, just get the final position
             out.finPos = MoveModule.GetFullMove(info.code, ship)
             if info.speed == 0 then
                 out.finType = 'stationary'
-                --print('ICstat')
             else
                 out.finType = 'move'
             end
             out.finPart = 'max'
             return out
         end
+
+    -- COLLISION VERSION
     else
-        --(info, ship, partFun, partRange, moveLength fullFun)
+        -- If move can slide at the end, check the slide parts
+        -- Respect the 'forward'/'backward' option as "as far forward/backward as possible"
+        -- Respect the middle slide option by checking for middle once, then treat as forward if obstructed
         if info.slideMove then
             local partRange = {from=0, to=MoveData.partMax}
             if info.extra == 'forward' then
                 partRange = {from=MoveData.partMax, to=0}
             elseif info.extra ~= 'backward' then
-                --local firstCheckRange = {from=MoveData.partMax/2, to=MoveData.partMax/2}
                 local firstCheckRange = {from=500, to=500}
                 local freePartData = MoveModule.GetFreePart(info, ship, MoveModule.GetPartSlide, firstCheckRange, MoveData.SlideLength(info))
                 if freePartData.info ~= 'overlap' then
                     out.finPos = MoveModule.GetPartSlide(info.code, ship, freePartData.part)
                     out.finType = 'slide'
                     out.finPart = freePartData.part
-                    --print('GetFinalPos finPart: ' .. freePartData.part)
                     return out
                 end
             end
@@ -1493,7 +1490,6 @@ MoveModule.GetFinalPosData = function(move_code, ship, ignoreCollisions)
                 out.finPos = MoveModule.GetPartSlide(info.code, ship, freePartData.part)
                 out.finType = 'slide'
                 out.finPart = freePartData.part
-                --print('GetFinalPos finPart: ' .. freePartData.part)
                 return out
             end
         end
@@ -3763,7 +3759,7 @@ function onObjectDestroyed(dying_object)
     for k, obj in pairs(watchedObj) do if dying_object == obj then table.remove(watchedObj, k) end end
     -- Handle killing rulers and unassignment of dial sets
     DialModule.ObjDestroyedHandle(dying_object)
-    --MoveModule.ObjDestroyedHandle(dying_object)
+    MoveModule.ObjDestroyedHandle(dying_object)
 end
 
 -- When table is loaded up, this is called
