@@ -5,15 +5,6 @@
 -- Based on a work of: Flolania, Hera Vertigo
 -- ~~~~~~
 
--- TO_DO: don't lock ship after completeing if it's not level
--- TO_DO: Dials: on drop among dials, return to origin (maybe)
--- TO_DO onload (dials done, anything else?)
--- TO_DO: Movement collision check resolution based on its legth (consistent between moves)
-
--- TO_DO Vect Invers -> Vect Negaticve
-
--- TESTING: Reverse movements
--- 3636
 -- Should the code execute print functions or skip them?
 -- This should be set to false on every release
 print_debug = true
@@ -34,7 +25,6 @@ function ClearButtonsPatch(obj)
         end
     end
 end
-
 
 --------
 -- MEASUREMENT RELATED FUNCTIONS
@@ -146,15 +136,6 @@ function Vect_SetLength(vector, len)
     return Vect_Scale(vector, len/Vect_Length(vector))
 end
 
--- Offset self vector by first and third element of vec2 (second el ignored)
--- Useful for TTS positioning offsets
-function Vect_Offset(vec1, vec2)
-    if type(vec1) ~= 'table' or type(vec2) ~= 'table' then
-        print('Vect_Offset: arg not a table!')
-    end
-    return {vec1[1]+vec2[1], vec1[2], vec1[3]+vec2[3]}
-end
-
 -- Rotation of a 3D vector over its second element axis, arg in degrees
 function Vect_RotateDeg(vector, degRotation)
     local radRotation = math.rad(degRotation)
@@ -171,6 +152,7 @@ function Vect_RotateRad(vector, radRotation)
     return {newX, vector[2], newZ}
 end
 
+-- Vector pointing from one position to another
 function Vect_Between(fromVec, toVec)
     if type(fromVec) ~= 'table' or type(toVec) ~= 'table' then
         print('Vect_Between: arg not a table!')
@@ -178,6 +160,7 @@ function Vect_Between(fromVec, toVec)
     return Vect_Sum(toVec, Vect_Scale(fromVec, -1))
 end
 
+-- Print vector elements
 function Vect_Print(vec, name)
     local out = ''
     if name ~= nil then
@@ -192,6 +175,13 @@ function Vect_Print(vec, name)
     print(out)
 end
 
+-- END VECTOR RELATED FUNCTIONS
+--------
+
+--------
+-- MISC FUNCTIONS
+
+-- Return value limited by mina nd max bounds
 function Var_Clamp(var, min, max)
     if min ~= nil and var < min then
         return min
@@ -202,6 +192,7 @@ function Var_Clamp(var, min, max)
     end
 end
 
+-- Sign function, zero for zero
 function math.sgn(arg)
     if arg < 0 then
         return -1
@@ -211,12 +202,21 @@ function math.sgn(arg)
     return 0
 end
 
-function math.round(arg)
-    frac = arg - math.floor(arg)
-    if frac >= 0.5 then
-        return math.ceil(arg)
+-- Round to decPlaces decimal places
+-- if decPlaces nil round to nearest integer
+function math.round(arg, decPlaces)
+    if decPlaces == nil then decPlaces = 0 end
+
+    if dec == 0 then
+        frac = arg - math.floor(arg)
+        if frac >= 0.5 then
+            return math.ceil(arg)
+        else
+            return math.floor(arg)
+        end
     else
-        return math.floor(arg)
+        local mult = 10^(dec or 0)
+        return math.floor(num * mult + 0.5) / mult
     end
 end
 
@@ -225,14 +225,7 @@ function TTS_Serialize(pos)
     return {pos[1], pos[2], pos[3]}
 end
 
--- END VECTOR RELATED FUNCTIONS
---------
-
---------
--- MISC FUNCTIONS
-
 -- Check if object matches some of predefined X-Wing types
--- TO_DO: Change lock script to use more unique variable than 'set'
 function XW_ObjMatchType(obj, type)
     if type == 'any' then
         return true
@@ -248,23 +241,7 @@ function XW_ObjMatchType(obj, type)
     return false
 end
 
--- Get an object closest to some position + optional X-Wing type filter
-function XW_ClosestToPosWithinDist(centralPos, maxDist, type)
-    local closest = nil
-    local minDist = maxDist+1
-    for k,obj in pairs(getAllObjects()) do
-        if XW_ObjMatchType(obj, type) == true then
-            local dist = Dist_Pos(centralPos, obj.getPosition())
-            if dist < maxDist and dist < minDist then
-                minDist = dist
-                closest = obj
-            end
-        end
-    end
-    return {obj=closest, dist=minDist}
-end
-
--- Get an object closest to some other object + optional X-Wing type filter
+-- Get an object closest to (object OR position) + optional X-Wing type filter
 function XW_ClosestWithinDist(centralPosObj, maxDist, objType)
     exclObj = nil
     centralPos = nil
@@ -292,7 +269,7 @@ function XW_ClosestWithinDist(centralPosObj, maxDist, objType)
     return {obj=closest, dist=minDist}
 end
 
--- Get objects within distance of some other object + optional X-Wing type filter
+-- Get objects within distance of (object OR position) + optional X-Wing type filter
 function XW_ObjWithinDist(centralPosObj, maxDist, objType, exclList)
     local ships = {}
     exclObj = nil
@@ -374,13 +351,15 @@ function dummy() return end
 
 --------
 -- COMMAND HANDLING MODULE
--- Sanitizes input (more like throws away anything not explicitly allowed)
+-- Sanitizes input (more like ignores anything not explicitly allowed)
 -- Allows other modules to add available commands and passes their execution where they belong
 
 XW_cmd = {}
 
 -- Table of valid commands: their patterns and general types
 XW_cmd.ValidCommands = {}
+
+-- Add given regen expression as a valid command for processing
 XW_cmd.AddCommand = function(cmdRegex, type)
     -- When adding available commands, assert beggining and end of string automatically
     if cmdRegex:sub(1,1) ~= '^' then cmdRegex = '^' .. cmdRegex end
@@ -404,6 +383,8 @@ XW_cmd.CheckCommand = function(cmd)
     return type
 end
 
+-- (special function)
+-- Purge all save data (everything that goes to onSave)
 XW_cmd.AddCommand('purgeSave', 'special')
 XW_cmd.PurgeSave = function()
     MoveModule.moveHistory = {}
@@ -412,17 +393,20 @@ XW_cmd.PurgeSave = function()
     end
 end
 
+-- (special function)
+-- Print ship hitory
 XW_cmd.AddCommand('hist', 'special')
 XW_cmd.ShowHist = function(ship)
     MoveModule.PrintHistory(ship)
 end
 
-XW_cmd.AddCommand('diag', 'special')
+-- (special function)
 -- Check for typical issues with a ship
 -- 1. Check and unlock XW_cmd lock if it's on
 -- 2. Clear buttons if there are any
 -- 3. Search for nil refs on dials in his set
 -- 4. Check if ship type is recognized OK
+XW_cmd.AddCommand('diag', 'special')
 XW_cmd.Diagnose = function(ship)
     local issueFound = false
     if XW_ObjMatchType(ship, 'ship') ~= true then return end
@@ -467,7 +451,7 @@ XW_cmd.Process = function(obj, cmd)
     -- Resolve command type
     local type = XW_cmd.CheckCommand(cmd)
 
-    -- Return if invalid, lock object if valid
+    -- Process special commands without taking lock into consideration
     if type == nil then
         return false
     elseif type == 'special' then
@@ -478,13 +462,14 @@ XW_cmd.Process = function(obj, cmd)
         elseif cmd == 'hist' then
             XW_cmd.ShowHist(obj)
         end
+        return true
     end
 
+    -- Return if not ready, else lock object and process
     if XW_cmd.isReady(obj) ~= true then
         return false
     end
 
-    -- Moving involves waiting for object to rest which then does SetReady
     if type == 'demoMove' then
         MoveModule.DemoMove(cmd:sub(3, -1), obj)
     elseif type == 'move' then
@@ -504,8 +489,6 @@ XW_cmd.Process = function(obj, cmd)
             DialModule.SaveNearby(obj)
         elseif cmd == 'rd' then
             DialModule.RemoveSet(obj)
-        elseif cmd == 'cd' then
-            DialModule.SaveNearby(obj, true)
         end
     elseif type == 'action' then
         if cmd == 'r' then cmd = 'ruler' end
@@ -526,7 +509,6 @@ XW_cmd.SetBusy = function(obj)
     if XW_cmd.isReady(obj) ~= true then
         print('Nested process on ' .. obj.getName())
     end
-        print('busy ' .. obj.getName())
     obj.setVar('XW_cmd_busy', true)
 end
 
@@ -535,18 +517,28 @@ XW_cmd.SetReady = function(obj)
     if XW_cmd.isReady(obj) == true then
         print('Double ready on ' .. obj.getName())
     end
-    print('ready ' .. obj.getName())
     obj.setVar('XW_cmd_busy', false)
 end
 --------
 -- MOVEMENT DATA MODULE
--- Defines moves, parts of moves, their variants and decoding of move codes into actual move data
--- This is not aware of any ship positions (ship objects yes for their size) and doesn't move anything
+-- Stores and processes data about moves
+-- NOT aware of any ship position, operation solely on relative movements
 -- Used for feeding data about a move to a higher level movement module
 
-MoveData = {}
-MoveData.LUT = {}
+-- Possible commands supported by this module
+XW_cmd.AddCommand('[sk][012345][r]?', 'move')  -- Straights/Koiograns + stationary moves
+XW_cmd.AddCommand('b[rle][123][sr]?', 'move')  -- Banks + segnor and reverse versions
+XW_cmd.AddCommand('t[rle][123][str]?', 'move') -- Turns + segnor, talon and reverse versions
+XW_cmd.AddCommand('x[rle][fb]?', 'actionMove') -- Barrel rolls
+XW_cmd.AddCommand('c[srle]', 'actionMove')     -- Decloaks side middle + straight
+XW_cmd.AddCommand('c[rle][fb]', 'actionMove')  -- Decloaks side forward + backward
 
+MoveData = {}
+
+-- Lookup table for most of the moves
+-- Generated using Matlab, source: https://github.com/tjakubo2/xwing_traj
+-- Stored on another object to reduce clutter, passsed on load
+MoveData.LUT = {}
 MoveData.onLoad = function()
     for k,obj in pairs(getAllObjects()) do
         if obj.getName() == 'MoveLUT' then
@@ -554,11 +546,18 @@ MoveData.onLoad = function()
         end
     end
 end
-
 MoveData.LUT.Parse = function(object)
     MoveData.LUT.Data = object.call('ParseLUT', {})
 end
 
+-- Contstruct data from a lookup table entry
+-- Move info provided from MoveData.DecodeInfo
+-- Return format: {xPos_offset, yPos_offset, zPos_offset, yRot_offset}
+-- Linear interpolation between points in lookup table
+--
+-- Only returns data for RIGHT direction move (if applies)
+-- Doesn't take any segnor, talon versions etc into considerations
+-- Above things are considered MODIFIERS with functions to apply them defined futher
 MoveData.LUT.ConstructData = function(moveInfo, part)
     if part == nil then
         part = MoveData.partMax
@@ -579,6 +578,9 @@ MoveData.LUT.ConstructData = function(moveInfo, part)
     return outData
 end
 
+-- Get true move length from LUT data *IN MILIMETERS*
+-- True as in trajectory length, not distance between start and end
+-- (stored in LUT to reduce load here)
 MoveData.MoveLength = function(moveInfo)
     if moveInfo.noPartial == true then
         return nil
@@ -589,7 +591,10 @@ MoveData.MoveLength = function(moveInfo)
     end
 end
 
+-- Regex match for moves that support sliding base after execution
 MoveData.slideMatchTable = {'x[rle]', 'x[rle][fb]?', 'c[rle][fb]?', 't[rle][123]t'}
+-- Check if move allows sliding based on above table
+-- Argumant can be either move code or move info as per MoveData.DecodeInfo
 MoveData.IsSlideMove = function(moveInfoCode)
     local code = nil
     if type(moveInfoCode) == 'table' and type(moveInfoCode.code) == 'string' then
@@ -598,7 +603,6 @@ MoveData.IsSlideMove = function(moveInfoCode)
         code = moveInfoCode
     else
         print('MoveData.IsSlideMove: arg of invalid type')
-        --print(type(moveInfoCode))
     end
     local matched = false
     for k,pat in pairs(MoveData.slideMatchTable) do
@@ -609,7 +613,7 @@ MoveData.IsSlideMove = function(moveInfoCode)
     end
     return matched
 end
-
+-- Get slide length (if move supports sliding) IN MILIMETERS
 MoveData.SlideLength = function(moveInfo)
     if type(moveInfo) ~= 'table' and type(moveInfo.size) ~= 'string' then
         print('MoveData.SlideLength: arg of invalid type')
@@ -626,22 +630,9 @@ MoveData.SlideLength = function(moveInfo)
     end
     return nil
 end
-
+-- Get the position at which slide after move should start
+-- This is the position when ship is slid as far BACK as possible (slide_part=0 in later processing)
 MoveData.SlideMoveOrigin = function(moveInfo)
-    --[[
-    local info = {
-    type='invalid',
-    speed=nil,         -- speed, +5 for large ship barrel roll
-    dir=nil,           -- 'left', 'right' or nil
-    extra=nil,         -- 'koiogran', 'segnor', 'talon', 'reverse' (moves)
-    -- 'straight', 'forward', 'backward' (decloaks/rolls)
-    -- nil if not applicable
-    noPartial=false,
-    size=nil,          -- base size, 'large' or 'small'
-    note=nil,          -- how movement nore looks, ex. (...) 'banked xxx' (...)
-    collNote=nil,      -- how collision note looks, ex. (...) 'tried to do xxx' (...)
-        code=move_code     -- explicit move code recieved
-    ]]--
     local code = moveInfo.code
     local baseSize = mm_baseSize[moveInfo.size]
     local data = nil
@@ -663,15 +654,15 @@ MoveData.SlideMoveOrigin = function(moveInfo)
             data = MoveData.LeftVariant(data)
         end
         data = MoveData.TurnInwardVariant(data)
-        --print('MoveData.SLideMoveOrigin TT data: ' .. data)
     end
     if data == nil then
         print('MoveData.SLideMoveOrigin return nil')
-        --print('MoveData.SLideMoveOrigin info: ' .. moveInfo.type .. ' : ' .. moveInfo.extra)
     end
     return data
 end
-
+-- Get the offset sliding by part/maxPart applies to ship position
+-- (MoveData.SlideMoveOrigin + this function) provide real ship position offset
+--   given some slide part
 MoveData.SlidePartOffset = function(moveInfo, part)
     if moveInfo.extra == 'talon' then
         return {0, 0, -1*MoveData.SlideLength(moveInfo)*(part/MoveData.partMax), 0}
@@ -679,25 +670,6 @@ MoveData.SlidePartOffset = function(moveInfo, part)
         return {0, 0, MoveData.SlideLength(moveInfo)*(part/MoveData.partMax), 0}
     end
 end
-
--- Table telling us how moves final position is determined
--- Format: {xOffset, yOffset, zOffset, rotOffset}
--- Axis' offsets are in milimeters, rotation offset is in degrees
-
-
-
-XW_cmd.AddCommand('[sk][012345][r]?', 'move')
-
-XW_cmd.AddCommand('b[rle][123][sr]?', 'move')
-
-XW_cmd.AddCommand('t[rle][123][str]?', 'move')
-
--- Barrel roll RIGHT (member function to modify to left)
--- Large ships are hard to handle exceptions so their rolls are defined separately as 5 speeds higher
-
-XW_cmd.AddCommand('x[rle][fb]?', 'actionMove')
-XW_cmd.AddCommand('c[srle]', 'actionMove')
-XW_cmd.AddCommand('c[rle][fb]', 'actionMove')
 
 -- Convert an entry from milimeters to in-game units
 MoveData.ConvertDataToIGU = function(entry)
@@ -727,11 +699,14 @@ MoveData.ReverseVariant = function(entry)
     return {entry[1], entry[2], -1*entry[3], -1*entry[4]}
 end
 
+-- Rotate an entry by given degrees
+-- Helps define rolls as straights rotated 90deg sideways
 MoveData.RotateEntry = function(entry, angDeg)
     local rotEntry = Vect_RotateDeg(entry, angDeg)
     return {rotEntry[1], rotEntry[2], rotEntry[3], entry[4]+angDeg}
 end
 
+-- Apply move modifiers that happen even if move is partial
 MoveData.ApplyBasicModifiers = function(entry, info)
     local out = Lua_ShallowCopy(entry)
     if info.dir == 'left' then
@@ -743,12 +718,12 @@ MoveData.ApplyBasicModifiers = function(entry, info)
     return out
 end
 
+-- Apply move modifiers that only happen if move is performed fully
 MoveData.ApplyFinalModifiers = function(entry, info)
     local out = Lua_ShallowCopy(entry)
     if info.dir == 'talon' then
         out = MoveData.TurnInwardVariant(out)
     elseif info.extra == 'koiogran' or info.extra == 'segnor' then
-        --print('KSvar')
         out = MoveData.TurnAroundVariant(out)
     end
     return out
@@ -758,16 +733,17 @@ end
 -- Decode a move command into table with type, direction, speed etc info
 MoveData.DecodeInfo = function (move_code, ship)
     local info = {
-                    type='invalid',     -- [straight] [bank] [turn] [roll]
-                    speed=nil,          -- [1] [2] [3] [4] [5]
+                                        -- [option1] [option2] ... [optionN]  // [errorOption]
+                    type='invalid',     -- [straight] [bank] [turn] [roll]  //  [invalid]
+                    speed=nil,          -- [1] [2] [3] [4] [5]  //  [nil]
                     dir=nil,            -- [left] [right] [nil]
                     extra=nil,          -- [koiogran] [segnor] [talon] [reverse] [straight] [forward] [backward] [nil]
                     noPartial=false,    -- [true] [false]
                     slideMove=false,    -- [true] [false]
-                    size=nil,           -- [small] [large]
-                    note=nil,           -- [string] eg. 'banked xxx'
-                    collNote=nil,       -- [string] eg. 'tried to do xxx'
-                    code=move_code      -- [string] eg. 'be2'
+                    size=nil,           -- [small] [large]  //  [nil]
+                    note=nil,           -- [string] eg. 'banked xxx'       //  [nil]
+                    collNote=nil,       -- [string] eg. 'tried to do xxx'  //  [nil]
+                    code=move_code      -- [string] eg. 'be2'              //  [nil]
     }
 
     info.slideMove = MoveData.IsSlideMove(move_code)
@@ -775,8 +751,8 @@ MoveData.DecodeInfo = function (move_code, ship)
     if DB_isLargeBase(ship) == true then info.size = 'large'
     else info.size = 'small' end
 
- -- TO_DO: Notes for invalid
-    -- Straights, regular stuff
+
+    -- Straights and koiograns, regular stuff
     if move_code:sub(1,1) == 's' or move_code:sub(1,1) == 'k' then
         info.type = 'straight'
         info.speed = tonumber(move_code:sub(2,2))
@@ -801,7 +777,7 @@ MoveData.DecodeInfo = function (move_code, ship)
             end
         end
         if info.speed > 5 then info.type = 'invalid' end
-        -- Banks, regular stuff
+    -- Banks, regular stuff
     elseif move_code:sub(1,1) == 'b' then
         info.type = 'bank'
         info.dir = 'right'
@@ -822,7 +798,7 @@ MoveData.DecodeInfo = function (move_code, ship)
             info.collNote = 'tried to bank ' .. info.dir .. ' ' .. info.speed
         end
         if info.speed > 3 then info.type = 'invalid' end
-        -- Turns, regular stuff
+    -- Turns, regular stuff
     elseif move_code:sub(1,1) == 't' then
         info.type = 'turn'
         info.dir = 'right'
@@ -847,8 +823,12 @@ MoveData.DecodeInfo = function (move_code, ship)
             info.collNote = 'tried to turn ' .. info.dir .. ' ' .. info.speed
         end
         if info.speed > 3 then info.type = 'invalid' end
-        -- Barrel rolls, spaghetti
+    -- Barrel rolls and decloaks, spaghetti
     elseif move_code:sub(1,1) == 'x' or move_code:sub(1,1) == 'c' then
+        -- Rolls:
+        -- These move have noPartial set to true so there's no move if final pos obstructed
+        -- Speed is important - rolls are done as "sideways straights" with given speed
+        -- FOR LARGE BASE SPEED > 2 ROLLS ARE NOT HANDLED (undefined behaviour)
         info.type = 'roll'
         info.dir = 'right'
         info.speed = 1
@@ -858,15 +838,17 @@ MoveData.DecodeInfo = function (move_code, ship)
         end
         info.note = 'barrel rolled'
         info.collNote = 'tried to barrel roll'
-        -- (fucking decloak) is treated as a roll before, now just return straight 2 data
+        -- Decloaks:
+        -- FOR LARGE BASE DECLOAKS ARE NOT HANDLED (undefined behaviour)
+        -- Straigh decloak is treated as a roll before, now just return straight 2 data
         if move_code:sub(2,2) == 's' then
             info.type = 'straight'
             info.speed = 2
-            --info.extra = 'straight'
             info.note = 'decloaked forward'
             info.collNote = 'tried to decloak forward'
             if info.size == 'large' then info.type = 'invalid' end
             info.dir = nil
+        -- Side decloak is a barrel roll, but with 2 speed
         elseif move_code:sub(1,1) == 'c' then
             info.note = 'decloaked'
             info.collNote = 'tried to decloak'
@@ -890,19 +872,12 @@ MoveData.DecodeInfo = function (move_code, ship)
         end
 
     end
-    --for k,v in pairs(info) do
-    --    print(k .. ' : ' .. tostring(v))
-    --end
     return info
 end
 
--- Decode a "move" from the standard X-Wing notation into a valid movement data
--- Provide a 'ship' object reference to determine if it is large based
--- Returns offset data ship has to be treated with to perform a full move
--- Standard format {xOffset, yOffset, zOffset, rotOffset}
+-- ============
 MoveData.DecodeFullMove = function(move_code, ship)
     local data = {}
-    -- get the info about the move
     local info = MoveData.DecodeInfo(move_code, ship)
     if info.type == 'invalid' then
         print('MoveData.DecodeFullMove: invalid move type')
@@ -910,7 +885,6 @@ MoveData.DecodeFullMove = function(move_code, ship)
     else
         data = MoveData.DecodePartMove(move_code, ship, MoveData.partMax)
     end
-    --print('APfin')
     data = MoveData.ApplyFinalModifiers(data, info)
     return data
 end
@@ -1293,7 +1267,7 @@ function restWaitCoroutine()
     --if waitData.lastMove ~= nil then MoveModule.AddHistoryEntry(actShip, {pos=actShip.getPosition(), rot=actShip.getRotation(), move=waitData.lastMove}, true) end
     -- Free the object so it can do other stuff
     print(actShip.getName() .. ' RESTING')
-    actShip.highlightOn({0, 1, 0}, 0.2)
+    actShip.highlightOn({0, 1, 0}, 0.1)
     XW_cmd.SetReady(actShip)
     -- TO_DO: Set busy here and set ready in process
     return 1
@@ -1356,10 +1330,6 @@ MoveModule.GetFreePart = function(info, ship, partFun, partRange, moveLength, fu
     moveLength = Convert_mm_igu(moveLength)
     local out = {part = nil, info = nil, collObj = nil}
     local checkNum = {full=0, rough=0, fine=0}
-    --print('GetFreePart start')
-    if invertPartDelta == nil then
-        invertPartDelta = false
-    end
     local certShipReach = Convert_mm_igu(mm_baseSize[info.size])/2
     local maxShipReach = Convert_mm_igu(mm_baseSize[info.size]*math.sqrt(2))/2
 
@@ -1712,7 +1682,6 @@ XW_cmd.AddCommand('d:b[rle][123][sr]?', 'demoMove')
 XW_cmd.AddCommand('d:[sk][012345][r]?', 'demoMove')
 MoveModule.DemoMove = function(move_code, ship, ignoreCollisions, frameStep)
     if demoMoveData ~= nil then return end
-
     if frameStep == nil then frameStep = 1 end
     demoMoveData = {startPos = {pos = ship.getPosition(), rot=ship.getRotation()},
     ship = ship,
@@ -2534,7 +2503,6 @@ DialModule.ActiveSets = {}
 XW_cmd.AddCommand('r', 'action')
 XW_cmd.AddCommand('rd', 'dialHandle')
 XW_cmd.AddCommand('sd', 'dialHandle')
-XW_cmd.AddCommand('cd', 'dialHandle')
 
 -- Assign a set of dials to a ship
 -- Fit for calling from outside, removes a set if it already exists for a ship
@@ -2646,7 +2614,7 @@ saveNearbyCircleDist = Convert_mm_igu(160)
 -- Detects layout center (straight dials as reference) and assigns dials that are appropriately placed
 -- If dials are already assigned to this ship, they are ignored
 -- If one of dials is assigned to other ship, unassign and proceed
-DialModule.SaveNearby = function(ship, onlySpawnGuides)
+DialModule.SaveNearby = function(ship)
     local nearbyDialsAll = XW_ObjWithinDist(ship.getPosition(), saveNearbyCircleDist, 'dial')
     -- Nothing nearby
     if nearbyDialsAll[1] == nil then
@@ -2725,11 +2693,6 @@ DialModule.SaveNearby = function(ship, onlySpawnGuides)
             MoveModule.Announce({type='error_DialModule', note=('Dial layout nearest to ' .. ship.getName() .. ' seems to be invalid or overlapping another layout (check dials descriptions)')}, 'all')
             return
         end
-    end
-    if onlySpawnGuides == true then
-        DialModule.SpawnLayoutZoneGuides(ship, zoneWidth, zoneHeight)
-        MoveModule.Announce({type='info_DialModule', note=('would have dials from the depicted zone assigned using the \'sd\' command')}, 'all', ship)
-        return
     end
     -- There is a valid set nearby!
     local conqueredDials = {}
@@ -2813,32 +2776,6 @@ DialModule.SaveNearby = function(ship, onlySpawnGuides)
     MoveModule.Announce({type='info_dialModule', note='had ' .. dialCount .. ' dials assigned (' .. DialModule.DialCount(ship) .. ' total now)' }, 'all', ship)
 end
 
--- Spawn a rectangle zone depiction centered over the ship with appropriate size
--- Size is in world units and ship scale does not matter
-DialModule.SpawnLayoutZoneGuides = function(ship, width, height)
-    LayoutGuides_Remove(ship)
-    local shipScale = ship.getScale()[1]
-    local zoneLUpos = Vect_Scale({width/2, 0.1, height/2}, 1/shipScale)
-    local zoneLLpos = Vect_Scale({-1*width/2, 0.1, height/2}, 1/shipScale)
-    local zoneRUpos = Vect_Scale({width/2, 0.1, -1*height/2}, 1/shipScale)
-    local zoneRLpos = Vect_Scale({-1*width/2, 0.1, -1*height/2}, 1/shipScale)
-    ship.createButton({position=zoneLUpos, rotation={0, 0, 0}, label='', height=80, width=1000, click_function='dummy', function_owner=Global})
-    ship.createButton({position=zoneLUpos, rotation={0, 90, 0}, label='', height=80, width=1000, click_function='dummy', function_owner=Global})
-    ship.createButton({position=zoneLLpos, rotation={0, 0, 0}, label='', height=80, width=1000, click_function='dummy', function_owner=Global})
-    ship.createButton({position=zoneLLpos, rotation={0, 90, 0}, label='', height=80, width=1000, click_function='dummy', function_owner=Global})
-    ship.createButton({position=zoneRUpos, rotation={0, 0, 0}, label='', height=80, width=1000, click_function='dummy', function_owner=Global})
-    ship.createButton({position=zoneRUpos, rotation={0, 90, 0}, label='', height=80, width=1000, click_function='dummy', function_owner=Global})
-    ship.createButton({position=zoneRLpos, rotation={0, 0, 0}, label='', height=80, width=1000, click_function='dummy', function_owner=Global})
-    ship.createButton({position=zoneRLpos, rotation={0, 90, 0}, label='', height=80, width=1000, click_function='dummy', function_owner=Global})
-    deleteButton = {click_function = 'LayoutGuides_Remove', label = 'REMOVE', rotation =  {0, 0, 0}, width = 1500, height = 450, font_size = 300}
-    if DB_isLargeBase(ship) == true then
-        deleteButton.position = {0, 0.2, 2.5}
-    else
-        deleteButton.position = {0, 0.3, 1}
-    end
-    ship.createButton(deleteButton)
-end
-
 function LayoutGuides_Remove(ship)
     local buttons = ship.getButtons()
     if buttons ~= nil then
@@ -2901,8 +2838,8 @@ DialModule.ObjDestroyedHandle = function(obj)
     elseif obj.tag == 'Card' and obj.getDescription() ~= '' then
         if DialModule.isAssigned(obj) then DialModule.UnassignDial(obj) end
     elseif obj.getName() == 'Target Lock' then
-        for k,lockInfo in pairs(DialModule.locksToBeSet) do
-            if lockInfo.lock == obj then table.remove(DialModule.locksToBeSet, k) break end
+        for k,lockInfo in pairs(TokenModule.locksToBeSet) do
+            if lockInfo.lock == obj then table.remove(TokenModule.locksToBeSet, k) break end
         end
     end
     -- Remove ruler with ship it is on and remove ruler from list if it is manually deleted
@@ -2953,7 +2890,7 @@ DialModule.RestoreSaveData = function(saveTable)
                     missDialCount = missDialCount + 1
                 end
             end
-            getObjectFromGUID(set.ship).setVar('DialModule_hasDials', false)
+            getObjectFromGUID(set.ship).setVar('DialModule_hasDials', true)
             if set.activeDialGUID ~= nil then
                 local actDial = getObjectFromGUID(set.activeDialGUID)
                 DialModule.RestoreDial(actDial)
@@ -3349,12 +3286,6 @@ DialModule.Buttons.FlipVersion = function(buttonEntry)
     out.rotation = {out.rotation[1]+180, out.rotation[2]+180, out.rotation[3]}
     out.position = {-1*out.position[1], -2*out.position[2], out.position[3]}
     return out
-end
-
--- DELETE THIS BEFORE RELEASE
-function round(num, numDecimalPlaces)
-    local mult = 10^(numDecimalPlaces or 0)
-    return math.floor(num * mult + 0.5) / mult
 end
 
 DialModule.StartSlide = function(dial, playerColor)
