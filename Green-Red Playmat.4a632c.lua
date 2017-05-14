@@ -1,6 +1,8 @@
 -- ~~~~~~
 -- Script by dzikakulka
--- Issues, history at: http://github.com/tjakubo2/TTS_xwing
+-- Issues, history at: https://github.com/tjakubo2/TTS_xwing
+--
+-- Script applicable to playmats on both sides of the table
 -- ~~~~~~
 
 -- TO ADD NEW IMAGES TO THE SET
@@ -8,8 +10,8 @@
 -- (comma after the currrent last one and your link enclosed in apostrophes following)
 
 -- Table of all images to be cycled through with NextImage()
-imageSet = {'http://i.imgur.com/6IkNucB.jpg',
-            'http://i.imgur.com/dczrasC.jpg',
+imageSet = {'http://i.imgur.com/dczrasC.jpg',
+            'http://i.imgur.com/6IkNucB.jpg',
             'http://i.imgur.com/YdIAcvP.png',
             'http://i.imgur.com/5CcjDzM.jpg',
             'http://i.imgur.com/4WMSCSV.jpg',
@@ -18,11 +20,22 @@ imageSet = {'http://i.imgur.com/6IkNucB.jpg',
             'http://i.imgur.com/fy6kooO.png'}
 
 -- {Postions, Scale} data for mat object of each type
-matData = {}
-matData['Custom_Board'] = {{-20.5142, -0.17, 0}, {1.225, 1.2, 1.225}}
-matData['Custom_Tile'] = {{-20.5142, 0.85, 0}, {16.28, 0, 16.28}}
+matData = {}
 
-function onload()
+matData['Custom_Board'] = {{20.5142, -0.17, 0}, {1.225, 1.2, 1.225}}
+matData['Custom_Tile'] = {{20.5142, 0.85, 0}, {16.28, 0, 16.28}}
+
+-- Changes data to "left version" and switches 1st image if on left side
+function onLoad()
+    local function leftVersion(data)
+        return { {-1*data[1][1], data[1][2], data[1][3]}, {data[2][1], data[2][2], data[2][3]} }
+    end
+    if self.getPosition()[1] < 0 then
+        for k,v in pairs(matData) do matData[k] = leftVersion(matData[k]) end
+        local temp = imageSet[1]
+        imageSet[1] = imageSet[2]
+        imageSet[2] = temp
+    end
     self.lock()
     self.setPosition(matData[SelfType()][1])
     self.setScale(matData[SelfType()][2])
@@ -30,7 +43,7 @@ function onload()
     self.interactable = false
 end
 
--- Only differentiates between Csutom_Tile and Custom_Board
+-- Differentiates self type between Custom_Tile and Custom_Board
 function SelfType()
     if self.getCustomObject().thickness ~= nil then
         return 'Custom_Tile'
