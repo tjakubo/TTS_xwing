@@ -72,7 +72,7 @@ function XW_ObjWithinRect(center, x_size, z_size)
     local z_min = center[3] - (z_size/2)
     local z_max = center[3] + (z_size/2)
     for k,obj in pairs(getAllObjects()) do
-        if obj.tag ~= 'Fog' then
+        if obj.tag ~= 'Fog' and obj.interactable == true then
             local obj_x = obj.getPosition()[1]
             local obj_z = obj.getPosition()[3]
             if obj_x < x_max and obj_x > x_min and obj_z < z_max and obj_z > z_min then
@@ -84,25 +84,59 @@ function XW_ObjWithinRect(center, x_size, z_size)
 end
 
 function Click_Red(n, playerColor)
-    AssignModule.Assign('Red', playerColor)
+    if self.getVar('RedBusy') == true then
+        broadcastToColor(AssignModule.msg.clickTooFast, playerColor, {1, 0.2, 0})
+    else
+        AssignModule.Assign('Red', playerColor)
+    end
 end
 function Click_Blue(n, playerColor)
-    AssignModule.Assign('Blue', playerColor)
+    if self.getVar('BlueBusy') == true then
+        broadcastToColor(AssignModule.msg.clickTooFast, playerColor, {1, 0.2, 0})
+    else
+        AssignModule.Assign('Blue', playerColor)
+    end
 end
 function Click_Teal(n, playerColor)
-    AssignModule.Assign('Teal', playerColor)
+    if self.getVar('TealBusy') == true then
+        broadcastToColor(AssignModule.msg.clickTooFast, playerColor, {1, 0.2, 0})
+    else
+        AssignModule.Assign('Teal', playerColor)
+    end
 end
 function Click_Green(n, playerColor)
-    AssignModule.Assign('Green', playerColor)
+    if self.getVar('GreenBusy') == true then
+        broadcastToColor(AssignModule.msg.clickTooFast, playerColor, {1, 0.2, 0})
+    else
+        AssignModule.Assign('Green', playerColor)
+    end
 end
+
+
 
 AssignModule.maxShipCount = 6
 AssignModule.msg = {}
 AssignModule.msg.emptyZone = 'Quick Assign: Place ships you want to assign dials for in your hidden zone'
 AssignModule.msg.notShipsOnly = 'Quick Assign: Remove objects that are not ship models from your hidden zone and try again'
 AssignModule.msg.tooManyShips = 'Quick Assign: Too many ship models (max ' .. AssignModule.maxShipCount ..'), use adjacent hidden zone for some of yor ships'
-AssignModule.msg.unrecognizedShips = 'Some ship models in your zone have not been recognized. Make sure your models are sourced from squad building tray on this table and contact author if this issue persists'
+AssignModule.msg.unrecognizedShips = 'Quick Assign: Some ship models in your zone have not been recognized. Make sure your models are sourced from squad building tray on this table and contact author if this issue persists'
+AssignModule.msg.clickTooFast = 'Quick Assign: Clicking too fast, please wait until assignment finishes'
 
+AssignModule.SortShips = function(shipData)
+    local sortedData = {}
+    repeat
+        local xMax = {ind=1, val=math.abs(shipData[1].ref.getPosition()[1])}
+        for k,data in pairs(shipData) do
+            if math.abs(data.ref.getPosition()[1]) > xMax.val then
+                xMax.val = math.abs(data.ref.getPosition()[1])
+                xMax.ind = k
+            end
+        end
+        table.insert(sortedData, shipData[xMax.ind])
+        table.remove(shipData, xMax.ind)
+    until shipData[1] == nil
+    return sortedData
+end
 -- Check zone contents and assign dials if everything is OK
 AssignModule.Assign = function(zoneColor, playerColor)
     -- Get objects, assets that there are only ships in and their count
@@ -133,24 +167,25 @@ AssignModule.Assign = function(zoneColor, playerColor)
     end
 
     -- Get ship type data
-    local dialData = {}
     local typesOK = true
+    local shipData = {}
+    local bagData = {}
     for k,ship in pairs(zoneObjects) do
         local shipType = Global.call('DB_getShipTypeCallable', {ship})
         if shipType == 'Unknown' then
             typesOK = false
             break
-        elseif dialData[shipType] == nil then
-            dialData[shipType] = {}
-            dialData[shipType].ships = {}
+        elseif bagData[shipType] == nil then
+            bagData[shipType] = {}
         end
-        table.insert(dialData[shipType].ships, ship)
+        table.insert(shipData, {ref=ship, type=shipType})
     end
     if not typesOK then
         broadcastToColor(AssignModule.msg.unrecognizedShips, playerColor, {1, 0.2, 0})
         return
     end
-
+    self.setVar(zoneColor .. 'Busy', true)
+    shipData = AssignModule.SortShips(shipData)
     -- Dial bags desired position and its step
     local function bPosStep(pos)
         return {pos[1], pos[2], pos[3] - 2*math.sgn(pos[3])}
@@ -159,10 +194,21 @@ AssignModule.Assign = function(zoneColor, playerColor)
     bPos[2] = 1.5
 
     -- If there are valid dial bags on the table, take them
+    local function TableConcat(t1,t2)
+        for i=1,#t2 do
+            t1[#t1+1] = t2[i]
+        end
+        return t1
+    end
     local playerStuff = XW_ObjWithinRect({bPos[1]/2, 0, bPos[3]/2}, math.abs(bPos[1])+1, math.abs(bPos[3])+1)
+    -- -85, -27
+    -- -57, 27
+    -- S: 28, 54
+    -- C: -71, 0
+    playerStuff = TableConcat(playerStuff, XW_ObjWithinRect({-71, 0, 0}, 28, 54))
     for k,obj in pairs(playerStuff) do
         if obj.tag == 'Infinite' and obj.getName():find('Dials') ~= nil and tonumber(obj.getDescription()) ~= nil and tonumber(obj.getDescription()) >= 1.1 then
-            for type,data in pairs(dialData) do
+            for type,data in pairs(bagData) do
                 if obj.getName() == (type .. ' Dials') then
                     data.dialBag = obj
                 end
@@ -173,14 +219,14 @@ AssignModule.Assign = function(zoneColor, playerColor)
     -- If some bags were not on the table, grab them from squad builder module
     local bagsToGrab = {}
     local grabbed = nil
-    for type,data in pairs(dialData) do
+    for type,data in pairs(bagData) do
         if data.dialBag == nil then
             table.insert(bagsToGrab, type)
         end
     end
     if bagsToGrab[1] ~= nil then
         grabbed = AssignModule.GrabDialBags(bagsToGrab)
-        for type,data in pairs(dialData) do
+        for type,data in pairs(bagData) do
             if data.dialBag == nil then
                 data.dialBag = grabbed[type]
             end
@@ -188,7 +234,7 @@ AssignModule.Assign = function(zoneColor, playerColor)
     end
 
     -- Move the dial bags to desired position
-    for type,data in pairs(dialData) do
+    for type,data in pairs(bagData) do
         data.dialBag.setPositionSmooth(bPos)
         data.dialBag.unlock()
         bPos = bPosStep(bPos)
@@ -219,25 +265,24 @@ AssignModule.Assign = function(zoneColor, playerColor)
     end
 
     -- Take stacks, set expand callback for them
-    local stacks = {}
-    for type,data in pairs(dialData) do
-        for k,ship in pairs(data.ships) do
-            local newStack = data.dialBag.takeObject({position=stPos, callback='expandSet', callback_owner=self, params={ship = ship, scale = {currScale, 1, currScale}}})
-            ship.setPositionSmooth(shipPos(stPos))
-            local rot = 180
-            if math.sgn(stPos[3]) > 0 then
-                rot = 0
-            end
-            ship.setRotationSmooth({0, rot, 0})
-            ship.highlightOn({0, 1, 0}, 1)
-            stPos = stPosStep(stPos)
+    for k,data in pairs(shipData) do
+        local newStack = bagData[data.type].dialBag.takeObject({position=stPos, callback='expandSet', callback_owner=self, params={ship = data.ref, scale = {currScale, 1, currScale}, unlock=zoneColor}})
+        data.ref.setPositionSmooth(shipPos(stPos))
+        local rot = 180
+        if math.sgn(stPos[3]) > 0 then
+            rot = 0
         end
+        data.ref.setRotationSmooth({0, rot, 0})
+        data.ref.highlightOn({0, 1, 0}, 1)
+        stPos = stPosStep(stPos)
     end
+
 end
 
 function expandSet(obj, params)
     obj.setScale(params.scale)
     obj.call('init', {ship=params.ship})
+    self.setVar(params.unlock .. 'Busy', false)
 end
 
 function math.sgn(arg)
