@@ -472,9 +472,8 @@ XW_cmd.Process = function(obj, cmd)
 
     if type == 'demoMove' then
         MoveModule.DemoMove(cmd:sub(3, -1), obj)
-    elseif type == 'move' then
-        MoveModule.PerformMove(cmd, obj)
-    elseif type == 'actionMove' then
+    elseif type == 'move' or type == 'actionMove' then
+        local info = MoveData.DecodeInfo(cmd, obj)
         MoveModule.PerformMove(cmd, obj)
     elseif type == 'historyHandle' then
         if cmd == 'q' or cmd == 'undo' then
@@ -533,6 +532,7 @@ XW_cmd.AddCommand('t[rle][123][str]?', 'move') -- Turns + segnor, talon and reve
 XW_cmd.AddCommand('x[rle][fb]?', 'actionMove') -- Barrel rolls
 XW_cmd.AddCommand('c[srle]', 'actionMove')     -- Decloaks side middle + straight
 XW_cmd.AddCommand('c[rle][fb]', 'actionMove')  -- Decloaks side forward + backward
+XW_cmd.AddCommand('ch[rle][fb]', 'actionMove')               -- Echo's bullshit
 
 MoveData = {}
 
@@ -550,6 +550,12 @@ end
 MoveData.LUT.Parse = function(object)
     MoveData.LUT.Data = object.call('ParseLUT', {})
 end
+
+-- Max part value for partial moves
+-- Part equal to this is a full move
+-- Value is largely irrelevant since part can be a fraction (any kind of number really)
+MoveData.partMax = 1000
+
 
 -- Construct data from a lookup table entry
 -- Move info provided from MoveData.DecodeInfo
@@ -583,7 +589,7 @@ end
 -- True as in trajectory length, not distance between start and end
 -- (stored in LUT to reduce load here)
 MoveData.MoveLength = function(moveInfo)
-    if moveInfo.noPartial == true then
+    if moveInfo.traits.part == false then
         return nil
     elseif moveInfo.speed == 0 then
         return 0
@@ -593,7 +599,7 @@ MoveData.MoveLength = function(moveInfo)
 end
 
 -- Regex match for moves that support sliding base after execution
-MoveData.slideMatchTable = {'x[rle]', 'x[rle][fb]?', 'c[rle][fb]?', 't[rle][123]t'}
+MoveData.slideMatchTable = {'x[rle]', 'x[rle][fb]?', 'c[rle][fb]?', 't[rle][123]t', 'ch[rle][fb]'}
 -- Check if move allows sliding based on above table
 -- Argumant can be either move code or move info as per MoveData.DecodeInfo
 MoveData.IsSlideMove = function(moveInfoCode)
@@ -619,16 +625,18 @@ MoveData.SlideLength = function(moveInfo)
     if type(moveInfo) ~= 'table' and type(moveInfo.size) ~= 'string' then
         print('MoveData.SlideLength: arg of invalid type')
     end
-    if not moveInfo.slideMove then
+    if moveInfo.traits.slide ~= true then
+                print('sl,nsm')
         return nil
     else
         baseSize = mm_baseSize[moveInfo.size]
-        if moveInfo.type == 'roll' then
+        if moveInfo.type == 'roll' or moveInfo.type == 'echo' then
             return baseSize
         elseif moveInfo.type == 'turn' and moveInfo.extra == 'talon' then
             return baseSize/2
         end
     end
+    print('sl,nm')
     return nil
 end
 -- Get the position at which slide after move should start
@@ -648,6 +656,28 @@ MoveData.SlideMoveOrigin = function(moveInfo)
         data = MoveData.RotateEntry(data, ang)
         data[4] = data[4] - ang
         data[3] = data[3] - MoveData.SlideLength(moveInfo)/2
+    elseif moveInfo.type == 'echo' then
+        print('smor_echo')
+        local ang = -90
+        if moveInfo.dir == 'right' then
+            ang = 90
+        end
+        data = MoveData.LUT.ConstructData({type='bank', speed=2, size='small', code='br2'})
+        if (moveInfo.dir == 'left' and moveInfo.extra == 'backward') or (moveInfo.dir == 'right' and moveInfo.extra == 'forward') then
+            data = MoveData.LeftVariant(data)
+        end
+        data = MoveData.RotateEntry(data, ang)
+        if moveInfo.dir == 'right' then
+            data[4] = data[4] - 90
+        else
+            data[4] = data[4] + 90
+        end
+        --data[4] = data[4] - ang
+        --[[if moveInfo.dir == 'right' then
+            data[4] = data[4] - 90
+        else
+            data[4] = data[4] + 90
+        end]]--
     elseif moveInfo.type == 'turn' and moveInfo.extra == 'talon' then
         data = MoveData.LUT.ConstructData(moveInfo)
         data[3] = data[3] + MoveData.SlideLength(moveInfo)/2
@@ -735,19 +765,25 @@ end
 MoveData.DecodeInfo = function (move_code, ship)
     local info = {
                                         -- [option1] [option2] ... [optionN]  // [errorOption]
-                    type='invalid',     -- [straight] [bank] [turn] [roll]  //  [invalid]
+                    type='invalid',     -- [straight] [bank] [turn] [roll] [echo] //  [invalid]
                     speed=nil,          -- [1] [2] [3] [4] [5]  //  [nil]
                     dir=nil,            -- [left] [right] [nil]
                     extra=nil,          -- [koiogran] [segnor] [talon] [reverse] [straight] [forward] [backward] [nil]
-                    noPartial=false,    -- [true] [false]
-                    slideMove=false,    -- [true] [false]
+                    traits =
+                    {   slide=false,
+                        full=false,
+                        part=false   },          -- [string] cotaining any or all: 'slide', 'full', 'part'
+                    --noPartial=false,    -- [true] [false]
+                    --slideMove=false,    -- [true] [false]
                     size=nil,           -- [small] [large]  //  [nil]
                     note=nil,           -- [string] eg. 'banked xxx'       //  [nil]
                     collNote=nil,       -- [string] eg. 'tried to do xxx'  //  [nil]
                     code=move_code      -- [string] eg. 'be2'              //  [nil]
     }
 
-    info.slideMove = MoveData.IsSlideMove(move_code)
+    if MoveData.IsSlideMove(move_code) then
+        info.traits.slide = true
+    end
 
     if DB_isLargeBase(ship) == true then info.size = 'large'
     else info.size = 'small' end
@@ -757,6 +793,7 @@ MoveData.DecodeInfo = function (move_code, ship)
     if move_code:sub(1,1) == 's' or move_code:sub(1,1) == 'k' then
         info.type = 'straight'
         info.speed = tonumber(move_code:sub(2,2))
+        info.traits.full = true
         if move_code:sub(1,1) == 'k' then
             info.extra = 'koiogran'
             info.note = 'koiogran turned ' .. info.speed
@@ -776,6 +813,8 @@ MoveData.DecodeInfo = function (move_code, ship)
             else
                 info.note = 'is stationary'
             end
+        else
+            info.traits.part = true
         end
         if info.speed > 5 then info.type = 'invalid' end
     -- Banks, regular stuff
@@ -783,6 +822,8 @@ MoveData.DecodeInfo = function (move_code, ship)
         info.type = 'bank'
         info.dir = 'right'
         info.speed = tonumber(move_code:sub(3,3))
+        info.traits.full = true
+        info.traits.part = true
         if move_code:sub(2,2) == 'l' or move_code:sub(2,2) == 'e' then
             info.dir = 'left'
         end
@@ -804,6 +845,8 @@ MoveData.DecodeInfo = function (move_code, ship)
         info.type = 'turn'
         info.dir = 'right'
         info.speed = tonumber(move_code:sub(3,3))
+        info.traits.full = true
+        info.traits.part = true
         if move_code:sub(2,2) == 'l' or move_code:sub(2,2) == 'e' then
             info.dir = 'left'
         end
@@ -825,6 +868,19 @@ MoveData.DecodeInfo = function (move_code, ship)
         end
         if info.speed > 3 then info.type = 'invalid' end
     -- Barrel rolls and decloaks, spaghetti
+    elseif move_code:sub(1,2) == 'ch' then
+        -- Echo's fucking bullshit which goes against ALL the standards
+        info.type = 'echo'
+        info.dir = 'right'
+        info.extra = 'forward'
+        if move_code:sub(3,3) == 'l' or move_code:sub(3,3) == 'e' then
+            info.dir = 'left'
+        end
+        if move_code:sub(4,4) == 'b' then
+            info.extra = 'backward'
+        end
+        info.note = 'dechocloaked ' .. info.dir .. ' ' .. info.extra
+        info.collNote = 'tried to dechocloak ' .. info.dir .. ' ' .. info.extra
     elseif move_code:sub(1,1) == 'x' or move_code:sub(1,1) == 'c' then
         -- Rolls:
         -- These move have noPartial set to true so there's no move if final pos obstructed
@@ -833,7 +889,7 @@ MoveData.DecodeInfo = function (move_code, ship)
         info.type = 'roll'
         info.dir = 'right'
         info.speed = 1
-        info.noPartial = true
+        --info.noPartial = true
         if move_code:sub(2,2) == 'l' or move_code:sub(2,2) == 'e' then
             info.dir = 'left'
         end
@@ -845,6 +901,7 @@ MoveData.DecodeInfo = function (move_code, ship)
         if move_code:sub(2,2) == 's' then
             info.type = 'straight'
             info.speed = 2
+            info.traits.full = true
             info.note = 'decloaked forward'
             info.collNote = 'tried to decloak forward'
             if info.size == 'large' then info.type = 'invalid' end
@@ -871,7 +928,6 @@ MoveData.DecodeInfo = function (move_code, ship)
                 info.collNote = info.collNote .. ' ' .. info.dir
             end
         end
-
     end
     return info
 end
@@ -890,11 +946,6 @@ MoveData.DecodeFullMove = function(move_code, ship)
     data = MoveData.ApplyFinalModifiers(data, info)
     return data
 end
-
--- Max part value for partial moves
--- Part equal to this is a full move
--- Value is largely irrelevant since part can be a fraction (any kind of number really)
-MoveData.partMax = 1000
 
 -- Get the offset data for a partial move
 -- Return format: {xPos_offset, yPos_offset, zPos_offset, yRot_offset}
@@ -916,6 +967,7 @@ end
 MoveData.DecodePartSlide = function(move_code, ship, part)
     local info = MoveData.DecodeInfo(move_code, ship)
     local slideOrigin = MoveData.SlideMoveOrigin(info)
+    print('dps_ang: ' .. slideOrigin[4])
     local offset = MoveData.SlidePartOffset(info, part)
     return Vect_Sum(slideOrigin, offset)
 end
@@ -1331,39 +1383,24 @@ MoveModule.partResolutionFine = 1/1000  -- Resolution for fine checks  (for forw
 -- moveLength <- yeah
 -- fullFun    <- OPTIONAL function that calculates target position for full move (checked once first)
 -- Return:
---============================================
-MoveModule.GetFreePart = function(info, ship, partFun, partRange, moveLength, fullFun)
+--==========================================
+MoveModule.MoveProbe = {}
+MoveModule.MoveProbe.GetShipsNearPart = function(info, ship, partFun, partRange)
+    local middlePart = (partRange.to - partRange.from)/2
+    local maxShipReach = Convert_mm_igu(mm_baseSize[info.size]*math.sqrt(2))/2
+    local moveReach = math.max( Dist_Pos(partFun(info.code, ship, middlePart).pos, partFun(info.code, ship, partRange.to).pos),
+                                Dist_Pos(partFun(info.code, ship, middlePart).pos, partFun(info.code, ship, partRange.from).pos) )
+    local collShipRange = moveReach + maxShipReach + Convert_mm_igu(mm_largeBase*math.sqrt(2))/2 + Convert_mm_igu(10)
+    return XW_ObjWithinDist(partFun(info.code, ship, MoveData.partMax/2).pos, collShipRange, 'ship', {ship})
+end
+MoveModule.MoveProbe.GetFreePart = function(info, ship, partFun, partRange, moveLength, fullFun)
     if moveLength == nil then moveLength = 0 end
     moveLength = Convert_mm_igu(moveLength)
     local out = {part = nil, info = nil, collObj = nil}
-    local checkNum = {full=0, rough=0, fine=0}
+    local checkNum = {rough=0, fine=0}
 
     -- Get ships that *can* possibly collide during this move
-    local certShipReach = Convert_mm_igu(mm_baseSize[info.size])/2
-    local maxShipReach = Convert_mm_igu(mm_baseSize[info.size]*math.sqrt(2))/2
-    local moveReach = math.max( Dist_Pos(partFun(info.code, ship, MoveData.partMax/2).pos, partFun(info.code, ship, MoveData.partMax).pos),
-                                Dist_Pos(partFun(info.code, ship, MoveData.partMax/2).pos, partFun(info.code, ship, 0).pos) )
-    local collShipRange = moveReach + maxShipReach + Convert_mm_igu(mm_largeBase*math.sqrt(2))/2 + Convert_mm_igu(10)
-    local collShips = XW_ObjWithinDist(partFun(info.code, ship, MoveData.partMax/2).pos, collShipRange, 'ship', {ship})
-
-    -- Check if the full move function is clear (if provided)
-    if fullFun ~= nil then
-        fullInfo = MoveModule.CheckCollisions(ship, fullFun(info.code, ship), collShips)
-        checkNum.full = checkNum.full + fullInfo.numCheck
-        if fullInfo.coll == nil then
-            out.info = 'full'
-            return out
-        -- If move can't be done partially and either full move collides or none provided, return
-        elseif info.noPartial == true then
-            out.info = 'overlap'
-            return out
-        end
-    else
-        if info.noPartial == true then
-            out.info = 'overlap'
-            return out
-        end
-    end
+    local collShips = MoveModule.MoveProbe.GetShipsNearPart(info, ship, partFun, partRange)
 
     -- Current part and part delts for ROUGH CHECKING
     local actPart = partRange.from
@@ -1429,6 +1466,27 @@ MoveModule.GetFreePart = function(info, ship, partFun, partRange, moveLength, fu
     --print('-- GetFreePart CHECK_COUNT: ' .. checkNum.rough+checkNum.fine .. ' (' .. checkNum.rough .. ' + ' .. checkNum.fine .. ')')
     return out
 end
+MoveModule.MoveProbe.GetShipsNearFull = function(info, ship, fullFun)
+    local maxShipReach = Convert_mm_igu(mm_baseSize[info.size]*math.sqrt(2))/2
+    local collShipRange = maxShipReach + Convert_mm_igu(mm_largeBase*math.sqrt(2))/2 + Convert_mm_igu(10)
+    return XW_ObjWithinDist(fullFun(info.code, ship).pos, collShipRange, 'ship', {ship})
+end
+MoveModule.MoveProbe.TryFullMove = function(info, ship, fullFun)
+    local collShips = MoveModule.MoveProbe.GetShipsNearFull(info, ship, fullFun)
+    local out = {done=nil, collObj=nil}
+    local checkNum = 0
+
+    fullInfo = MoveModule.CheckCollisions(ship, fullFun(info.code, ship), collShips)
+    checkNum = checkNum + fullInfo.numCheck
+    if fullInfo.coll == nil then
+        out.done = true
+        return out
+    else
+        out.done = false
+        out.collObj = fullInfo.coll
+        return out
+    end
+end
 
 -- Get the (now for real) FINAL position for a give move, including partial move and collisions
 MoveModule.GetFinalPosData = function(move_code, ship, ignoreCollisions)
@@ -1443,7 +1501,8 @@ MoveModule.GetFinalPosData = function(move_code, ship, ignoreCollisions)
     -- NON-COLLISION VERSION
     if ignoreCollisions then
         -- If move can slide at the end, get final position including 'backward'/'forward' modifiers
-        if info.slideMove then
+        --if info.slideMove then
+        if info.traits.slide == true ~= nil then
             local initPart = MoveData.partMax/2
             if info.extra == 'forward' then
                 initPart = MoveData.partMax
@@ -1454,14 +1513,20 @@ MoveModule.GetFinalPosData = function(move_code, ship, ignoreCollisions)
             out.finType = 'slide'
             out.finPart = initPart
             return out
-        else
-        -- If can't slide, just get the final position
+        elseif info.traits.full == true then
+        -- If full moves are allowed, get a full move
             out.finPos = MoveModule.GetFullMove(info.code, ship)
             if info.speed == 0 then
                 out.finType = 'stationary'
             else
                 out.finType = 'move'
             end
+            out.finPart = 'max'
+            return out
+        elseif info.traits.part == true then
+        -- If partial moves are allowed, get max part move
+            out.finPos = MoveModule.GetPartMove(info.code, ship, MoveData.partMax)
+            out.finType = 'move'
             out.finPart = 'max'
             return out
         end
@@ -1471,13 +1536,14 @@ MoveModule.GetFinalPosData = function(move_code, ship, ignoreCollisions)
         -- If move can slide at the end, check the slide parts
         -- Respect the 'forward'/'backward' option as "as far forward/backward as possible"
         -- Respect the middle slide option by checking for middle once, then treat as forward if obstructed
-        if info.slideMove then
+        if info.traits.slide == true then
+            print('slide')
             local partRange = {from=0, to=MoveData.partMax}
             if info.extra == 'forward' then
                 partRange = {from=MoveData.partMax, to=0}
             elseif info.extra ~= 'backward' then
                 local firstCheckRange = {from=500, to=500}
-                local freePartData = MoveModule.GetFreePart(info, ship, MoveModule.GetPartSlide, firstCheckRange, MoveData.SlideLength(info))
+                local freePartData = MoveModule.MoveProbe.GetFreePart(info, ship, MoveModule.GetPartSlide, firstCheckRange, MoveData.SlideLength(info))
                 if freePartData.info ~= 'overlap' then
                     out.finPos = MoveModule.GetPartSlide(info.code, ship, freePartData.part)
                     out.finType = 'slide'
@@ -1485,7 +1551,7 @@ MoveModule.GetFinalPosData = function(move_code, ship, ignoreCollisions)
                     return out
                 end
             end
-            local freePartData = MoveModule.GetFreePart(info, ship, MoveModule.GetPartSlide, partRange, MoveData.SlideLength(info))
+            local freePartData = MoveModule.MoveProbe.GetFreePart(info, ship, MoveModule.GetPartSlide, partRange, MoveData.SlideLength(info))
             if freePartData.info ~= 'overlap' then
                 out.finPos = MoveModule.GetPartSlide(info.code, ship, freePartData.part)
                 out.finType = 'slide'
@@ -1493,180 +1559,33 @@ MoveModule.GetFinalPosData = function(move_code, ship, ignoreCollisions)
                 return out
             end
         end
-        if not info.noPartial then
-            local partRange = {from=MoveData.partMax, to=0}
-            local freePartData = MoveModule.GetFreePart(info, ship, MoveModule.GetPartMove, partRange, MoveData.MoveLength(info), MoveModule.GetFullMove)
-            if freePartData.info == 'full' then
+        if info.traits.full == true then
+            print('full')
+            --local partRange = {from=MoveData.partMax, to=MoveData.partMax}
+            local fullData = MoveModule.MoveProbe.TryFullMove(info, ship, MoveModule.GetFullMove)
+            if fullData.done == true then
                 out.finPos = MoveModule.GetFullMove(info.code, ship)
                 out.finType = 'move'
                 out.finPart = 'max'
                 return out
-            else
+            end
+        end
+        if info.traits.part == true then
+            print('part')
+            local partRange = {from=MoveData.partMax, to=0}
+            local freePartData = MoveModule.MoveProbe.GetFreePart(info, ship, MoveModule.GetPartMove, partRange, MoveData.MoveLength(info))
+            if freePartData.info ~= 'overlap' then
                 out.finPos = MoveModule.GetPartMove(info.code, ship, freePartData.part)
                 out.finType = 'move'
                 out.finPart = freePartData.part
-                --print('GetFinalPos finPart: ' .. freePartData.part)
                 out.collObj = freePartData.collObj
                 return out
             end
-        else
-            local partRange = {from=MoveData.partMax, to=MoveData.partMax}
-            local freePartData = MoveModule.GetFreePart(info, ship, MoveModule.GetPartMove, partRange, MoveData.MoveLength(info), MoveModule.GetFullMove)
-            if freePartData.info == 'full' then
-                out.finPos = MoveModule.GetFullMove(info.code, ship)
-                out.finType = 'move'
-                out.finPart = 'max'
-                return out
-            end
         end
+        print('none - overlap')
         out.finType = 'overlap'
         return out
     end
-
-    --[[if ignoreCollisions ~= true then
-        -- LET THE SPAGHETTI FLOW!
-        -- Check move length so we can relate how far some part of a move will take us
-        local moveLength = MoveData.MoveLength(info)
-        --moveLength = moveLength + Vect_Length(MoveData[info.type][info.size .. 'BaseOffsetInit'])
-        --moveLength = moveLength + Vect_Length(MoveData[info.type][info.size .. 'BaseOffsetFinal'])
-        moveLength = Convert_mm_igu(moveLength)
-
-        -- Check how close ships have to be so bump is unavoidable and how far so bump is possible at all
-        local isShipLargeBase = DB_isLargeBase(ship)
-        local certShipReach = nil
-        local maxShipReach = nil
-        if isShipLargeBase == true then
-            certShipReach = Convert_mm_igu(mm_largeBase/2)
-            maxShipReach = Convert_mm_igu(mm_largeBase*math.sqrt(2)/2)
-        else
-            certShipReach = Convert_mm_igu(mm_smallBase/2)
-            maxShipReach = Convert_mm_igu(mm_smallBase*math.sqrt(2)/2)
-        end
-
-        -- Get list of ships that can possibly collide (all in *some* distance from middle of move)
-        local ships = XW_ObjWithinDist(MoveModule.GetPartMove(move_code, ship, MoveData.partMax/2).pos, moveLength+(2*maxShipReach), 'ship')
-        for k, collShip in pairs(ships) do if collShip == ship then table.remove(ships, k) end end
-
-        -- Let's try collisions at the end of a move
-        local finalInfo = MoveModule.CheckCollisions(ship, MoveModule.GetFullMove(move_code, ship), ships)
-
-        -- (if there will be collisions) we will start with maximum part of a move (ending position)
-        local actPart = MoveData.partMax
-        if finalInfo.coll ~= nil then
-            -- There was a collision!
-            local checkNum = 0 -- this is just to see how efficient stuff is
-            local collision = false
-
-            -- First, we will check collisions every 1/100th of a move
-            -- BUT WITH A CATCH
-            local partDelta = -1*(MoveData.partMax/100)
-            repeat
-                local nPos = MoveModule.GetPartMove(move_code, ship, actPart)
-                local collInfo = MoveModule.CheckCollisions(ship, nPos, ships)
-                local distToSkip = nil
-                if collInfo.coll ~= nil then
-                    collision = true
-                    distToSkip = collInfo.minMargin
-                    -- If there is a distance we can travel that assures collison will not end
-                    if distToSkip > 0 then
-                        -- Calculate how big part it is and skip away!
-                        -- This saves A LOT of iterations, for real
-                        partDelta = -1*((distToSkip * MoveData.partMax)/moveLength)
-                        if partDelta > -10 then partDelta = -10 end
-                        -- Else we're back at 1/100th of a move back
-                    else partDelta = -10 end
-                else collision = false end
-                actPart = actPart + partDelta
-                checkNum = checkNum + collInfo.numCheck
-                if collision == true then info.collidedShip = collInfo.coll end
-            until collision == false or actPart < 0
-
-            -- Right now, we're out of any collisions or at part 0 (no move)
-            -- Go 1/1000th of a move forward until we have a collision, then skip to last free 1/1000th
-            partDelta = (1/1000)*MoveData.partMax
-            local collInfo
-            repeat
-                local nPos = MoveModule.GetPartMove(move_code, ship, actPart)
-                collInfo = MoveModule.CheckCollisions(ship, nPos, ships)
-                if collInfo.coll ~= nil then collision = true
-                else collision = false end
-                actPart = actPart + partDelta
-                checkNum = checkNum + collInfo.numCheck
-            until (collision == true and collInfo.coll == info.collidedShip) or actPart > MoveData.partMax
-            actPart = actPart - partDelta
-            info.collidedShip = collInfo.coll -- This is what we hit
-        end
-
-        -- We get the final position as a calculated part or as a full move if ignoring collisions
-        finPos = MoveModule.GetPartMove(move_code, ship, actPart)
-    else
-        finPos = MoveModule.GetFullMove(move_code, ship)
-    end
-    -- Movement part finished!
-
-    -- TOKEN HANDLING:
-    -- How far ships reach (circle) for nearby tokens distance considerations and checking for obstructions
-    -- This is because token next to a large ship is MUCH FARTHER from it than token near a small ship
-    local isShipLargeBase = DB_isLargeBase(ship)
-    local maxShipReach = nil
-    if isShipLargeBase == true then
-        maxShipReach = Convert_mm_igu(mm_largeBase*math.sqrt(2)/2)
-    else
-        maxShipReach = Convert_mm_igu(mm_smallBase*math.sqrt(2)/2)
-    end
-
-    MoveModule.QueueShipTokensMove(ship)
-
-    -- Check which tokens could obstruct final position
-    -- TO_DO: Collapse this into a function maybe?
-    --  can wait until there would be a use for this outside here
-    local obstrTokens = XW_ObjWithinDist(finPos.pos, maxShipReach+Convert_mm_igu(20), 'token')
-    for k, token in pairs(obstrTokens) do
-        local owner = XW_ClosestWithinDist(token, Convert_mm_igu(80), 'ship').obj
-        -- If there is someone else close to one of these, move it on his base
-        if owner ~= nil and owner ~= ship then
-            local dir = Vect_Sum(owner.getPosition(), Vect_Scale(token.getPosition(), -1))
-            local dist = Vect_Length(dir)
-            local intendedDist = nil
-            if DB_isLargeBase(owner) then
-                intendedDist = Convert_mm_igu(mm_largeBase/4)
-            else
-                intendedDist = Convert_mm_igu(mm_smallBase/4)
-            end
-            dir = Vect_Scale(dir, (dist-intendedDist)/dist)
-            local dest = Vect_Sum(token.getPosition(), dir)
-            dest[2] = 2
-            token.setPositionSmooth(dest)
-            -- If tokens appears to be stray, just yank it out of the way
-        else
-            local dir = Vect_Sum(token.getPosition(), Vect_Scale(finPos.pos, -1))
-            local dist = Vect_Length(dir)
-            dir = Vect_Scale(dir, ((maxShipReach+Convert_mm_igu(20))/dist))
-            local dest = Vect_Sum(finPos.pos, dir)
-            dest[2] = 2
-            token.setPositionSmooth(dest)
-        end
-    end
-
-    -- Lift it a bit, save current and move
-    finPos.pos[2] = finPos.pos[2] + 1
-    MoveModule.SaveStateToHistory(ship, true)
-    ship.setPosition(finPos.pos)
-    ship.setRotation(finPos.rot)
-    ship.setDescription('')
-    -- Notification
-    info.type = 'move'
-    MoveModule.Announce(info, 'all', ship)
-
-    -- Bump notification button
-    Ship_RemoveOverlapReminder(ship)
-    if info.collidedShip ~= nil then
-        MoveModule.SpawnOverlapReminder(ship)
-    end
-
-    -- Get the ship in a queue to do stuff once resting
-    table.insert(MoveModule.restWaitQueue, {ship=ship, lastMove=move_code})
-    startLuaCoroutine(Global, 'restWaitCoroutine')]]--
 end
 
 XW_cmd.AddCommand('d:x[rle]', 'demoMove')
@@ -1692,7 +1611,7 @@ end
 demoMoveData = nil
 
 function DemoMoveCoroutine()
-
+--===========================================================
     local data = demoMoveData
         XW_cmd.SetBusy(data.ship)
     local movePartDelta = 0
@@ -2073,7 +1992,8 @@ MoveModule.MoveShip = function(ship, finData, saveName)
     ship.setRotationSmooth(finPos.rot, false, true)
     MoveModule.WaitForResting(ship)
     if saveName ~= nil then
-        MoveModule.AddHistoryEntry(ship, {pos=finPos.pos, rot=finPos.rot, move=saveName, part=finData.finPart})
+        print('sdft: ' .. finData.finType)
+        MoveModule.AddHistoryEntry(ship, {pos=finPos.pos, rot=finPos.rot, move=saveName, part=finData.finPart, finType=finData.finType})
     end
 end
 
@@ -3292,7 +3212,7 @@ DialModule.StartSlide = function(dial, playerColor)
         if XW_cmd.isReady(ship) ~= true then return end
         local lastMove = MoveModule.GetLastMove(ship)
         print('DialClick_SlideStart lastMove.move: ' .. lastMove.move)
-        if lastMove.part ~= nil and MoveData.IsSlideMove(lastMove.move) then
+        if lastMove.part ~= nil and lastMove.finType == 'slide' and MoveData.IsSlideMove(lastMove.move) then
             dial.setVar('Slide_ongoing', true)
             local slideRange = DialModule.GetSlideRange(ship, lastMove.move, lastMove.part)
             table.insert(DialModule.slideDataQueue, {dial=dial, ship=ship, pColor=playerColor, range=slideRange})
@@ -3301,7 +3221,7 @@ DialModule.StartSlide = function(dial, playerColor)
             MoveModule.Announce({type='move', note='manually adjusted base slide on his last move', code=lastMove.move}, 'all', ship)
             startLuaCoroutine(Global, 'SlideCoroutine')
             MoveModule.WaitForResting(ship)
-        elseif lastMove.code == 'manual slide' then
+        elseif lastMove.move == 'manual slide' then
             printToColor(ship.getName() .. ' needs to undo the manual slide before adjusting again', playerColor, {1, 0.5, 0.1})
         else
             printToColor(ship.getName() .. '\'s last move (' .. lastMove.move .. ') does not allow sliding!', playerColor, {1, 0.5, 0.1})
