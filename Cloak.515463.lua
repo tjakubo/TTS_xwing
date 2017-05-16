@@ -5,17 +5,25 @@
 -- Based on a work of Flolania
 -- ~~~~~~
 
-assignedShip = nil
-idle = true
+assignedShip = nil      -- Ref to assigned ship if there is one
+idle = true             -- True if unassigned or showing decloak/delete buttons
 
+-- Save self state
+function onSave()
+    if assignedShip ~= nil then
+        local state = {assignedShipGUID=assignedShip.getGUID()}
+        return JSON.encode(state)
+    end
+end
+
+-- Restore self state
 function onLoad(save_state)
     if save_state ~= '' and save_state ~= 'null' and save_state ~= nil then
-        print(save_state)
         local assignedShipGUID = JSON.decode(save_state).assignedShipGUID
         if assignedShipGUID ~= nil and getObjectFromGUID(assignedShipGUID) ~= nil then
             assignedShip = getObjectFromGUID(assignedShipGUID)
+            SpawnFirstButtons()
         end
-        SpawnFirstButtons()
     end
 end
 
@@ -29,13 +37,7 @@ function ClearButtonsPatch(obj)
     end
 end
 
-function onSave()
-    if assignedShip ~= nil then
-        local state = {assignedShipGUID=assignedShip.getGUID()}
-        return JSON.encode(state)
-    end
-end
-
+-- Spawn initial decloak/delete buttons
 function SpawnFirstButtons()
     idle = true
     self.clearButtons()
@@ -45,13 +47,14 @@ function SpawnFirstButtons()
     self.createButton(deleteButton)
 end
 
+-- Assign on drop near a small base ship
 function onDropped()
     if assignedShip == nil then
         local spos = self.getPosition()
         local nearest = nil
         local minDist = 2.89 -- 80mm
         for k,ship in pairs(getAllObjects()) do
-            if ship.tag == 'Figurine' and ship.name ~= '' then
+            if ship.tag == 'Figurine' and ship.name ~= '' and (not Global.call('DB_getShipInfoCallable', {ship}).largeBase) then
                 local pos = ship.getPosition()
                 local dist = math.sqrt(math.pow((spos[1]-pos[1]),2) + math.pow((spos[3]-pos[3]),2))
                 if dist < minDist then
@@ -69,6 +72,7 @@ function onDropped()
     end
 end
 
+-- Spawn undo/delete/slide buttons (after a move)
 function SpawnFinalButtons()
     undoToBackCount = 1
     self.clearButtons()
@@ -81,6 +85,7 @@ function SpawnFinalButtons()
     self.createButton(slideButton)
 end
 
+-- Spawn back/delete/moves buttons (regular or Echo)
 function SpawnDecloakButtons()
     idle = false
     self.clearButtons()
@@ -120,6 +125,8 @@ function SpawnDecloakButtons()
     self.createButton(backButton)
 end
 
+--------
+-- DECLOAK MOVES
 function decloakStraight()
     if Global.call('API_PerformMove', {code='cs', ship=assignedShip}) then
         SpawnFinalButtons()
@@ -185,12 +192,18 @@ function dechocloakLB()
         SpawnFinalButtons()
     end
 end
+-- END DECLOAK MOVES
+--------
+
+-- Destroy self
 function selfDestruct()
     self.destruct()
 end
+-- Back to first buttons
 function resetToFirst()
     SpawnFirstButtons()
 end
+-- Undo move, if undid all back to decloak buttons
 function performUndo()
     assignedShip.setDescription('q')
     undoToBackCount = undoToBackCount - 1
@@ -198,6 +211,7 @@ function performUndo()
         SpawnDecloakButtons()
     end
 end
+-- Start slide
 function callSlide(obj, playerColor)
     local started = Global.call('API_StartSlide', {obj=obj, playerColor=playerColor})
     if started then
