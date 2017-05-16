@@ -235,7 +235,7 @@ function math.round(arg, decPlaces)
         return math.floor(num * mult + 0.5) / mult
     end
 end
---============================
+
 -- Dumbest TTS issue ever workaround
 function TTS_Serialize(pos)
     return {pos[1], pos[2], pos[3]}
@@ -366,6 +366,22 @@ function dummy() return end
 --------
 
 --------
+-- OBJECT SPECIFIC VARIABLES
+-- These variables are set per object and have some specific meaning
+-- Some may be linked to another so caution must be kept when modifying
+
+-- (object type) : (variable name) - (value1 / value2 ... / valueN)  <- (meaning)
+-- ship : 'hasDials'            - true/(false/nil)      <- Has assigned set of dials (ONLY informative) / Not
+-- ship : 'slideOngoing'        - true/(false/nil)      <- Is in process of manually adjusting slide / Not
+-- ship : 'cmdBusy'             - true/(false/nil)      <- Is currently processing some command / Not
+-- ship : 'missingModelWarned'  - true/(false/nil)      <- Printed a warning that model is unrecognized (once) / Not yet
+-- dial : 'slideOngoing'        - true/(false/nil)      <- Its ship in process of manually adjusting slide / Not
+-- dial : 'assignedShip'        - shipRef/nil           <- Object reference to its owner
+
+-- END OBJECT SPECIFIC VARIABLES
+--------
+
+--------
 -- COMMAND HANDLING MODULE
 -- Sanitizes input (more like ignores anything not explicitly allowed)
 -- Allows other modules to add available commands and passes their execution where they belong
@@ -418,42 +434,69 @@ end
 
 -- (special function)
 -- Check for typical issues with a ship
--- 1. Check and unlock XW_cmd lock if it's on
--- 2. Clear buttons if there are any
--- 3. Search for nil refs on dials in his set
--- 4. Check if ship type is recognized OK
 XW_cmd.AddCommand('diag', 'special')
 XW_cmd.Diagnose = function(ship)
+    -- Check and unlock XW_cmd lock if it's on
     local issueFound = false
     if XW_ObjMatchType(ship, 'ship') ~= true then return end
     if XW_cmd.isReady(ship) ~= true then
         XW_cmd.SetReady(ship)
-        printToAll(ship.getName() .. '\'s deadlock resolved!', {0.1, 0.1, 1})
+        printToAll(ship.getName() .. '\'s deadlock resolved', {0.1, 0.1, 1})
         issueFound = true
     end
+    -- Delete lingering buttons
     if ship.getButtons() ~= nil then
         ship.clearButtons()
         ClearButtonsPatch(ship)
-        printToAll(ship.getName() .. '\'s lingering buttons deleted!', {0.1, 0.1, 1})
+        printToAll(ship.getName() .. '\'s lingering buttons deleted', {0.1, 0.1, 1})
         issueFound = true
     end
-    local set = DialModule.GetSet(ship)
-    local dialError = false
-    DialModule.RestoreActive(ship)
-    if set ~= nil and set.dialSet ~= nil then
-        for k, dInfo in pairs(set.dialSet) do
-            if dInfo.dial == nil then dialError = true end
-        end
-    end
-    if dialError == true then
-        printToAll(ship.getName() .. '\'s dial data corupted - delete model & dials, spawn and assign a new set to new model', {1, 0.1, 0.1})
+    -- If ship is tagged as sliding now, reset
+    if ship.getVar('slideOngoing') == true then
+        ship.setVar('slideOngoing', false)
+        printToAll(ship.getName() .. '\'s stuck slide resolved', {0.1, 0.1, 1})
         issueFound = true
     end
-    local shipType = DB_getShipType(ship)
-    if shipType == 'Unknown' then
+    -- If ship has unrecognized model and said that before, remind
+    if ship.getVar('missingModelWarned') == true then
+        printToAll('I hope you do remember that I told you about ' .. ship.getName() .. '\'s model being unrecognized when it was first moved/used', {0.1, 0.1, 1})
+        issueFound = true
+    -- If its model is unrecognized and haven't been used yet, notify
+    elseif shipType == 'Unknown' then
+        local shipType = DB_getShipType(ship)
         printToAll(ship.getName() .. '\'s ship type not reconized. If this model was taken from Squad Builder or Collection, notify author of the issue.', {1, 0.1, 0.1})
         issueFound = true
     end
+    -- CHECK SHIP DIAL SET
+    local set = DialModule.GetSet(ship)
+    local dialError = false
+    local dialErrorCode = ''
+    -- Restore active dial in case it's been lost somewhere
+    DialModule.RestoreActive(ship)
+    if set ~= nil and set.dialSet ~= nil then
+        for k, dInfo in pairs(set.dialSet) do
+            -- If any dial ref in set is nil, critical error
+            if dInfo.dial == nil then
+                dialError = true
+                dialErrorCode = 'nilDial'
+            -- If any dial is not set to this ship, critical error
+            elseif dial.getVar('assignedShip') ~= ship then
+                dialError = true
+                dialErrorCode = 'wrongShip'
+            -- If dial is stuck to slide mode, reset
+            elseif dial.getVar('slideOngoing') == true then
+                printToAll(ship.getName() .. '\'s dial stuck slide resolved', {0.1, 0.1, 1})
+                issueFound = true
+            end
+        end
+    end
+    -- Critical error notify
+    if dialError == true then
+        printToAll( ship.getName() .. '\'s dial data corrupted - it\'s bad, delete model and dials and reassign new set (may need table reload, notify author of this)' ..
+                    ' [' .. dialErrorCode .. ']', {1, 0.1, 0.1})
+        issueFound = true
+    end
+    -- No issues found
     if issueFound ~= true then
         printToAll(ship.getName() .. ' looks OK', {0.1, 1, 0.1})
     end
@@ -480,7 +523,7 @@ XW_cmd.Process = function(obj, cmd)
         end
     end
 
-    -- Return if not ready, else lock object and process
+    -- Return if not ready, else process
     if XW_cmd.isReady(obj) ~= true then
         return false
     end
@@ -514,7 +557,7 @@ end
 
 -- Is object not processing some commands right now?
 XW_cmd.isReady = function(obj)
-    if obj.getVar('XW_cmd_busy') == true then return false
+    if obj.getVar('cmdBusy') == true then return false
     else return true end
 end
 
@@ -523,7 +566,7 @@ XW_cmd.SetBusy = function(obj)
     if XW_cmd.isReady(obj) ~= true then
         print('Nested process on ' .. obj.getName())
     end
-    obj.setVar('XW_cmd_busy', true)
+    obj.setVar('cmdBusy', true)
 end
 
 -- Flag the object as ready to process next command
@@ -531,7 +574,7 @@ XW_cmd.SetReady = function(obj)
     if XW_cmd.isReady(obj) == true then
         print('Double ready on ' .. obj.getName())
     end
-    obj.setVar('XW_cmd_busy', false)
+    obj.setVar('cmdBusy', false)
 end
 
 --------
@@ -539,15 +582,19 @@ end
 -- Stores and processes data about moves
 -- NOT aware of any ship position, operation solely on relative movements
 -- Used for feeding data about a move to a higher level movement module
+-- Exclusively uses milimeters and degrees for values, needs external conversion
 
 -- Possible commands supported by this module
-XW_cmd.AddCommand('[sk][012345][r]?', 'move')  -- Straights/Koiograns + stationary moves
-XW_cmd.AddCommand('b[rle][123][sr]?', 'move')  -- Banks + segnor and reverse versions
-XW_cmd.AddCommand('t[rle][123][str]?', 'move') -- Turns + segnor, talon and reverse versions
-XW_cmd.AddCommand('x[rle][fb]?', 'actionMove') -- Barrel rolls
-XW_cmd.AddCommand('c[srle]', 'actionMove')     -- Decloaks side middle + straight
-XW_cmd.AddCommand('c[rle][fb]', 'actionMove')  -- Decloaks side forward + backward
-XW_cmd.AddCommand('ch[rle][fb]', 'actionMove')               -- Echo's bullshit
+XW_cmd.AddCommand('[sk][012345][r]?', 'move')   -- Straights/Koiograns + stationary moves
+XW_cmd.AddCommand('b[rle][123][sr]?', 'move')   -- Banks + segnor and reverse versions
+XW_cmd.AddCommand('t[rle][123][str]?', 'move')  -- Turns + segnor, talon and reverse versions
+
+XW_cmd.AddCommand('x[rle][fb]?', 'actionMove')  -- Barrel rolls
+XW_cmd.AddCommand('s[12345]b', 'actionMove')    -- Boosts straight
+XW_cmd.AddCommand('b[rle][123]b', 'actionMove') -- Boosts banks
+XW_cmd.AddCommand('c[srle]', 'actionMove')      -- Decloaks side middle + straight
+XW_cmd.AddCommand('c[rle][fb]', 'actionMove')   -- Decloaks side forward + backward
+XW_cmd.AddCommand('ch[rle][fb]', 'actionMove')  -- Echo's bullshit
 
 MoveData = {}
 
@@ -591,6 +638,7 @@ MoveData.LUT.ConstructData = function(moveInfo, part)
     local LUTtable = MoveData.LUT.Data[moveInfo.size .. 'Base'][moveInfo.type][moveInfo.speed]
     local LUTindex = (part/MoveData.partMax)*LUTtable.dataNum
     if LUTindex < 1 then LUTindex = 1 end
+    -- Interpolation between two nearest indexes
     local aProp = LUTindex - math.floor(LUTindex)
     local bProp = 1 - aProp
     local outPos = Vect_Sum(Vect_Scale(LUTtable.posXZ[math.floor(LUTindex)], bProp), Vect_Scale(LUTtable.posXZ[math.ceil(LUTindex)], aProp))
@@ -635,13 +683,13 @@ MoveData.IsSlideMove = function(moveInfoCode)
     end
     return matched
 end
+
 -- Get slide length (if move supports sliding) IN MILIMETERS
 MoveData.SlideLength = function(moveInfo)
     if type(moveInfo) ~= 'table' then
         print('MoveData.SlideLength: arg of invalid type')
     end
     if moveInfo.traits.slide ~= true then
-                print('sl,nsm')
         return nil
     else
         baseSize = mm_baseSize[moveInfo.size]
@@ -651,16 +699,17 @@ MoveData.SlideLength = function(moveInfo)
             return baseSize/2
         end
     end
-    print('sl,nm')
     return nil
 end
+
 -- Get the position at which slide after move should start
--- This is the position when ship is slid as far BACK as possible (slide_part=0 in later processing)
+-- This is the position when ship is slid as far BACK as possible (part=0 in later processing)
 MoveData.SlideMoveOrigin = function(moveInfo)
     local code = moveInfo.code
     local baseSize = mm_baseSize[moveInfo.size]
     local data = nil
     if moveInfo.type == 'roll' then
+        -- Rolls are straights rotated 90deg sideways
         local ang = -90
         if moveInfo.dir == 'right' then ang = 90 end
         if moveInfo.size == 'small' then
@@ -672,17 +721,14 @@ MoveData.SlideMoveOrigin = function(moveInfo)
         data[4] = data[4] - ang
         data[3] = data[3] - MoveData.SlideLength(moveInfo)/2
     elseif moveInfo.type == 'echo' then
-        print('smor_echo')
+        -- FUCKING ECHO is appropriate bank 2 rotated 90deg sideways
         local ang = -90
         if moveInfo.dir == 'right' then
             ang = 90
         end
         data = MoveData.LUT.ConstructData({type='bank', speed=2, size='small', code='br2'})
-        --local len =  MoveData.SlideLength(moveInfo)/2
-        --local backEntry = {-1*len/(math.sqrt(2)), 0, -1*len/(math.sqrt(2)), 0}
         if (moveInfo.dir == 'left' and moveInfo.extra == 'backward') or (moveInfo.dir == 'right' and moveInfo.extra == 'forward') then
             data = MoveData.LeftVariant(data)
-            --backEntry[1] = -1*backEntry[1]
         end
         data = MoveData.RotateEntry(data, ang)
         if moveInfo.dir == 'right' then
@@ -690,15 +736,9 @@ MoveData.SlideMoveOrigin = function(moveInfo)
         else
             data[4] = data[4] + 90
         end
-        --data = Vect_Sum(data, backEntry)
         data[3] = data[3] - MoveData.SlideLength(moveInfo)/2
-        --data[4] = data[4] - ang
-        --[[if moveInfo.dir == 'right' then
-            data[4] = data[4] - 90
-        else
-            data[4] = data[4] + 90
-        end]]--
     elseif moveInfo.type == 'turn' and moveInfo.extra == 'talon' then
+        -- Talon roll are simply talons rolls slid
         data = MoveData.LUT.ConstructData(moveInfo)
         data[3] = data[3] + MoveData.SlideLength(moveInfo)/2
         if moveInfo.dir == 'left' then
@@ -716,9 +756,7 @@ end
 --   given some slide part
 MoveData.SlidePartOffset = function(moveInfo, part)
 
-    if moveInfo.extra == 'talon' then
-        return {0, 0, -1*MoveData.SlideLength(moveInfo)*(part/MoveData.partMax), 0}
-    elseif moveInfo.type == 'echo' then
+    if moveInfo.type == 'echo' then
         if moveInfo.extra == 'adjust' then
             --local dirVec = {0, 0, MoveData.SlideLength(moveInfo), 0}
             --dirVec = Vect_SetLength(dirVec, MoveData.SlideLength(moveInfo)/2)
@@ -832,27 +870,34 @@ MoveData.DecodeInfo = function (move_code, ship)
         info.type = 'straight'
         info.speed = tonumber(move_code:sub(2,2))
         info.traits.full = true
+        info.traits.part = true
         if move_code:sub(1,1) == 'k' then
             info.extra = 'koiogran'
             info.note = 'koiogran turned ' .. info.speed
             info.collNote = 'tried to koiogran turn ' .. info.speed
+        elseif move_code:sub(-1,-1) == 'r' then
+            info.extra = 'reverse'
+            info.note = 'flew reverse ' .. info.speed
+            info.collNote = 'tried to fly reverse ' .. info.speed
+        elseif move_code:sub(-1,-1) == 'b' then
+            info.traits.part = false
+            local boostSpd = ''
+            if info.speed > 1 then
+                boostSpd = ' ' .. info.speed
+            end
+            info.note = 'boosted straight' .. boostSpd
+            info.collNote = 'tried to boost straight' .. boostSpd
         else
             info.note = 'flew straight ' .. info.speed
             info.collNote = 'tried to fly straight ' .. info.speed
         end
-        if move_code:sub(-1,-1) == 'r' and info.extra ~= 'koiogran' then
-            info.extra = 'reverse'
-            info.note = 'flew reverse ' .. info.speed
-            info.collNote = 'tried to fly reverse ' .. info.speed
-        end
         if info.speed == 0 then
+            info.traits.part = false
             if info.extra == 'koiogran' then
                 info.note = 'turned around'
             else
                 info.note = 'is stationary'
             end
-        else
-            info.traits.part = true
         end
         if info.speed > 5 then info.type = 'invalid' end
     -- Banks, regular stuff
@@ -873,6 +918,14 @@ MoveData.DecodeInfo = function (move_code, ship)
             info.extra = 'reverse'
             info.note = 'flew reverse bank ' .. info.dir .. ' ' .. info.speed
             info.collNote = 'tried to fly reverse bank ' .. info.dir .. ' ' .. info.speed
+        elseif move_code:sub(-1,-1) == 'b' then
+            info.traits.part = false
+            local boostSpd = ''
+            if info.speed > 1 then
+                boostSpd = ' ' .. info.speed
+            end
+            info.note = 'boosted ' .. info.dir .. boostSpd
+            info.collNote = 'tried to boost ' .. info.dir .. boostSpd
         else
             info.note = 'banked ' .. info.dir .. ' ' .. info.speed
             info.collNote = 'tried to bank ' .. info.dir .. ' ' .. info.speed
@@ -900,6 +953,14 @@ MoveData.DecodeInfo = function (move_code, ship)
             info.extra = 'reverse'
             info.note = 'flew reverse turn ' .. info.dir .. ' ' .. info.speed
             info.collNote = 'tried to fly reverse turn ' .. info.dir .. ' ' .. info.speed
+        elseif move_code:sub(-1,-1) == 'b' then
+            info.traits.part = false
+            local boostSpd = ''
+            if info.speed > 1 then
+                boostSpd = ' ' .. info.speed
+            end
+            info.note = 'boosted (turn template) ' .. info.dir .. boostSpd
+            info.collNote = 'tried to boost (turn template) ' .. info.dir .. boostSpd
         else
             info.note = 'turned ' .. info.dir .. ' ' .. info.speed
             info.collNote = 'tried to turn ' .. info.dir .. ' ' .. info.speed
@@ -1353,7 +1414,7 @@ function restWaitCoroutine()
     -- Wait
     repeat
         coroutine.yield(0)
-    until actShip.resting == true and actShip.isSmoothMoving() == false and actShip.held_by_color == nil and actShip.getVar('Slide_ongoing') ~= true
+    until actShip.resting == true and actShip.isSmoothMoving() == false and actShip.held_by_color == nil and actShip.getVar('slideOngoing') ~= true
 
     local newTokenTable = {}
     for k,tokenSetInfo in pairs(MoveModule.tokenWaitQueue) do
@@ -2531,7 +2592,7 @@ DialModule.RemoveSet = function(ship)
     for k, set in pairs(DialModule.ActiveSets) do
         if set.ship == ship then
             hadDials = true
-            ship.setVar('DialModule_hasDials', false) -- Just informative
+            ship.setVar('hasDials', false) -- Just informative
             if set.activeDial ~= nil then
                 DialModule.RestoreActive(set.ship)
             end
@@ -2568,7 +2629,7 @@ DialModule.AddSet = function(ship, set)
         end
     else
         table.insert(DialModule.ActiveSets, {ship=ship, activeDial=nil, dialSet=set})
-        ship.setVar('DialModule_hasDials', true)
+        ship.setVar('hasDials', true)
     end
 end
 
@@ -2855,7 +2916,7 @@ DialModule.RestoreSaveData = function(saveTable)
                     missDialCount = missDialCount + 1
                 end
             end
-            getObjectFromGUID(set.ship).setVar('DialModule_hasDials', true)
+            getObjectFromGUID(set.ship).setVar('hasDials', true)
             if set.activeDialGUID ~= nil then
                 local actDial = getObjectFromGUID(set.activeDialGUID)
                 DialModule.RestoreDial(actDial)
@@ -3112,12 +3173,15 @@ end
 function DialClick_Move(dial)
     local actShip = dial.getVar('assignedShip')
     if XW_cmd.Process(actShip, dial.getDescription()) == true then
-        DialModule.SwitchMainButton(dial, 'undo')
+        DialModule.SetMainButtonState(dial, 'undo')
     end
 end
 function DialClick_Undo(dial)
-    if XW_cmd.Process(dial.getVar('assignedShip'), 'q') == true then
-        DialModule.SwitchMainButton(dial, 'move')
+    if  MoveModule.GetLastMove(dial.getVar('assignedShip')).move == dial.getDescription() and
+        XW_cmd.Process(dial.getVar('assignedShip'), 'q') == true then
+            DialModule.SetMainButtonState(dial, 'move')
+    else
+        XW_cmd.Process(dial.getVar('assignedShip'), 'q')
     end
 end
 function DialClick_Focus(dial)
@@ -3143,40 +3207,40 @@ function DialClick_SpawnMoveTemplate(dial)
     DialModule.PerformAction(dial.getVar('assignedShip'), 'spawnMoveTemplate:' .. dial.getDescription() .. befAfter)
 end
 function DialClick_BoostS(dial)
-    XW_cmd.Process(dial.getVar('assignedShip'), 's1')
-    DialModule.SwitchMainButton(dial, 'none')
+    XW_cmd.Process(dial.getVar('assignedShip'), 's1b')
+    DialModule.SetMainButtonState(dial, 'none')
 end
 function DialClick_BoostR(dial)
-    XW_cmd.Process(dial.getVar('assignedShip'), 'br1')
-    DialModule.SwitchMainButton(dial, 'none')
+    XW_cmd.Process(dial.getVar('assignedShip'), 'br1b')
+    DialModule.SetMainButtonState(dial, 'none')
 end
 function DialClick_BoostL(dial)
-    XW_cmd.Process(dial.getVar('assignedShip'), 'be1')
-    DialModule.SwitchMainButton(dial, 'none')
+    XW_cmd.Process(dial.getVar('assignedShip'), 'be1b')
+    DialModule.SetMainButtonState(dial, 'none')
 end
 function DialClick_RollR(dial)
     XW_cmd.Process(dial.getVar('assignedShip'), 'xr')
-    DialModule.SwitchMainButton(dial, 'none')
+    DialModule.SetMainButtonState(dial, 'none')
 end
 function DialClick_RollRF(dial)
     XW_cmd.Process(dial.getVar('assignedShip'), 'xrf')
-    DialModule.SwitchMainButton(dial, 'none')
+    DialModule.SetMainButtonState(dial, 'none')
 end
 function DialClick_RollRB(dial)
     XW_cmd.Process(dial.getVar('assignedShip'), 'xrb')
-    DialModule.SwitchMainButton(dial, 'none')
+    DialModule.SetMainButtonState(dial, 'none')
 end
 function DialClick_RollL(dial)
     XW_cmd.Process(dial.getVar('assignedShip'), 'xe')
-    DialModule.SwitchMainButton(dial, 'none')
+    DialModule.SetMainButtonState(dial, 'none')
 end
 function DialClick_RollLF(dial)
     XW_cmd.Process(dial.getVar('assignedShip'), 'xef')
-    DialModule.SwitchMainButton(dial, 'none')
+    DialModule.SetMainButtonState(dial, 'none')
 end
 function DialClick_RollLB(dial)
     XW_cmd.Process(dial.getVar('assignedShip'), 'xeb')
-    DialModule.SwitchMainButton(dial, 'none')
+    DialModule.SetMainButtonState(dial, 'none')
 end
 function DialClick_Ruler(dial)
     DialModule.PerformAction(dial.getVar('assignedShip'), 'ruler')
@@ -3201,7 +3265,14 @@ function DialClick_ToggleInitialExpanded(dial)
     end
 end
 function DialClick_SlideStart(dial, playerColor)
+    if DialModule.GetMainButtonState(dial) == 2 then
+        DialModule.SetMainButtonState(dial, 'none')
+    end
     DialModule.StartSlide(dial, playerColor)
+end
+function DialClick_HighlightShip(dial)
+    dial.highlightOn({0, 1, 0}, 0.8)
+    dial.getVar('assignedShip').highlightOn({0, 1, 0}, 0.8)
 end
 
 -- Dial buttons definitions (centralized so it;s easier to adjust)
@@ -3224,7 +3295,7 @@ DialModule.Buttons.nameButton = function(ship)
     local nameWidth = 900
     local len = string.len(shortName)
     if len*150 > nameWidth then nameWidth = len*150 end
-    return {label=shortName, click_function='dummy', height=300, width=nameWidth, position={0, -0.5, -1}, rotation={180, 180, 0}, font_size=250}
+    return {label=shortName, click_function='DialClick_HighlightShip', height=300, width=nameWidth, position={0, -0.5, -1}, rotation={180, 180, 0}, font_size=250}
 end
 DialModule.Buttons.nameButtonLifted = function(ship)
     local regularButton = DialModule.Buttons.nameButton(ship)
@@ -3254,15 +3325,15 @@ DialModule.Buttons.FlipVersion = function(buttonEntry)
 end
 
 DialModule.StartSlide = function(dial, playerColor)
-    if dial.getVar('Slide_ongoing') == true then
-        dial.setVar('Slide_ongoing', false)
+    if dial.getVar('slideOngoing') == true then
+        dial.setVar('slideOngoing', false)
     else
         local ship = dial.getVar('assignedShip')
         if XW_cmd.isReady(ship) ~= true then return end
         local lastMove = MoveModule.GetLastMove(ship)
         print('DialClick_SlideStart lastMove.move: ' .. lastMove.move)
         if lastMove.part ~= nil and lastMove.finType == 'slide' and MoveData.IsSlideMove(lastMove.move) then
-            dial.setVar('Slide_ongoing', true)
+            dial.setVar('slideOngoing', true)
             --print('moving')
             local info = MoveData.DecodeInfo(lastMove.move, ship)
             --local slideRange = DialModule.GetSlideRange(ship, info, lastMove.part)
@@ -3311,7 +3382,7 @@ function SlideCoroutine()
     ---local slideVec = DialModule.slideDataQueue[#DialModule.slideDataQueue].slideVec
     ---local range = DialModule.slideDataQueue[#DialModule.slideDataQueue].range
     table.remove(DialModule.slideDataQueue)
-    ship.setVar('Slide_ongoing', true)
+    ship.setVar('slideOngoing', true)
     broadcastToColor(ship.getName() .. '\'s slide adjust started!', pColor, {0.5, 1, 0.5})
     ---local initShipPos = ship.getPosition()
     ---local shipRot = ship.getRotation()[2]+180
@@ -3403,7 +3474,7 @@ function SlideCoroutine()
 
         -- End if shift or sideslip goes out of bound
         if math.abs(adjMeas) > 3 or math.abs(meas.sideslip) > 2 then
-            dial.setVar('Slide_ongoing', false)
+            dial.setVar('slideOngoing', false)
         end
 
         -- Normalize the shift to [0-3] range
@@ -3460,10 +3531,10 @@ function SlideCoroutine()
         coroutine.yield(0)
 
         -- This ends if player switches color, ship or dial vanishes or button is clicked setting slide var to false
-    until Player[pColor] == nil or ship == nil or dial.getVar('Slide_ongoing') ~= true or dial == nil
+    until Player[pColor] == nil or ship == nil or dial.getVar('slideOngoing') ~= true or dial == nil
     if Player[pColor] ~= nil then broadcastToColor(ship.getName() .. '\'s slide adjust ended!', pColor, {0.5, 1, 0.5}) end
-    dial.setVar('Slide_ongoing', false)
-    ship.setVar('Slide_ongoing', false)
+    dial.setVar('slideOngoing', false)
+    ship.setVar('slideOngoing', false)
     if info.type == 'echo' and info.extra ~= 'adjust' then
         MoveModule.AddHistoryEntry(ship, {pos=ship.getPosition(), rot=ship.getRotation(), move='chadj', part=MoveData.partMax/2, finType='slide'})
     else
@@ -3630,31 +3701,39 @@ DialModule.SetMainButtonsState = function(dial, newState)
     end
 end
 
--- Change the main button between "Move", "Undo" and no button states
-DialModule.SwitchMainButton = function(dial, type)
+DialModule.GetMainButtonState = function(dial)
+    local buttons = dial.getButtons()
+    local state = 0
+    for k,but in pairs(buttons) do
+        if but.label == 'Move' then
+            state = 1
+        elseif but.label == 'Undo' then
+            state = 2
+        end
+    end
+    return state
+end
+
+DialModule.SetMainButtonState = function(dial, newState)
+    if type(newState) == 'string' then
+        if newState == 'none' then
+            newState = 0
+        elseif newState == 'move' then
+            newState = 1
+        elseif newState == 'undo' then
+            newState = 2
+        end
+    end
     local buttons = dial.getButtons()
     for k,but in pairs(buttons) do
-        if type=='none' then
-            if but.label == 'Undo' or but.label == 'T' then
-                dial.removeButton(but.index)
-            end
-        elseif type == 'undo' then
-            if but.label == 'Move' then
-                dial.removeButton(but.index)
-                dial.createButton(DialModule.Buttons.undoMove)
-                if DialModule.GetMainButtonsState(dial) == 0 then
-                    DialModule.SetMainButtonsState(dial, 1)
-                end
-            end
-        elseif type == 'move' then
-            if but.label == 'Undo' then
-                dial.removeButton(but.index)
-                dial.createButton(DialModule.Buttons.move)
-                if DialModule.GetMainButtonsState(dial) == 1 then
-                    DialModule.SetMainButtonsState(dial, 0)
-                end
-            end
+        if but.label == 'Undo' or but.label == 'Move' then
+            dial.removeButton(but.index)
         end
+    end
+    if newState == 1 then
+        dial.createButton(DialModule.Buttons.move)
+    elseif newState == 2 then
+        dial.createButton(DialModule.Buttons.undoMove)
     end
 end
 
@@ -3918,9 +3997,9 @@ function DB_isLargeBase(shipRef)
     if shipRef.getName():find('LGS') ~= nil then
         return true
     else
-        if shipRef.getVar('DB_missingModelWarned') ~= true then
+        if shipRef.getVar('missingModelWarned') ~= true then
             printToAll(shipRef.getName() .. '\'s model not recognized - use LGS in name if large base and contact author about the issue', {1, 0.1, 0.1})
-            shipRef.setVar('DB_missingModelWarned', true)
+            shipRef.setVar('missingModelWarned', true)
         end
         return false
     end
