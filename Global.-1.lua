@@ -246,13 +246,18 @@ function XW_ObjMatchType(obj, type)
     if type == 'any' then
         return true
     elseif type == 'ship' then
-        if obj.tag == 'Figurine' then return true end
+        return (obj.tag == 'Figurine')
     elseif type == 'token' then
-        if (obj.tag == 'Chip' or obj.getVar('set') ~= nil) and obj.getName() ~= 'Shield' then return true end
+        if obj.getName() == 'Cloak' then
+            return (obj.getVar('idle') == true)
+        end
+        if (obj.tag == 'Chip' or obj.getVar('set') ~= nil) and obj.getName() ~= 'Shield' then
+            return true
+        end
     elseif type == 'lock' then
-        if obj.getVar('set') ~= nil then return true end
+        return (obj.getVar('set') ~= nil)
     elseif type == 'dial' then
-        if obj.tag == 'Card' and obj.getDescription() ~= '' then return true end
+        return (obj.tag == 'Card' and obj.getDescription() ~= '')
     end
     return false
 end
@@ -560,8 +565,7 @@ end
 
 -- Is object not processing some commands right now?
 XW_cmd.isReady = function(obj)
-    if obj.getVar('cmdBusy') == true then return false
-    else return true end
+    return (obj.getVar('cmdBusy') ~= true)
 end
 
 -- Flag the object as processing commands to ignore any in the meantime
@@ -593,11 +597,13 @@ XW_cmd.AddCommand('b[rle][123][sr]?', 'move')   -- Banks + segnor and reverse ve
 XW_cmd.AddCommand('t[rle][123][str]?', 'move')  -- Turns + segnor, talon and reverse versions
 
 XW_cmd.AddCommand('x[rle][fb]?', 'actionMove')  -- Barrel rolls
-XW_cmd.AddCommand('s[12345]b', 'actionMove')    -- Boosts straight
-XW_cmd.AddCommand('b[rle][123]b', 'actionMove') -- Boosts banks
+XW_cmd.AddCommand('s[12345]b', 'actionMove')    -- Boost straights
+XW_cmd.AddCommand('b[rle][123]b', 'actionMove') -- Boost banks
+XW_cmd.AddCommand('t[rle][123]b', 'actionMove') -- Boost turns
 XW_cmd.AddCommand('c[srle]', 'actionMove')      -- Decloaks side middle + straight
 XW_cmd.AddCommand('c[rle][fb]', 'actionMove')   -- Decloaks side forward + backward
 XW_cmd.AddCommand('ch[rle][fb]', 'actionMove')  -- Echo's bullshit
+XW_cmd.AddCommand('chs[rle]', 'actionMove')     -- Echo's bullshit, part 2
 
 MoveData = {}
 
@@ -977,12 +983,21 @@ MoveData.DecodeInfo = function (move_code, ship)
         info.extra = 'forward'
         if move_code:sub(3,3) == 'l' or move_code:sub(3,3) == 'e' then
             info.dir = 'left'
+            if move_code:sub(4,4) == 'b' then
+                info.extra = 'backward'
+            end
+        elseif move_code:sub(3,3) == 's' then
+            info = MoveData.DecodeInfo('b' .. move_code:sub(4,4) .. '2', ship)
+            info.traits.part = false
+            info.code = move_code
         end
-        if move_code:sub(4,4) == 'b' then
-            info.extra = 'backward'
+        if info.type == 'echo' then
+            info.note = 'dechocloaked ' .. info.dir .. ' ' .. info.extra
+            info.collNote = 'tried to dechocloak ' .. info.dir .. ' ' .. info.extra
+        else
+            info.note = 'dechocloaked forward ' .. info.dir
+            info.collNote = 'tried to dechocloak forward ' .. info.dir
         end
-        info.note = 'dechocloaked ' .. info.dir .. ' ' .. info.extra
-        info.collNote = 'tried to dechocloak ' .. info.dir .. ' ' .. info.extra
 
         if move_code == 'chadj' then
             info.extra = 'adjust'
@@ -1257,9 +1272,7 @@ MoveModule.IsAtSavedState = function(ship)
         if math.abs(angDiff) > 180 then
             angDiff = math.abs(angDiff - math.sgn(angDiff)*360)
         end
-        if dist < MoveModule.undoPosCutoff and angDiff < MoveModule.undoRotCutoffDeg then
-            return true
-        end
+        return (dist < MoveModule.undoPosCutoff and angDiff < MoveModule.undoRotCutoffDeg)
     end
     return false
 end
@@ -2103,24 +2116,26 @@ TokenModule.ClearPosition = function(pos, dist, ignoreShip)
     local clearDist = dist + Convert_mm_igu(20)
     local posTokenInfo = TokenModule.GetNearTokensInfo(pos, clearDist)
     for k,tokenInfo in pairs(posTokenInfo) do
-        if tokenInfo.owner ~= nil and tokenInfo.owner ~= ignoreShip then
-            local visPos = TokenModule.VisiblePosition(tokenInfo.token.getName(), tokenInfo.owner)
-            if Dist_Pos(visPos, pos) <= clearDist then
-                local basePos = TokenModule.BasePosition(tokenInfo.token.getName(), tokenInfo.owner)
-                tokenInfo.token.setPositionSmooth(basePos)
-            else
-                tokenInfo.token.setPositionSmooth(visPos)
+        if tokenInfo.token.getButtons() == nil then
+            if tokenInfo.owner ~= nil and tokenInfo.owner ~= ignoreShip then
+                local visPos = TokenModule.VisiblePosition(tokenInfo.token.getName(), tokenInfo.owner)
+                if Dist_Pos(visPos, pos) <= clearDist then
+                    local basePos = TokenModule.BasePosition(tokenInfo.token.getName(), tokenInfo.owner)
+                    tokenInfo.token.setPositionSmooth(basePos)
+                else
+                    tokenInfo.token.setPositionSmooth(visPos)
+                end
+            else --if tokenInfo.owner ~= ignoreShip then
+                local ptVect = Vect_Between(pos, tokenInfo.token.getPosition())
+                --local ptVect = Vect_Sum(Vect_Scale(pos, -1), tokenInfo.token.getPosition())
+                ptVect[2] = 0
+                local actDist = Dist_Pos(tokenInfo.token.getPosition(), pos)
+                --print('CD: ' .. clearDist .. ' AD: ' .. actDist)
+                local distToMove = 2*clearDist - actDist
+                local targetPos = Vect_Sum(tokenInfo.token.getPosition(), Vect_SetLength(ptVect, distToMove))
+                targetPos[2] = targetPos[2] + 0.5
+                tokenInfo.token.setPositionSmooth(targetPos)
             end
-        else --if tokenInfo.owner ~= ignoreShip then
-            local ptVect = Vect_Between(pos, tokenInfo.token.getPosition())
-            --local ptVect = Vect_Sum(Vect_Scale(pos, -1), tokenInfo.token.getPosition())
-            ptVect[2] = 0
-            local actDist = Dist_Pos(tokenInfo.token.getPosition(), pos)
-            --print('CD: ' .. clearDist .. ' AD: ' .. actDist)
-            local distToMove = 2*clearDist - actDist
-            local targetPos = Vect_Sum(tokenInfo.token.getPosition(), Vect_SetLength(ptVect, distToMove))
-            targetPos[2] = targetPos[2] + 0.5
-            tokenInfo.token.setPositionSmooth(targetPos)
         end
     end
 end
@@ -2150,6 +2165,10 @@ MoveModule.WaitForResting = function(ship)
     startLuaCoroutine(Global, 'restWaitCoroutine')
 end
 
+function API_PerformMove(argTable)
+    return MoveModule.PerformMove(argTable.code, argTable.ship, argTable.ignoreCollisions)
+end
+
 -- Perform move designated by move_code on a ship
 -- For some moves (like barrel rolls) collisons are automatically ignored, rest considers them normally
 -- Includes token handling so nothing obscurs the final position
@@ -2159,191 +2178,24 @@ MoveModule.PerformMove = function(move_code, ship, ignoreCollisions)
     local info = MoveData.DecodeInfo(move_code, ship)
     local finData = MoveModule.GetFinalPosData(move_code, ship, ignoreCollisions)
     local annInfo = {type=finData.finType, note=info.note, code=info.code}
-    completeMove = false
     if finData.finType == 'overlap' then
         annInfo.note = info.collNote
     elseif finData.finType == 'slide' then
-        completeMove = true
+        -- I feel like something was supposed to be here
     elseif finData.finType == 'move' then
-        completeMove = true
-        if finData.collObj == nil then
-        else
+        if finData.collObj ~= nil then
             annInfo.note = info.collNote
             annInfo.collidedShip = finData.collObj
         end
     elseif finData.finType == 'stationary' then
-        MoveModule.MoveShip(ship, finData, move_code)
-    --else
-        --print(finData.finType)
+        -- And here as well
     end
 
-    --print('---- Type: ' .. finData.finType)
-    --print('  -- Part: ' .. tostring(finData.finPart))
-    --if finData.collObj ~= nil then
-        --print('  -- Coll: ' .. finData.collObj.getName())
-    --end
-
-    if completeMove == true then
-        --print('  -- MOVE')
-        --local finPos = finData.finPos
-        --ocal shipReach = Convert_mm_igu(mm_baseSize[DB_getBaseSize(ship)]+5)*(math.sqrt(2)/2)
+    if finData.finType ~= 'overlap' then
         MoveModule.MoveShip(ship, finData, move_code)
     end
-    --MoveModule.PrintHistory(ship)
     MoveModule.Announce(annInfo, 'all', ship)
-    --[[local finPos = nil
-    local info = MoveData.DecodeInfo(move_code, ship)
-
-    -- Don't bother with collisions if it's stationary
-    if info.speed == 0 then
-        ignoreCollisions = true
-    end
-
-
-    if ignoreCollisions ~= true then
-        -- LET THE SPAGHETTI FLOW!
-        -- Check move length so we can relate how far some part of a move will take us
-        local moveLength = MoveData.MoveLength(info)
-        --moveLength = moveLength + Vect_Length(MoveData[info.type][info.size .. 'BaseOffsetInit'])
-        --moveLength = moveLength + Vect_Length(MoveData[info.type][info.size .. 'BaseOffsetFinal'])
-        moveLength = Convert_mm_igu(moveLength)
-
-        -- Check how close ships have to be so bump is unavoidable and how far so bump is possible at all
-        local isShipLargeBase = DB_isLargeBase(ship)
-        local certShipReach = nil
-        local maxShipReach = nil
-        if isShipLargeBase == true then
-            certShipReach = Convert_mm_igu(mm_largeBase/2)
-            maxShipReach = Convert_mm_igu(mm_largeBase*math.sqrt(2)/2)
-        else
-            certShipReach = Convert_mm_igu(mm_smallBase/2)
-            maxShipReach = Convert_mm_igu(mm_smallBase*math.sqrt(2)/2)
-        end
-
-        -- Get list of ships that can possibly collide (all in *some* distance from middle of move)
-        local ships = XW_ObjWithinDist(MoveModule.GetPartMove(move_code, ship, MoveData.partMax/2).pos, moveLength+(2*maxShipReach), 'ship')
-        for k, collShip in pairs(ships) do if collShip == ship then table.remove(ships, k) end end
-
-        -- Let's try collisions at the end of a move
-        local finalInfo = MoveModule.CheckCollisions(ship, MoveModule.GetFullMove(move_code, ship), ships)
-
-        -- (if there will be collisions) we will start with maximum part of a move (ending position)
-        local actPart = MoveData.partMax
-        if finalInfo.coll ~= nil then
-            -- There was a collision!
-            local checkNum = 0 -- this is just to see how efficient stuff is
-            local collision = false
-
-            -- First, we will check collisions every 1/100th of a move
-            -- BUT WITH A CATCH
-            local partDelta = -1*(MoveData.partMax/100)
-            repeat
-                local nPos = MoveModule.GetPartMove(move_code, ship, actPart)
-                local collInfo = MoveModule.CheckCollisions(ship, nPos, ships)
-                local distToSkip = nil
-                if collInfo.coll ~= nil then
-                    collision = true
-                    distToSkip = collInfo.minMargin
-                    -- If there is a distance we can travel that assures collison will not end
-                    if distToSkip > 0 then
-                        -- Calculate how big part it is and skip away!
-                        -- This saves A LOT of iterations, for real
-                        partDelta = -1*((distToSkip * MoveData.partMax)/moveLength)
-                        if partDelta > -10 then partDelta = -10 end
-                        -- Else we're back at 1/100th of a move back
-                    else partDelta = -10 end
-                else collision = false end
-                actPart = actPart + partDelta
-                checkNum = checkNum + collInfo.numCheck
-                if collision == true then info.collidedShip = collInfo.coll end
-            until collision == false or actPart < 0
-
-            -- Right now, we're out of any collisions or at part 0 (no move)
-            -- Go 1/1000th of a move forward until we have a collision, then skip to last free 1/1000th
-            partDelta = (1/1000)*MoveData.partMax
-            local collInfo
-            repeat
-                local nPos = MoveModule.GetPartMove(move_code, ship, actPart)
-                collInfo = MoveModule.CheckCollisions(ship, nPos, ships)
-                if collInfo.coll ~= nil then collision = true
-                else collision = false end
-                actPart = actPart + partDelta
-                checkNum = checkNum + collInfo.numCheck
-            until (collision == true and collInfo.coll == info.collidedShip) or actPart > MoveData.partMax
-            actPart = actPart - partDelta
-            info.collidedShip = collInfo.coll -- This is what we hit
-        end
-
-        -- We get the final position as a calculated part or as a full move if ignoring collisions
-        finPos = MoveModule.GetPartMove(move_code, ship, actPart)
-    else
-        finPos = MoveModule.GetFullMove(move_code, ship)
-    end
-    -- Movement part finished!
-
-    -- TOKEN HANDLING:
-    -- How far ships reach (circle) for nearby tokens distance considerations and checking for obstructions
-    -- This is because token next to a large ship is MUCH FARTHER from it than token near a small ship
-    local isShipLargeBase = DB_isLargeBase(ship)
-    local maxShipReach = nil
-    if isShipLargeBase == true then
-        maxShipReach = Convert_mm_igu(mm_largeBase*math.sqrt(2)/2)
-    else
-        maxShipReach = Convert_mm_igu(mm_smallBase*math.sqrt(2)/2)
-    end
-
-    MoveModule.QueueShipTokensMove(ship)
-
-    -- Check which tokens could obstruct final position
-    -- TO_DO: Collapse this into a function maybe?
-    --  can wait until there would be a use for this outside here
-    local obstrTokens = XW_ObjWithinDist(finPos.pos, maxShipReach+Convert_mm_igu(20), 'token')
-    for k, token in pairs(obstrTokens) do
-        local owner = XW_ClosestWithinDist(token, Convert_mm_igu(80), 'ship').obj
-        -- If there is someone else close to one of these, move it on his base
-        if owner ~= nil and owner ~= ship then
-            local dir = Vect_Sum(owner.getPosition(), Vect_Scale(token.getPosition(), -1))
-            local dist = Vect_Length(dir)
-            local intendedDist = nil
-            if DB_isLargeBase(owner) then
-                intendedDist = Convert_mm_igu(mm_largeBase/4)
-            else
-                intendedDist = Convert_mm_igu(mm_smallBase/4)
-            end
-            dir = Vect_Scale(dir, (dist-intendedDist)/dist)
-            local dest = Vect_Sum(token.getPosition(), dir)
-            dest[2] = 2
-            token.setPositionSmooth(dest)
-            -- If tokens appears to be stray, just yank it out of the way
-        else
-            local dir = Vect_Sum(token.getPosition(), Vect_Scale(finPos.pos, -1))
-            local dist = Vect_Length(dir)
-            dir = Vect_Scale(dir, ((maxShipReach+Convert_mm_igu(20))/dist))
-            local dest = Vect_Sum(finPos.pos, dir)
-            dest[2] = 2
-            token.setPositionSmooth(dest)
-        end
-    end
-
-    -- Lift it a bit, save current and move
-    finPos.pos[2] = finPos.pos[2] + 1
-    MoveModule.SaveStateToHistory(ship, true)
-    ship.setPosition(finPos.pos)
-    ship.setRotation(finPos.rot)
-    ship.setDescription('')
-    -- Notification
-    info.type = 'move'
-    MoveModule.Announce(info, 'all', ship)
-
-    -- Bump notification button
-    Ship_RemoveOverlapReminder(ship)
-    if info.collidedShip ~= nil then
-        MoveModule.SpawnOverlapReminder(ship)
-    end
-
-    -- Get the ship in a queue to do stuff once resting
-    table.insert(MoveModule.restWaitQueue, {ship=ship, lastMove=move_code})
-    startLuaCoroutine(Global, 'restWaitCoroutine')]]--
+    return (finData.finType ~= 'overlap')
 end
 
 -- Spawn a 'BUMPED' informational button on the base that removes itself on click
@@ -2887,8 +2739,7 @@ end
 -- Is this dial assigned to anyone?
 -- TO_DO: Replace other checks with this, maybe ckeck sets to be sure too?
 DialModule.isAssigned = function(dial)
-    if dial.getVar('assignedShip') ~= nil then return true
-    else return false end
+    return (dial.getVar('assignedShip') ~= nil)
 end
 
 -- Handle destroyed objects that may be of DialModule interest
@@ -3384,12 +3235,17 @@ DialModule.StartSlide = function(dial, playerColor)
             MoveModule.Announce({type='move', note='manually adjusted base slide on his last move', code=lastMove.move}, 'all', ship)
             startLuaCoroutine(Global, 'SlideCoroutine')
             MoveModule.WaitForResting(ship)
+            return true
         elseif lastMove.move == 'manual slide' then
             printToColor(ship.getName() .. ' needs to undo the manual slide before adjusting again', playerColor, {1, 0.5, 0.1})
         else
             printToColor(ship.getName() .. '\'s last move (' .. lastMove.move .. ') does not allow sliding!', playerColor, {1, 0.5, 0.1})
         end
     end
+end
+
+function API_StartSlide(argTable)
+    return DialModule.StartSlide(argTable.obj, argTable.playerColor)
 end
 
 -- Get slide range of a ship based on his last move
