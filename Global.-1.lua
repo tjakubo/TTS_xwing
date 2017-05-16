@@ -144,6 +144,7 @@ function Vect_SetLength(vector, len)
 end
 
 -- Rotation of a 3D vector over its second element axis, arg in degrees
+-- Elements past 3rd are copied
 function Vect_RotateDeg(vector, degRotation)
     local radRotation = math.rad(degRotation)
     return Vect_RotateRad(vector, radRotation)
@@ -158,13 +159,11 @@ function Vect_RotateRad(vector, radRotation)
     local newX = math.cos(radRotation) * vector[1] + math.sin(radRotation) * vector[3]
     local newZ = math.sin(radRotation) * vector[1] * -1 + math.cos(radRotation) * vector[3]
     local out = {newX, vector[2], newZ}
-
     local k=4
     while vector[k] ~= nil do
         table.insert(out, vector[k])
         k = k+1
     end
-
     return out
 end
 
@@ -206,6 +205,11 @@ function Var_Clamp(var, min, max)
     else
         return var
     end
+end
+
+-- Check if table is empty
+function table.empty(tab)
+    return (next(myTable) == nil)
 end
 
 -- Sign function, zero for zero
@@ -371,17 +375,79 @@ function dummy() return end
 --------
 
 --------
+-- API FUNCTIONS
+-- For easy acces from other objects
+-- (TTS requires external call to have a single table as an argument)
+
+-- Perform a move using a standard move command
+-- Does not assert command validity
+-- Argument: { code = moveCode, ship = shipReference, ignoreCollisions = [true/false] }
+-- Return: TRUE if move completed, FALSE if overlap prevented ship from moving
+function API_PerformMove(argTable)
+    return MoveModule.PerformMove(argTable.code, argTable.ship, argTable.ignoreCollisions)
+end
+
+-- Assign a set of dials to a ship
+-- Removes any set ship has when this is called
+-- Uniqueness of set description is checked (warn & skip)
+-- Current owner of dials checked (warn & skip)
+-- *Dial script requirement not checked*
+-- Argument: { ship = shipRef, set = {dialRef1, dialRef2, ... dialRefN} }
+-- Return: TRUE if some dials were assigned, FALSE if none were assigned
+function DialAPI_AssignSet(argTable)
+    -- Remove any current set
+    local actSet = DialModule.GetSet(argTable.ship)
+    if actSet ~= nil then
+        DialModule.RemoveSet(argTable.ship)
+    end
+    -- Filter out duplicate description and already assigned dials
+    local validSet = {}
+    for k,dial in pairs(argTable.set) do
+        if validSet[dial.getDescription()] ~= nil then
+            MoveModule.Announce({type='error_DialModule', note='tried to assign few of same dials (API call)'}, 'all', argTable.ship)
+        else
+            if dial.getVar('assignedShip') == nil then
+                validSet[dial.getDescription()] = {dial=dial, originPos=dial.getPosition()}
+                dial.call('setShip', {argTable.ship})
+            else
+                MoveModule.Announce({type='error_DialModule', note='tried to assign dial that belong to other ship (API call)'}, 'all', argTable.ship)
+            end
+        end
+    end
+    -- Add those that remain
+    if not table.empty(validSet) then
+        DialModule.AddSet(argTable.ship, validSet)
+        return true
+    else
+        return false
+    end
+end
+
+-- Start ship slide on some object (dial or anything)
+-- "Slide" button for move zone depiction is not created
+-- Control & constraints identical to slide button on a dial
+-- *OBJ NEEDS TO HAVE 'assignedShip' VARIABLE SET TO SHIP REF*
+-- Argument: { obj = objRef, playerColor = clickingPlayerColor }
+function API_StartSlide(argTable)
+    return DialModule.StartSlide(argTable.obj, argTable.playerColor)
+end
+
+-- END API FUNCTIONS
+--------
+
+--------
 -- OBJECT SPECIFIC VARIABLES
 -- These variables are set per object and have some specific meaning
 -- Some may be linked to another so caution must be kept when modifying
 
--- (object type) : (variable name) - (value1 / value2 ... / valueN)  <- (meaning)
--- ship : 'hasDials'            - true/(false/nil)      <- Has assigned set of dials (ONLY informative) / Not
--- ship : 'slideOngoing'        - true/(false/nil)      <- Is in process of manually adjusting slide / Not
--- ship : 'cmdBusy'             - true/(false/nil)      <- Is currently processing some command / Not
--- ship : 'missingModelWarned'  - true/(false/nil)      <- Printed a warning that model is unrecognized (once) / Not yet
--- dial : 'slideOngoing'        - true/(false/nil)      <- Its ship in process of manually adjusting slide / Not
--- dial : 'assignedShip'        - shipRef/nil           <- Object reference to its owner
+-- objectType : varName         - val / val2 ... / valN     <- meaning
+-- ship : 'hasDials'            - true / (false/nil)        <- Has assigned set of dials (ONLY informative) / Not
+-- ship : 'slideOngoing'        - true / (false/nil)        <- Is in process of manually adjusting slide / Not
+-- ship : 'cmdBusy'             - true / (false/nil)        <- Is currently processing some command / Not
+-- ship : 'missingModelWarned'  - true / (false/nil)        <- Printed a warning that model is unrecognized (once) / Not yet
+-- dial : 'slideOngoing'        - true / (false/nil)        <- Its ship in process of manually adjusting slide / Not
+-- dial : 'assignedShip'        - shipRef / nil             <- Object reference to its owner / No owner
+-- token : 'idle'               - false / (true/nil)        <- This token should be ignored when moving tokens / Not
 
 -- END OBJECT SPECIFIC VARIABLES
 --------
@@ -627,7 +693,6 @@ end
 -- Value is largely irrelevant since part can be a fraction (any kind of number really)
 MoveData.partMax = 1000
 
-
 -- Construct data from a lookup table entry
 -- Move info provided from MoveData.DecodeInfo
 -- Return format: {xPos_offset, yPos_offset, zPos_offset, yRot_offset}
@@ -747,7 +812,8 @@ MoveData.SlideMoveOrigin = function(moveInfo)
         end
         data[3] = data[3] - MoveData.SlideLength(moveInfo)/2
     elseif moveInfo.type == 'turn' and moveInfo.extra == 'talon' then
-        -- Talon roll are simply talons rolls slid
+        -- Talon roll are simply talons rolls slid forward
+        -- (forward cause this is initial position relative and talons do a 180)
         data = MoveData.LUT.ConstructData(moveInfo)
         data[3] = data[3] + MoveData.SlideLength(moveInfo)/2
         if moveInfo.dir == 'left' then
@@ -755,26 +821,22 @@ MoveData.SlideMoveOrigin = function(moveInfo)
         end
         data = MoveData.TurnInwardVariant(data)
     end
-    if data == nil then
-        print('MoveData.SLideMoveOrigin return nil')
-    end
     return data
 end
+
 -- Get the offset sliding by part/maxPart applies to ship position
--- (MoveData.SlideMoveOrigin + this function) provide real ship position offset
---   given some slide part
+-- MoveData.SlideMoveOrigin and this provide total offset for some part of a slide
+-- THIS IS ZERO-SLIDE-POSITION RELATIVE
 MoveData.SlidePartOffset = function(moveInfo, part)
 
     if moveInfo.type == 'echo' then
         if moveInfo.extra == 'adjust' then
-            --local dirVec = {0, 0, MoveData.SlideLength(moveInfo), 0}
-            --dirVec = Vect_SetLength(dirVec, MoveData.SlideLength(moveInfo)/2)
-            --local adjPart = part - 500
-            --return Vect_Scale(dirVec, adjPart/MoveData.partMax)
-
+            -- Echo 2nd adjust is similair to a barrel roll
+            -- This is when ship is slid against the template
             return {0, 0, MoveData.SlideLength(moveInfo)*(part/MoveData.partMax), 0}
         else
-            print('spoenadj:' .. part)
+            -- Echo 1st adjust is a diagonal 45deg line through base
+            -- This is when template is slid against ship before it is moved
             local dirVec = {-1, 0, 1, 0}
             if (moveInfo.dir == 'left' and moveInfo.extra == 'backward') or (moveInfo.dir == 'right' and moveInfo.extra == 'forward') then
                 dirVec[1] = -1*dirVec[1]
@@ -783,6 +845,7 @@ MoveData.SlidePartOffset = function(moveInfo, part)
             return Vect_Scale(dirVec, part/MoveData.partMax)
         end
     else
+        -- Normal rolls/talons are simply slid forward
         return {0, 0, MoveData.SlideLength(moveInfo)*(part/MoveData.partMax), 0}
     end
 end
@@ -816,7 +879,7 @@ MoveData.ReverseVariant = function(entry)
 end
 
 -- Rotate an entry by given degrees
--- Helps define rolls as straights rotated 90deg sideways
+-- Helps define rolls as straights rotated 90deg sideways etc
 MoveData.RotateEntry = function(entry, angDeg)
     local rotEntry = Vect_RotateDeg(entry, angDeg)
     return {rotEntry[1], rotEntry[2], rotEntry[3], entry[4]+angDeg}
@@ -855,24 +918,23 @@ MoveData.DecodeInfo = function (move_code, ship)
                     dir=nil,            -- [left] [right] [nil]
                     extra=nil,          -- [koiogran] [segnor] [talon] [reverse] [straight] [forward] [backward] [nil]
                     traits =
-                    {   slide=false,
-                        full=false,
-                        part=false   },          -- [string] cotaining any or all: 'slide', 'full', 'part'
-                    --noPartial=false,    -- [true] [false]
-                    --slideMove=false,    -- [true] [false]
+                    {   slide=false,    -- [true] [false] if this move can be slid afterwards
+                        full=false,     -- [true] [false] if this move can be attempted as a full move
+                        part=false      -- [true] [false] if this move can be attempted as a partial move
+                    },
                     size=nil,           -- [small] [large]  //  [nil]
                     note=nil,           -- [string] eg. 'banked xxx'       //  [nil]
                     collNote=nil,       -- [string] eg. 'tried to do xxx'  //  [nil]
                     code=move_code      -- [string] eg. 'be2'              //  [nil]
     }
 
+    -- Set to slide-able if it is
     if MoveData.IsSlideMove(move_code) then
         info.traits.slide = true
     end
 
     if DB_isLargeBase(ship) == true then info.size = 'large'
     else info.size = 'small' end
-
 
     -- Straights and koiograns, regular stuff
     if move_code:sub(1,1) == 's' or move_code:sub(1,1) == 'k' then
@@ -908,7 +970,6 @@ MoveData.DecodeInfo = function (move_code, ship)
                 info.note = 'is stationary'
             end
         end
-        if info.speed > 5 then info.type = 'invalid' end
     -- Banks, regular stuff
     elseif move_code:sub(1,1) == 'b' then
         info.type = 'bank'
@@ -939,7 +1000,6 @@ MoveData.DecodeInfo = function (move_code, ship)
             info.note = 'banked ' .. info.dir .. ' ' .. info.speed
             info.collNote = 'tried to bank ' .. info.dir .. ' ' .. info.speed
         end
-        if info.speed > 3 then info.type = 'invalid' end
     -- Turns, regular stuff
     elseif move_code:sub(1,1) == 't' then
         info.type = 'turn'
@@ -974,7 +1034,6 @@ MoveData.DecodeInfo = function (move_code, ship)
             info.note = 'turned ' .. info.dir .. ' ' .. info.speed
             info.collNote = 'tried to turn ' .. info.dir .. ' ' .. info.speed
         end
-        if info.speed > 3 then info.type = 'invalid' end
     -- Barrel rolls and decloaks, spaghetti
     elseif move_code:sub(1,2) == 'ch' then
         -- Echo's fucking bullshit which goes against ALL the standards
@@ -982,11 +1041,13 @@ MoveData.DecodeInfo = function (move_code, ship)
         info.dir = 'right'
         info.extra = 'forward'
         if move_code:sub(3,3) == 'l' or move_code:sub(3,3) == 'e' then
+            -- Ones going right/left
             info.dir = 'left'
             if move_code:sub(4,4) == 'b' then
                 info.extra = 'backward'
             end
         elseif move_code:sub(3,3) == 's' then
+            -- Ones going forward
             info = MoveData.DecodeInfo('b' .. move_code:sub(4,4) .. '2', ship)
             info.traits.part = false
             info.code = move_code
@@ -998,26 +1059,21 @@ MoveData.DecodeInfo = function (move_code, ship)
             info.note = 'dechocloaked forward ' .. info.dir
             info.collNote = 'tried to dechocloak forward ' .. info.dir
         end
-
+        -- Special 2nd adjust move
         if move_code == 'chadj' then
             info.extra = 'adjust'
         end
     elseif move_code:sub(1,1) == 'x' or move_code:sub(1,1) == 'c' then
-        -- Rolls:
-        -- These move have noPartial set to true so there's no move if final pos obstructed
-        -- Speed is important - rolls are done as "sideways straights" with given speed
-        -- FOR LARGE BASE SPEED > 2 ROLLS ARE NOT HANDLED (undefined behaviour)
+        -- Rolls
         info.type = 'roll'
         info.dir = 'right'
         info.speed = 1
-        --info.noPartial = true
         if move_code:sub(2,2) == 'l' or move_code:sub(2,2) == 'e' then
             info.dir = 'left'
         end
         info.note = 'barrel rolled'
         info.collNote = 'tried to barrel roll'
-        -- Decloaks:
-        -- FOR LARGE BASE DECLOAKS ARE NOT HANDLED (undefined behaviour)
+        -- Decloaks
         -- Straigh decloak is treated as a roll before, now just return straight 2 data
         if move_code:sub(2,2) == 's' then
             info.type = 'straight'
@@ -1025,16 +1081,15 @@ MoveData.DecodeInfo = function (move_code, ship)
             info.traits.full = true
             info.note = 'decloaked forward'
             info.collNote = 'tried to decloak forward'
-            if info.size == 'large' then info.type = 'invalid' end
             info.dir = nil
         -- Side decloak is a barrel roll, but with 2 speed
         elseif move_code:sub(1,1) == 'c' then
             info.note = 'decloaked'
             info.collNote = 'tried to decloak'
             info.speed = 2
-            if info.size == 'large' then return MoveData.DecodeInfo(move_code:gsub('c', 'x'), ship) end
         end
 
+        -- Forward/backward modifiers
         if info.type ~= 'straight' then
             if move_code:sub(-1,-1) == 'f' then
                 info.extra = 'forward'
@@ -1159,42 +1214,11 @@ end
 -- Entry: {pos=position, rot=rotation, move=moveThatGotShipHere, part=partOfMovePerformed}
 MoveModule.moveHistory = {}
 
-
-MoveModule.emergencyRestore = {}
-MoveModule.restoreBufferPointer = 0
-MoveModule.restoreBufferSize = 25
--- {srcName=name, savedPos={pos=pos, rot=rot}}
-
-MoveModule.Restore = function(ship, key)
-    if #MoveModule.emergencyRestore < key or key <= 0 then
-        MoveModule.Announce({type='historyHandle', note='Restore key (number after the #) invalid'}, 'all')
-        return false
-    else
-        local data = MoveModule.emergencyRestore[key]
-        ship.setPosition(data.savedPos.pos)
-        ship.setRotation(data.savedPos.rot)
-        MoveModule.SaveStateToHistory(ship, true)
-        MoveModule.Announce({type='historyHandle', note='has been restored to position ' .. data.srcName .. ' was last seen at'}, 'all', ship)
-        return true
-    end
-end
-
-MoveModule.AddRestorePoint = function(entry)
-    local newKey = MoveModule.restoreBufferPointer + 1
-    if newKey > MoveModule.restoreBufferSize then
-        newKey = 1
-    end
-    MoveModule.Announce({type='historyHandle', note=entry.srcName .. '\'s ship has been deleted - you can respawn the model and use \'restore#' .. newKey .. '\' command to restore its position'}, 'all')
-    MoveModule.emergencyRestore[newKey] = entry
-    MoveModule.restoreBufferPointer = newKey
-end
-
 -- Hostory-related commads
 XW_cmd.AddCommand('[qz]', 'historyHandle')
 XW_cmd.AddCommand('undo', 'historyHandle')
 XW_cmd.AddCommand('redo', 'historyHandle')
 XW_cmd.AddCommand('keep', 'historyHandle')
-XW_cmd.AddCommand('restore#[1-9][0-9]?', 'historyHandle')
 
 -- Return history of a ship
 MoveModule.GetHistory = function(ship)
@@ -1252,9 +1276,6 @@ MoveModule.AddHistoryEntry = function(ship, entry)
     histData.actKey = histData.actKey+1
     histData.history[histData.actKey] = entry
     MoveModule.ErasePastCurrent(ship)
-
-    -- I have no idea what I had in mind with that below comment, but I'll leave it just in case:
-    ---------- (its not current ????????)
 end
 
 -- How much position can be offset to be considered 'same'
@@ -1354,10 +1375,10 @@ MoveModule.RedoMove = function(ship)
 end
 
 -- Get the last move code from ship history
+-- Always returns an "entry" table, if there's no move, move key is 'none'
 MoveModule.GetLastMove = function(ship)
     local histData = MoveModule.GetHistory(ship)
     if histData.actKey < 1 then
-        --print('lmrn')
         return {move='none'}
     else
         return Lua_ShallowCopy(histData.history[histData.actKey])
@@ -1365,18 +1386,56 @@ MoveModule.GetLastMove = function(ship)
 end
 
 -- Get some old move from ship history (arg in number of moves back)
+-- Always returns an "entry" table, if there's no move, move key is 'none'
 MoveModule.GetOldMove = function(ship, numMovesBack)
     local histData = MoveModule.GetHistory(ship)
     if histData.actKey-numMovesBack < 1 then
-        --print('lmrn')
         return {move='none'}
     else
         return Lua_ShallowCopy(histData.history[histData.actKey-numMovesBack])
     end
 end
 
--- Handle destroyed objects (delete their history)
-MoveModule.ObjDestroyedHandle = function(obj)
+-- THING THAT ALLOWS US TOR ESTORE SHIP POSITION AFTER IT WAS DELETED
+-- Table of deleted ships last positions
+MoveModule.emergencyRestore = {}
+-- Pointer at the most recently added restore entry
+MoveModule.restoreBufferPointer = 0
+-- Max size of the restore entry table
+MoveModule.restoreBufferSize = 25
+-- Restore command
+XW_cmd.AddCommand('restore#[1-9][0-9]?', 'historyHandle')
+
+-- Try to restore some ship position to an entry with given key
+MoveModule.Restore = function(ship, key)
+    if #MoveModule.emergencyRestore < key or key <= 0 then
+        MoveModule.Announce({type='historyHandle', note='Restore key (number after the #) invalid'}, 'all')
+        return false
+    else
+        local data = MoveModule.emergencyRestore[key]
+        ship.setPosition(data.savedPos.pos)
+        ship.setRotation(data.savedPos.rot)
+        MoveModule.SaveStateToHistory(ship, true)
+        MoveModule.Announce({type='historyHandle', note='has been restored to position ' .. data.srcName .. ' was last seen at'}, 'all', ship)
+        return true
+    end
+end
+
+-- Save some restore data and notify the user of it
+MoveModule.AddRestorePoint = function(entry)
+    local newKey = MoveModule.restoreBufferPointer + 1
+    if newKey > MoveModule.restoreBufferSize then
+        newKey = 1
+    end
+    MoveModule.Announce({type='historyHandle', note=entry.srcName .. '\'s ship has been deleted - you can respawn the model and use \'restore#' .. newKey .. '\' command to restore its position'}, 'all')
+    MoveModule.emergencyRestore[newKey] = entry
+    MoveModule.restoreBufferPointer = newKey
+end
+
+-- Handle destroyed objects
+-- Create a restore entry from last set position in history
+-- Delete history if present
+MoveModule.onObjectDestroyed = function(obj)
     if not XW_ObjMatchType(obj, 'ship') then return end
     if MoveModule.GetLastMove(obj).move ~= 'none' then
         local lastMove = MoveModule.GetLastMove(obj)
@@ -1412,7 +1471,7 @@ MoveModule.onLoad = function(saveTable)
     MoveModule.RestoreSaveData(saveTable)
 end
 
--- REstore provided table and notify of the results
+-- Restore provided table and notify of the results
 MoveModule.RestoreSaveData = function(saveTable)
     if saveTable == nil then
         return
@@ -1439,62 +1498,6 @@ MoveModule.RestoreSaveData = function(saveTable)
     end
 end
 
--- This part controls the waiting part of moving
--- Basically, if anything needs to be done after the ship rests, this can trigger it
-
--- Ships waiting to be resting
-MoveModule.restWaitQueue = {}
-
--- Tokens waiting to be moved with ships
--- Entry: {tokens={t1,t2,...}, ship=shipWaitingFor}
--- t1: {ref=tRef, relPos = pos, relRot = rot}
--- elements wait here until ships are ready
-MoveModule.tokenWaitQueue = {}
-
--- This completes when a ship is resting at a table level
--- Does token movement and ship locking after
-function restWaitCoroutine()
-    if MoveModule.restWaitQueue[1] == nil then
-        return 1
-    end
-
-    local waitData = MoveModule.restWaitQueue[#MoveModule.restWaitQueue]
-    local actShip = waitData.ship
-    table.remove(MoveModule.restWaitQueue, #MoveModule.restWaitQueue)
-
-    -- Wait
-    repeat
-        coroutine.yield(0)
-    until actShip.resting == true and actShip.isSmoothMoving() == false and actShip.held_by_color == nil and actShip.getVar('slideOngoing') ~= true
-
-    local newTokenTable = {}
-    for k,tokenSetInfo in pairs(MoveModule.tokenWaitQueue) do
-        -- Move and pop waiting tokens
-        if tokenSetInfo.ship == actShip then
-            for k2,tokenData in pairs(tokenSetInfo.tokens) do
-                --Vect_Print(tokenData.relPos, 'RP: ')
-                local offset = Vect_RotateDeg(tokenData.relPos, actShip.getRotation()[2])
-                local dest = Vect_Sum(offset, actShip.getPosition())
-                dest[2] = dest[2]+0.5
-                dest = TokenModule.VisiblePosition(tokenData.ref, tokenSetInfo.ship, dest)
-                tokenData.ref.setPositionSmooth(dest)
-                local tRot = tokenData.ref.getRotation()
-                tokenData.ref.setRotationSmooth({tRot[1], actShip.getRotation()[2] + tokenData.relRot, tRot[3]})
-                tokenData.ref.highlightOn({0, 1, 0}, 2)
-            end
-        else
-            -- Index back tokens that are not waiting for this ship
-            table.insert(newTokenTable, tokenSetInfo)
-        end
-    end
-
-    MoveModule.tokenWaitQueue = newTokenTable
-    actShip.lock()
-    actShip.highlightOn({0, 1, 0}, 0.1)
-    XW_cmd.SetReady(actShip)
-    return 1
-end
-
 -- Check if provided ship in a provided position/rotation would collide with anything from the provided table
 -- Return: {coll=collObject, minMargin=howFarCollisionIsStillCertain, numCheck=numCollideChecks}
 MoveModule.CheckCollisions = function(ship, shipPosRot, collShipTable)
@@ -1506,28 +1509,24 @@ MoveModule.CheckCollisions = function(ship, shipPosRot, collShipTable)
 
     for k, collShip in pairs(collShipTable) do
         local collShipSize = DB_getBaseSize(collShip)
-        local certBumpDist = certShipReach + Convert_mm_igu(mm_baseSize[collShipSize]/2)              -- distance at which these two particular ships ships MUST bump
-        local maxBumpDist = maxShipReach + Convert_mm_igu(mm_baseSize[collShipSize]*math.sqrt(2)/2)  -- distance at which these two particular ships ships CAN bump
+        local certBumpDist = certShipReach + Convert_mm_igu(mm_baseSize[collShipSize]/2)            -- distance at which these two particular ships ships MUST bump
+        local maxBumpDist = maxShipReach + Convert_mm_igu(mm_baseSize[collShipSize]*math.sqrt(2)/2) -- distance at which these two particular ships ships CAN bump
 
         local dist = Dist_Pos(shipPosRot.pos, collShip.getPosition())
         if dist < maxBumpDist then
             if dist < certBumpDist then
                 info.coll = collShip
-                --print('MoveModule.CheckCollisions: certain')
                 if certBumpDist - dist > info.minMargin then
                     info.minMargin = certBumpDist - dist
                 end
             elseif collide(shipInfo, {pos=collShip.getPosition(), rot=collShip.getRotation(), ship=collShip}) == true then
                 info.coll = collShip
                 info.numCheck = info.numCheck + 1
-                --print('MoveModule.CheckCollisions: calc\'d')
                 break
             else
-                --print('MoveModule.CheckCollisions: no calc\'d')
                 info.numCheck = info.numCheck + 1
             end
         else
-            --print('MoveModule.CheckCollisions: impossible')
         end
     end
     return info
@@ -1536,16 +1535,12 @@ end
 MoveModule.partResolutionRough = 1/100  -- Resolution for rough checks (guaranteed)
 MoveModule.partResolutionFine = 1/1000  -- Resolution for fine checks  (for forward adjust)
 
--- Get first free part of a move for a ship
--- Args:
--- info, ship <- move info as per MoveData.DecodeInfo and ship reference
--- partFun    <- function that calculates target position for (move, ship, part)
--- partRange  <- {from=val, to=val} range of parts to check, can be descending or ascending
--- moveLength <- yeah
--- fullFun    <- OPTIONAL function that calculates target position for full move (checked once first)
--- Return:
---==========================================
+-- Module for trying and finding free positions
 MoveModule.MoveProbe = {}
+
+-- Get near ships when trying a move that allows for partial execution
+-- Args: SEE MoveModule.MoveProbe.GetFreePart
+-- Return: {shipRef1, shipRef2, ... , shipRefN}
 MoveModule.MoveProbe.GetShipsNearPart = function(info, ship, partFun, partRange)
     local middlePart = (partRange.to - partRange.from)/2
     local maxShipReach = Convert_mm_igu(mm_baseSize[info.size]*math.sqrt(2))/2
@@ -1554,7 +1549,18 @@ MoveModule.MoveProbe.GetShipsNearPart = function(info, ship, partFun, partRange)
     local collShipRange = moveReach + maxShipReach + Convert_mm_igu(mm_largeBase*math.sqrt(2))/2 + Convert_mm_igu(10)
     return XW_ObjWithinDist(partFun(info.code, ship, MoveData.partMax/2).pos, collShipRange, 'ship', {ship})
 end
-MoveModule.MoveProbe.GetFreePart = function(info, ship, partFun, partRange, moveLength, fullFun)
+-- Get first free part for a partial-enabled move (going through parts as partRange specifies)
+-- Args:
+--      info        <- move info as per MoveData.DecodeInfo
+--      ship        <- object ref to a ship we want to move
+--      partFun     <- function that takes (moveInfo, shipRef, part) and returns {pos=position, rot=rotation} (pure data, ignores collisions)
+--      partRange   <- { from = partValueFromToCheck, to = partValueToCheckTo} ((from < to), (from > to) and (from == to) to all handled)
+-- Return:  {
+--      part        <- number of the part that was last checked (first free if other args specify free part was found)
+--      info        <- nil if free part was found sowmehere, 'first' if partRange.from was free, 'overlap' if no part was free
+--      collObj     <- nil if first part was free, object ref to last colliding ship otherwise
+--          }
+MoveModule.MoveProbe.GetFreePart = function(info, ship, partFun, partRange, moveLength)
     if moveLength == nil then moveLength = 0 end
     moveLength = Convert_mm_igu(moveLength)
     local out = {part = nil, info = nil, collObj = nil}
@@ -1624,14 +1630,26 @@ MoveModule.MoveProbe.GetFreePart = function(info, ship, partFun, partRange, move
         out.info = 'overlap'
         out.part = partRange.to
     end
-    --print('-- GetFreePart CHECK_COUNT: ' .. checkNum.rough+checkNum.fine .. ' (' .. checkNum.rough .. ' + ' .. checkNum.fine .. ')')
+    -- print('-- GetFreePart CHECK_COUNT: ' .. checkNum.rough+checkNum.fine .. ' (' .. checkNum.rough .. ' + ' .. checkNum.fine .. ')')
     return out
 end
+-- Get near ships when trying a move that only allows for full execution
+-- Args: SEE MoveModule.MoveProbe.TryFullMove
+-- Return: {shipRef1, shipRef2, ... , shipRefN}
 MoveModule.MoveProbe.GetShipsNearFull = function(info, ship, fullFun)
     local maxShipReach = Convert_mm_igu(mm_baseSize[info.size]*math.sqrt(2))/2
     local collShipRange = maxShipReach + Convert_mm_igu(mm_largeBase*math.sqrt(2))/2 + Convert_mm_igu(10)
     return XW_ObjWithinDist(fullFun(info.code, ship).pos, collShipRange, 'ship', {ship})
 end
+-- Try a full version of a move
+-- Args:
+--      info        <- move info as per MoveData.DecodeInfo
+--      ship        <- object ref to a ship we want to move
+--      fullFun     <- function that takes (moveInfo, shipRef) and returns {pos=position, rot=rotation} (pure data, ignores collisions)
+-- Return:  {
+--      done        <- TRUE if move was completed, FALSE if it was obstructed
+--      collObj     <- nil if completed, object ref to colliding ship otherwise
+--          }
 MoveModule.MoveProbe.TryFullMove = function(info, ship, fullFun)
     local collShips = MoveModule.MoveProbe.GetShipsNearFull(info, ship, fullFun)
     local out = {done=nil, collObj=nil}
@@ -1649,7 +1667,17 @@ MoveModule.MoveProbe.TryFullMove = function(info, ship, fullFun)
     end
 end
 
--- Get the (now for real) FINAL position for a give move, including partial move and collisions
+-- Get the FINAL position for a given move, including partial move and collisions
+-- Follows traits from MoveData.DecodeInfo to try different move functions
+-- Return:  {
+--      finType     <- 'slide' when did a slide, 'move' when did full/part mvoe
+--                     'stationary' when there was no position change (rotation change allowed)
+--                     'overlap' if there was no valid free target position
+--                     IF OVERLAP, OTHER KEYS ARE TO BE IGNORED
+--      finPos      <- { pos = finalPosition, rot = finalRotation }
+--      collObj     <- nil if no collision, object ref to colliding ship otherwise
+--      finPart     <- part of partial move/slide performed, 'max' if full move, nil if not applicable
+--          }
 MoveModule.GetFinalPosData = function(move_code, ship, ignoreCollisions)
     local out = {finPos = nil, collObj = nil, finType = nil, finPart = nil}
     local info = MoveData.DecodeInfo(move_code, ship)
@@ -1662,7 +1690,6 @@ MoveModule.GetFinalPosData = function(move_code, ship, ignoreCollisions)
     -- NON-COLLISION VERSION
     if ignoreCollisions then
         -- If move can slide at the end, get final position including 'backward'/'forward' modifiers
-        --if info.slideMove then
         if info.traits.slide == true ~= nil then
             local initPart = MoveData.partMax/2
             if info.extra == 'forward' then
@@ -1698,7 +1725,6 @@ MoveModule.GetFinalPosData = function(move_code, ship, ignoreCollisions)
         -- Respect the 'forward'/'backward' option as "as far forward/backward as possible"
         -- Respect the middle slide option by checking for middle once, then treat as forward if obstructed
         if info.traits.slide == true then
-            print('slide')
             local partRange = {from=0, to=MoveData.partMax}
             if info.extra == 'forward' then
                 partRange = {from=MoveData.partMax, to=0}
@@ -1720,9 +1746,8 @@ MoveModule.GetFinalPosData = function(move_code, ship, ignoreCollisions)
                 return out
             end
         end
+        -- If move allows for full move check, try it
         if info.traits.full == true then
-            print('full')
-            --local partRange = {from=MoveData.partMax, to=MoveData.partMax}
             local fullData = MoveModule.MoveProbe.TryFullMove(info, ship, MoveModule.GetFullMove)
             if fullData.done == true then
                 out.finPos = MoveModule.GetFullMove(info.code, ship)
@@ -1731,8 +1756,8 @@ MoveModule.GetFinalPosData = function(move_code, ship, ignoreCollisions)
                 return out
             end
         end
+        -- If move allows for partial execution, try to find a free part
         if info.traits.part == true then
-            print('part')
             local partRange = {from=MoveData.partMax, to=0}
             local freePartData = MoveModule.MoveProbe.GetFreePart(info, ship, MoveModule.GetPartMove, partRange, MoveData.MoveLength(info))
             if freePartData.info ~= 'overlap' then
@@ -1743,11 +1768,17 @@ MoveModule.GetFinalPosData = function(move_code, ship, ignoreCollisions)
                 return out
             end
         end
-        print('none - overlap')
+        -- If nothing worked out, we have an all-overlap
         out.finType = 'overlap'
         return out
     end
 end
+
+--[[
+
+--------
+-- DANGER ZONE
+-- SOON TO BE DELETED
 
 XW_cmd.AddCommand('d:x[rle]', 'demoMove')
 XW_cmd.AddCommand('d:x[rle][fb]', 'demoMove')
@@ -1756,6 +1787,10 @@ XW_cmd.AddCommand('d:c[rle][fb]', 'demoMove')
 XW_cmd.AddCommand('d:t[rle][123][str]?', 'demoMove')
 XW_cmd.AddCommand('d:b[rle][123][sr]?', 'demoMove')
 XW_cmd.AddCommand('d:[sk][012345][r]?', 'demoMove')
+
+-- DANGER ZONE
+-- SOON TO BE DELETED
+
 MoveModule.DemoMove = function(move_code, ship, ignoreCollisions, frameStep)
     if demoMoveData ~= nil then return end
     if frameStep == nil then frameStep = 1 end
@@ -1769,10 +1804,12 @@ MoveModule.DemoMove = function(move_code, ship, ignoreCollisions, frameStep)
     startLuaCoroutine(Global, 'DemoMoveCoroutine')
 end
 
+-- DANGER ZONE
+-- SOON TO BE DELETED
+
 demoMoveData = nil
 
 function DemoMoveCoroutine()
---===========================================================
     local data = demoMoveData
         XW_cmd.SetBusy(data.ship)
     local movePartDelta = 0
@@ -1783,6 +1820,10 @@ function DemoMoveCoroutine()
     if MoveData.SlideLength(data.moveInfo) ~= nil then
         slidePartDelta = 300/MoveData.SlideLength(data.moveInfo)
     end
+
+    -- DANGER ZONE
+    -- SOON TO BE DELETED
+
     if data.moveInfo.noPartial and (not data.moveInfo.slideMove) then
         print('Demo: stiff move')
         local targetPos = MoveModule.GetFullMove(data.moveInfo.code, data.ship)
@@ -1800,6 +1841,10 @@ function DemoMoveCoroutine()
         data.ship.setPosition(data.startPos.pos)
         data.ship.setRotation(data.startPos.rot)
         local targetPos = nil
+
+        -- DANGER ZONE
+        -- SOON TO BE DELETED
+
         if data.currMovePart < MoveData.partMax then
             targetPos = MoveModule.GetPartMove(data.moveInfo.code, data.ship, data.currMovePart)
         else
@@ -1825,6 +1870,10 @@ function DemoMoveCoroutine()
         if data.currSlidePart > MoveData.partMax and (data.currSlidePart - slidePartDelta) < MoveData.partMax then
             data.currSlidePart = MoveData.partMax
         end
+
+        -- DANGER ZONE
+        -- SOON TO BE DELETED
+
         coroutine.yield(0)
     end
 
@@ -1833,12 +1882,258 @@ function DemoMoveCoroutine()
     return 1
 end
 
-TokenModule = {}
+-- END DANGER ZONE
+--------
 
+]]--
+
+--------
+
+-- Move ship to some position and handle stuff around it
+-- If move is not stationary, clear target position and move tokens with it
+-- Add history entry if save move name is provided
+-- Args:
+--      ship        <- object reference to ship to move
+--      finData     <- {pos = targetPos, rot=targetRot}
+--      saveName    <- move code for history save, no save done if nil
+MoveModule.MoveShip = function(ship, finData, saveName)
+    XW_cmd.SetBusy(ship)
+    MoveModule.RemoveOverlapReminder(ship)
+    if finData.type ~= 'stationary' then
+        TokenModule.QueueShipTokensMove(ship)
+        local shipReach = Convert_mm_igu(mm_baseSize[DB_getBaseSize(ship)]+5)*(math.sqrt(2)/2)
+        TokenModule.ClearPosition(finData.finPos.pos, shipReach, ship)
+    end
+    local finPos = finData.finPos
+    if finData.noSave ~= true then
+        MoveModule.SaveStateToHistory(ship, true)
+    end
+    ship.setPositionSmooth(finPos.pos, false, true)
+    ship.setRotationSmooth(finPos.rot, false, true)
+    MoveModule.WaitForResting(ship)
+    if saveName ~= nil then
+        MoveModule.AddHistoryEntry(ship, {pos=finPos.pos, rot=finPos.rot, move=saveName, part=finData.finPart, finType=finData.finType})
+    end
+end
+
+-- This part controls the waiting part of moving
+-- Basically, if anything needs to be done after the ship rests, this can trigger it
+
+-- Ships waiting to be resting
+-- Entry: {ship = shipRef}
+MoveModule.restWaitQueue = {}
+
+-- Tokens waiting to be moved with ships
+-- Entry: { tokens={t1, t2, ... , tN}, ship=shipWaitingFor }
+-- tX: {ref = tokenRef, relPos = pos, relRot = rot}
+-- elements wait here until ships are ready
+MoveModule.tokenWaitQueue = {}
+
+-- Add ship to the queue so it fires once it completes the move
+MoveModule.WaitForResting = function(ship)
+    table.insert(MoveModule.restWaitQueue, {ship=ship})
+    startLuaCoroutine(Global, 'restWaitCoroutine')
+end
+
+-- This completes when a ship is resting at a table level
+-- Does token movement and ship locking after
+function restWaitCoroutine()
+    if MoveModule.restWaitQueue[1] == nil then
+        return 1
+    end
+
+    local waitData = MoveModule.restWaitQueue[#MoveModule.restWaitQueue]
+    local actShip = waitData.ship
+    table.remove(MoveModule.restWaitQueue, #MoveModule.restWaitQueue)
+    -- Wait
+    repeat
+        coroutine.yield(0)
+    until actShip.resting == true and actShip.isSmoothMoving() == false and actShip.held_by_color == nil and actShip.getVar('slideOngoing') ~= true
+
+    local newTokenTable = {}
+    for k,tokenSetInfo in pairs(MoveModule.tokenWaitQueue) do
+        -- Move and pop waiting tokens
+        if tokenSetInfo.ship == actShip then
+            for k2,tokenData in pairs(tokenSetInfo.tokens) do
+                local offset = Vect_RotateDeg(tokenData.relPos, actShip.getRotation()[2])
+                local dest = Vect_Sum(offset, actShip.getPosition())
+                dest[2] = dest[2]+0.5
+                dest = TokenModule.VisiblePosition(tokenData.ref, tokenSetInfo.ship, dest)
+                tokenData.ref.setPositionSmooth(dest)
+                local tRot = tokenData.ref.getRotation()
+                tokenData.ref.setRotationSmooth({tRot[1], actShip.getRotation()[2] + tokenData.relRot, tRot[3]})
+                tokenData.ref.highlightOn({0, 1, 0}, 2)
+            end
+        else
+            -- Index back tokens that are not waiting for this ship
+            table.insert(newTokenTable, tokenSetInfo)
+        end
+    end
+
+    MoveModule.tokenWaitQueue = newTokenTable
+    actShip.lock()
+    actShip.highlightOn({0, 1, 0}, 0.1)
+    XW_cmd.SetReady(actShip)
+    return 1
+end
+
+-- Perform move designated by move_code on a ship and announce the result
+-- How move is preformed generally relies on MoveData.DecodeInfo for its code
+-- Includes token handling so nothing obscurs the final position
+-- Starts the wait coroutine that handles stuff done when ship settles down
+MoveModule.PerformMove = function(move_code, ship, ignoreCollisions)
+    local info = MoveData.DecodeInfo(move_code, ship)
+    local finData = MoveModule.GetFinalPosData(move_code, ship, ignoreCollisions)
+    local annInfo = {type=finData.finType, note=info.note, code=info.code}
+    if finData.finType == 'overlap' then
+        annInfo.note = info.collNote
+    elseif finData.finType == 'slide' then
+        -- I feel like something was supposed to be here
+    elseif finData.finType == 'move' then
+        if finData.collObj ~= nil then
+            annInfo.note = info.collNote
+            annInfo.collidedShip = finData.collObj
+        end
+    elseif finData.finType == 'stationary' then
+        -- And here as well
+    end
+
+    if finData.finType ~= 'overlap' then
+        MoveModule.MoveShip(ship, finData, move_code)
+        if finData.collObj ~= nil then
+            MoveModule.SpawnOverlapReminder(ship)
+        end
+    end
+    MoveModule.Announce(annInfo, 'all', ship)
+    return (finData.finType ~= 'overlap')
+end
+
+-- Spawn a 'BUMPED' informational button on the base that removes itself on click or next move
+MoveModule.SpawnOverlapReminder = function(ship)
+    Ship_RemoveOverlapReminder(ship)
+    remindButton = {click_function = 'Ship_RemoveOverlapReminder', label = 'BUMPED', rotation =  {0, 0, 0}, width = 1000, height = 350, font_size = 250}
+    if DB_isLargeBase(ship) == true then
+        remindButton.position = {0, 0.2, 2}
+    else
+        remindButton.position = {0, 0.3, 0.8}
+    end
+    ship.createButton(remindButton)
+end
+
+-- Remove the 'BUMPED' dummy button from a ship
+MoveModule.RemoveOverlapReminder = function(ship)
+    local buttons = ship.getButtons()
+    if buttons ~= nil then
+        for k,but in pairs(buttons) do if but.label == 'BUMPED' then ship.removeButton(but.index) end end
+    end
+end
+
+-- Remove the 'BUMPED' button from a ship (click function)
+function Ship_RemoveOverlapReminder(ship)
+    MoveModule.RemoveOverlapReminder(ship)
+end
+
+-- Check which ship has it's base closest to position (large ships have large bases!), that's the owner
+--   also check how far it is to the owner-changing position (margin of safety)
+-- Kinda tested: margin > 20mm = visually safe
+-- Arg can be a token ref or a position
+-- Returns {dist=distanceFromOwner, owner=ownerRef, margin=marginForNextCloseShip}
+MoveModule.GetTokenOwner = function(tokenPos)
+    local out = {owner=nil, dist=0, margin=-1}
+    local nearShips = XW_ObjWithinDist(tokenPos, Convert_mm_igu(120), 'ship')
+    if nearShips[1] == nil then return out end
+    local baseDist = {}
+    -- Take the base size into account for distances
+    for k,ship in pairs(nearShips) do
+        local realDist = Dist_Pos(tokenPos, ship.getPosition())
+        if DB_isLargeBase(ship) == true then realDist = realDist-Convert_mm_igu(10) end
+        table.insert(baseDist, {ship=ship, dist=realDist})
+    end
+    local nearest = baseDist[1]
+    for k,data in pairs(baseDist) do
+        if data.dist < nearest.dist then nearest = data end
+    end
+    local nextNearest = {dist=999}
+    for k,data in pairs(baseDist) do
+        if data.ship ~= nearest.ship and (data.dist < nextNearest.dist) then
+            nextNearest = data
+        end
+    end
+    return {owner=nearest.ship, dist=nearest.dist, margin=(nextNearest.dist-nearest.dist)/2}
+end
+
+-- COLOR CONFIGURATION FOR ANNOUNCEMENTS
+MoveModule.AnnounceColor = {}
+MoveModule.AnnounceColor.moveClear = {0.1, 1, 0.1}     -- Green
+MoveModule.AnnounceColor.moveCollision = {1, 0.5, 0.1} -- Orange
+MoveModule.AnnounceColor.action = {0.2, 0.2, 1}        -- Blue
+MoveModule.AnnounceColor.historyHandle = {0.1, 1, 1}   -- Cyan
+MoveModule.AnnounceColor.error = {1, 0.1, 0.1}         -- Red
+MoveModule.AnnounceColor.warn = {1, 0.25, 0.05}        -- Red - orange
+MoveModule.AnnounceColor.info = {0.6, 0.1, 0.6}        -- Purple
+
+-- Notify color or all players of some event
+-- Info: {ship=shipRef, info=announceInfo, target=targetStr}
+-- announceInfo: {type=typeOfEvent, note=notificationString}
+MoveModule.Announce = function(info, target, shipPrefix)
+    local annString = ''
+    local annColor = {1, 1, 1}
+    local shipName = ''
+
+    if shipPrefix ~= nil then
+        if type(shipPrefix) == 'string' then
+            shipName = shipPrefix .. ' '
+        elseif type(shipPrefix) == 'userdata' then
+            shipName = shipPrefix.getName() .. ' '
+        end
+    end
+    if info.type == 'move' or info.type == 'slide' or info.type == 'stationary' then
+        if info.collidedShip == nil then
+            annString = shipName .. info.note .. ' (' .. info.code .. ')'
+            annColor = MoveModule.AnnounceColor.moveClear
+        else
+            annString = shipName .. info.note .. ' (' .. info.code .. ') but is now touching ' .. info.collidedShip.getName()
+            annColor = MoveModule.AnnounceColor.moveCollision
+        end
+    elseif info.type == 'overlap' then
+        annString = shipName .. info.note .. ' (' .. info.code .. ') but there was no space to complete the move'
+        annColor = MoveModule.AnnounceColor.moveCollision
+    elseif info.type == 'historyHandle' then
+        annString = shipName .. info.note
+        annColor = MoveModule.AnnounceColor.historyHandle
+    elseif info.type == 'action' then
+        annString = shipName .. info.note
+        annColor = MoveModule.AnnounceColor.action
+    elseif info.type:find('error') ~= nil then
+        annString = shipName .. info.note
+        annColor = MoveModule.AnnounceColor.error
+    elseif info.type:find('warn') ~= nil then
+        annString = shipName .. info.note
+        annColor = MoveModule.AnnounceColor.warn
+    elseif info.type:find('info') ~= nil then
+        annString = shipName .. info.note
+        annColor = MoveModule.AnnounceColor.info
+    end
+
+    if target == 'all' then
+        printToAll(annString, annColor)
+    else
+        printToColor(target, annString, annColor)
+    end
+end
+
+-- END MAIN MOVEMENT MODULE
+--------
+
+--------
+-- TOKEN MODULE
+-- Moves tokens, clears positions from tokens, checks its owners, deducts a visible position after a ship move
+
+TokenModule = {}
+-- Table with refs for different token and template sources
 TokenModule.tokenSources = {}
 
--- Update token sources on each load
--- Restore sets if data is loaded
+-- Update token and template sources on each load
 TokenModule.onLoad = function()
     for k, obj in pairs(getAllObjects()) do
         if obj.tag == 'Infinite' then
@@ -1859,11 +2154,127 @@ TokenModule.onLoad = function()
     end
 end
 
--- Tokens waiting to be moved with ships
--- entry: {tokens={t1,t2,...}, ship=shipWaitingFor}
---t1: {ref=tRef, relPos = pos, relRot = rot}
--- elements wait here until ships are ready
+-- How far can tokens be to be considered owned bya  ship
+TokenModule.tokenReachDistance = Convert_mm_igu(100)
+-- By how much this token has to be distant from other ship "interception zone" to be visible
+-- (how far from an owner-switching-border it has to be so you can see whose it is)
+TokenModule.visibleMargin = Convert_mm_igu(15)
 
+-- Preset positions for tokens on and near the base
+-- Generally used only when their current position switches its owner after a move
+-- Positions on the base
+TokenModule.basePos = {}
+-- On base - small ships
+TokenModule.basePos.small = {}
+TokenModule.basePos.small.Focus     = { 12,  12}
+TokenModule.basePos.small.Evade     = { 12, -12}
+TokenModule.basePos.small.Stress    = {-12,  12}
+TokenModule.basePos.small.rest      = {-12, -12}
+-- On base - large ships
+TokenModule.basePos.large = {}
+TokenModule.basePos.large.Focus     = { 30,  30}
+TokenModule.basePos.large.Evade     = { 30,   0}
+TokenModule.basePos.large.Stress    = { 30, -30}
+TokenModule.basePos.large.Tractor   = {-30,  30}
+TokenModule.basePos.large.Ion       = {-30,   0}
+TokenModule.basePos.large.Lock      = {  0,  30}
+TokenModule.basePos.large.rest      = {-30, -30}
+-- Positions near the base
+-- Near base - small ships
+TokenModule.nearPos = {}
+TokenModule.nearPos.small = {}
+TokenModule.nearPos.small.Focus     = { 35,  25}
+TokenModule.nearPos.small.Evade     = { 35,   0}
+TokenModule.nearPos.small.Stress    = { 35, -25}
+TokenModule.nearPos.small.Ion       = {-35,  25}
+TokenModule.nearPos.small.Tractor   = {-35,   0}
+TokenModule.nearPos.small.Lock      = {  0,  40}
+TokenModule.nearPos.small.rest      = {-35, -25}
+-- Near base - large ships
+TokenModule.nearPos.large = {}
+TokenModule.nearPos.large.Focus     = { 55,  30}
+TokenModule.nearPos.large.Evade     = { 55,   0}
+TokenModule.nearPos.large.Stress    = { 55, -30}
+TokenModule.nearPos.large.Tractor   = {-55,  45}
+TokenModule.nearPos.large.Ion       = {-55,  15}
+TokenModule.nearPos.large.Weapons   = {-55, -15}
+TokenModule.nearPos.large.Lock      = {  0,  50}
+TokenModule.nearPos.large.rest      = {-55, -45}
+
+-- Deduct target token position in the world for a ship, token and some entry from TokenModule.basePos or .nearPos
+TokenModule.TokenPos = function(tokenName, ship, posTable)
+    local baseSize = DB_getBaseSize(ship)
+    local entry = posTable[baseSize].rest
+    for tokenEntryName, tEntry in pairs(posTable[baseSize]) do
+        if tokenName:find(tokenEntryName) ~= nil then
+            entry = tEntry
+        end
+    end
+    local tsPos = {Convert_mm_igu(entry[1]), 0.5, Convert_mm_igu(entry[2])}
+    return Vect_Sum(ship.getPosition(), Vect_RotateDeg(tsPos, ship.getRotation()[2]+180))
+end
+
+-- Return position for a given token that is on the base of given ship
+TokenModule.BasePosition = function(tokenName, ship)
+    local name = nil
+    if type(tokenName) == 'string' then
+            name = tokenName
+    elseif type(tokenName) == 'userdata' then
+        name = tokenName.getName()
+    end
+    return TokenModule.TokenPos(name, ship, TokenModule.basePos)
+end
+-- Return position for a given token that is near the base of given ship
+TokenModule.NearPosition = function(tokenName, ship)
+    local name = nil
+    if type(tokenName) == 'string' then
+            name = tokenName
+    elseif type(tokenName) == 'userdata' then
+        name = tokenName.getName()
+    else
+        print('fill me pls2')
+    end
+    return TokenModule.TokenPos(name, ship, TokenModule.nearPos)
+end
+
+-- Return a visible position for some token near some ship
+-- Priorities as follows (OK if token is still visible there as in you can see who is its owner easily):
+-- 1. Prefer the position given as 3rd argument if passed
+-- 2. Prefer position on a stack if a stack of tokens already belongs to a ship
+-- 3. Prefer position NEAR ship base as position table dictates
+-- 3. Prefer position ON ship base as position table dictates (if all else fails, this will be returned)
+TokenModule.VisiblePosition = function(tokenName, ship, preferredPos)
+    -- Check preferred position margin
+    if preferredPos ~= nil then
+        local prefInfo = TokenModule.TokenOwnerInfo(preferredPos)
+        if prefInfo.owner == ship and prefInfo.margin > TokenModule.visibleMargin then
+            return preferredPos
+        end
+    end
+    -- Check for present stacks
+    local currTokensInfo = TokenModule.GetShipTokensInfo(ship)
+    local currStack = {qty=-2, obj=nil}
+    for k,tokenInfo in pairs(currTokensInfo) do
+        if tokenInfo.token.getName() == tokenName and tokenInfo.token.getQuantity() > currStack.qty then
+            currStack.obj = tokenInfo.token
+            currStack.qty = currStack.obj.getQuantity()
+        end
+    end
+    if currStack.obj ~= nil then
+        return Vect_Sum(currStack.obj.getPosition(), {0, 0.7, 0})
+    end
+    -- Check for near near base position or return base position
+    local nearPos = TokenModule.NearPosition(tokenName, ship)
+    local nearData = TokenModule.TokenOwnerInfo(nearPos)
+    if nearData.margin < TokenModule.visibleMargin then
+        return TokenModule.BasePosition(tokenName, ship)
+    else
+        return nearPos
+    end
+end
+
+-- Check which tokens belong to a ship and queue them to be moved with it
+-- Needs the MoveModule.WaitForResting fired to actually use stuff from this queue
 TokenModule.QueueShipTokensMove = function(ship)
     local selfTokens = TokenModule.GetShipTokens(ship)
     if selfTokens[1] == nil then
@@ -1887,21 +2298,20 @@ TokenModule.QueueShipTokensMove = function(ship)
     end
     selfTokens = tokensExcl
     local waitTable = {tokens = {}, ship=ship}
+    -- Save relative position/rotation
     for k,token in pairs(selfTokens) do
-        --Vect_Print(ship.getPosition(), 'SP: ')
-        --Vect_Print(token.getPosition(), 'TP: ')
         local relPos = Vect_RotateDeg(Vect_Between(ship.getPosition(), token.getPosition()), -1*ship.getRotation()[2])
-        --Vect_Print(relPos, 'RP: ')
         local relRot = token.getRotation()[2] - ship.getRotation()[2]
         table.insert(waitTable.tokens, {ref=token, relPos=relPos, relRot=relRot})
     end
     table.insert(MoveModule.tokenWaitQueue, waitTable)
 end
 
--- Table for locks to be set and callback to call setting of them
--- It's easiest this way if we want target lock tokens to still retain functionality
---  when manually handled too
+-- Table for locks to be set and callback to trigger their naming and coloring
+-- Entry: {lock=targetLockRef, color=colorToTint, name=nameToSet}
 TokenModule.locksToBeSet = {}
+
+-- Callback to set ALL the locks in wueue
 function TokenModule_SetLocks()
     for k,info in pairs(TokenModule.locksToBeSet) do
         info.lock.call('manualSet', {info.color, info.name})
@@ -1910,6 +2320,10 @@ function TokenModule_SetLocks()
     TokenModule.locksToBeSet = {}
 end
 
+-- Take a token of some type and move to some position
+-- Player color argument only matters when taking target locks
+-- Returns ref to a newly taken token
+-- Highlights the token with type-aware color
 TokenModule.TakeToken = function(type, playerColor, dest)
     local takeTable = {}
     if dest ~= nil then
@@ -1925,108 +2339,7 @@ TokenModule.TakeToken = function(type, playerColor, dest)
     return newToken
 end
 
-TokenModule.TakeTemplate = function(infoCode)
-
-end
-
-TokenModule.tokenReachDistance = Convert_mm_igu(100)
-TokenModule.visibleMargin = Convert_mm_igu(15)
-
-TokenModule.basePos = {}
-TokenModule.basePos.small = {}
-TokenModule.basePos.small.Focus     = { 12,  12}
-TokenModule.basePos.small.Evade     = { 12, -12}
-TokenModule.basePos.small.Stress    = {-12,  12}
-TokenModule.basePos.small.rest      = {-12, -12}
-TokenModule.basePos.large = {}
-TokenModule.basePos.large.Focus     = { 30,  30}
-TokenModule.basePos.large.Evade     = { 30,   0}
-TokenModule.basePos.large.Stress    = { 30, -30}
-TokenModule.basePos.large.Tractor   = {-30,  30}
-TokenModule.basePos.large.Ion       = {-30,   0}
-TokenModule.basePos.large.Lock      = {  0,  30}
-TokenModule.basePos.large.rest      = {-30, -30}
-TokenModule.nearPos = {}
-TokenModule.nearPos.small = {}
-TokenModule.nearPos.small.Focus     = { 35,  25}
-TokenModule.nearPos.small.Evade     = { 35,   0}
-TokenModule.nearPos.small.Stress    = { 35, -25}
-TokenModule.nearPos.small.Ion       = {-35,  25}
-TokenModule.nearPos.small.Tractor   = {-35,   0}
-TokenModule.nearPos.small.Lock      = {  0,  40}
-TokenModule.nearPos.small.rest      = {-35, -25}
-TokenModule.nearPos.large = {}
-TokenModule.nearPos.large.Focus     = { 55,  30}
-TokenModule.nearPos.large.Evade     = { 55,   0}
-TokenModule.nearPos.large.Stress    = { 55, -30}
-TokenModule.nearPos.large.Tractor   = {-55,  45}
-TokenModule.nearPos.large.Ion       = {-55,  15}
-TokenModule.nearPos.large.Weapons   = {-55, -15}
-TokenModule.nearPos.large.Lock      = {  0,  50}
-TokenModule.nearPos.large.rest      = {-55, -45}
-
-TokenModule.TokenPos = function(tokenName, ship, posTable)
-    local baseSize = DB_getBaseSize(ship)
-    local entry = posTable[baseSize].rest
-    for tokenEntryName, tEntry in pairs(posTable[baseSize]) do
-        if tokenName:find(tokenEntryName) ~= nil then
-            entry = tEntry
-        end
-    end
-    local tsPos = {Convert_mm_igu(entry[1]), 0.5, Convert_mm_igu(entry[2])}
-    return Vect_Sum(ship.getPosition(), Vect_RotateDeg(tsPos, ship.getRotation()[2]+180))
-end
-
-TokenModule.BasePosition = function(tokenName, ship)
-    local name = nil
-    if type(tokenName) == 'string' then
-            name = tokenName
-    elseif type(tokenName) == 'userdata' then
-        name = tokenName.getName()
-    else
-        print('fill me pls1')
-    end
-    return TokenModule.TokenPos(name, ship, TokenModule.basePos)
-end
-TokenModule.NearPosition = function(tokenName, ship)
-    local name = nil
-    if type(tokenName) == 'string' then
-            name = tokenName
-    elseif type(tokenName) == 'userdata' then
-        name = tokenName.getName()
-    else
-        print('fill me pls2')
-    end
-    return TokenModule.TokenPos(name, ship, TokenModule.nearPos)
-end
-
-TokenModule.VisiblePosition = function(tokenName, ship, preferredPos)
-    if preferredPos ~= nil then
-        local prefInfo = TokenModule.TokenOwnerInfo(preferredPos)
-        if prefInfo.owner == ship and prefInfo.margin > TokenModule.visibleMargin then
-            return preferredPos
-        end
-    end
-    local currTokensInfo = TokenModule.GetShipTokensInfo(ship)
-    local currStack = {qty=-2, obj=nil}
-    for k,tokenInfo in pairs(currTokensInfo) do
-        if tokenInfo.token.getName() == tokenName and tokenInfo.token.getQuantity() > currStack.qty then
-            currStack.obj = tokenInfo.token
-            currStack.qty = currStack.obj.getQuantity()
-        end
-    end
-    if currStack.obj ~= nil then
-        return Vect_Sum(currStack.obj.getPosition(), {0, 0.7, 0})
-    end
-    local nearPos = TokenModule.NearPosition(tokenName, ship)
-    local nearData = TokenModule.TokenOwnerInfo(nearPos)
-    if nearData.margin < TokenModule.visibleMargin then
-        return TokenModule.BasePosition(tokenName, ship)
-    else
-        return nearPos
-    end
-end
-
+--===============================
 TokenModule.TokenOwnerInfo = function(tokenPos)
     local pos = nil
         local out = {token=nil, owner=nil, dist=0, margin=-1}
@@ -2035,8 +2348,6 @@ TokenModule.TokenOwnerInfo = function(tokenPos)
     elseif type(tokenPos) == 'userdata' then
         out.token = tokenPos
         pos = tokenPos.getPosition()
-    else
-        print('fill me pls')
     end
     local nearShips = XW_ObjWithinDist(pos, TokenModule.tokenReachDistance, 'ship')
     if nearShips[1] == nil then return out end
@@ -2140,229 +2451,7 @@ TokenModule.ClearPosition = function(pos, dist, ignoreShip)
     end
 end
 
-MoveModule.MoveShip = function(ship, finData, saveName)
-    XW_cmd.SetBusy(ship)
-    if finData.type ~= 'stationary' then
-        TokenModule.QueueShipTokensMove(ship)
-        local shipReach = Convert_mm_igu(mm_baseSize[DB_getBaseSize(ship)]+5)*(math.sqrt(2)/2)
-        TokenModule.ClearPosition(finData.finPos.pos, shipReach, ship)
-    end
-    local finPos = finData.finPos
-    if finData.noSave ~= true then
-        MoveModule.SaveStateToHistory(ship, true)
-    end
-    ship.setPositionSmooth(finPos.pos, false, true)
-    ship.setRotationSmooth(finPos.rot, false, true)
-    MoveModule.WaitForResting(ship)
-    if saveName ~= nil then
-        print('sdft: ' .. finData.finType)
-        MoveModule.AddHistoryEntry(ship, {pos=finPos.pos, rot=finPos.rot, move=saveName, part=finData.finPart, finType=finData.finType})
-    end
-end
-
-MoveModule.WaitForResting = function(ship)
-    table.insert(MoveModule.restWaitQueue, {ship=ship})
-    startLuaCoroutine(Global, 'restWaitCoroutine')
-end
-
-function API_PerformMove(argTable)
-    return MoveModule.PerformMove(argTable.code, argTable.ship, argTable.ignoreCollisions)
-end
-
--- Perform move designated by move_code on a ship
--- For some moves (like barrel rolls) collisons are automatically ignored, rest considers them normally
--- Includes token handling so nothing obscurs the final position
--- Starts the wait coroutine that handles stuff done when ship settles down
-MoveModule.PerformMove = function(move_code, ship, ignoreCollisions)
-
-    local info = MoveData.DecodeInfo(move_code, ship)
-    local finData = MoveModule.GetFinalPosData(move_code, ship, ignoreCollisions)
-    local annInfo = {type=finData.finType, note=info.note, code=info.code}
-    if finData.finType == 'overlap' then
-        annInfo.note = info.collNote
-    elseif finData.finType == 'slide' then
-        -- I feel like something was supposed to be here
-    elseif finData.finType == 'move' then
-        if finData.collObj ~= nil then
-            annInfo.note = info.collNote
-            annInfo.collidedShip = finData.collObj
-        end
-    elseif finData.finType == 'stationary' then
-        -- And here as well
-    end
-
-    if finData.finType ~= 'overlap' then
-        MoveModule.MoveShip(ship, finData, move_code)
-    end
-    MoveModule.Announce(annInfo, 'all', ship)
-    return (finData.finType ~= 'overlap')
-end
-
--- Spawn a 'BUMPED' informational button on the base that removes itself on click
--- TO_DO: Some non-obscuring way to indicate that?
-MoveModule.SpawnOverlapReminder = function(ship)
-    Ship_RemoveOverlapReminder(ship)
-    --remindButton = {click_function = 'Ship_RemoveOverlapReminder', label = 'B\nU\nM\nP', rotation =  {0, 0, 0}, width = 200, height = 1100, font_size = 200}
-    remindButton = {click_function = 'Ship_RemoveOverlapReminder', label = 'BUMPED', rotation =  {0, 0, 0}, width = 1000, height = 350, font_size = 250}
-    if DB_isLargeBase(ship) == true then
-        remindButton.position = {0, 0.2, 2}
-    else
-        remindButton.position = {0, 0.3, 0.8}
-        --remindButton.position = {-1, 0.25, 0}
-    end
-    ship.createButton(remindButton)
-end
-
--- Removes 'BUMPED' button from ship (click function)
-function Ship_RemoveOverlapReminder(ship)
-    local buttons = ship.getButtons()
-    if buttons ~= nil then
-        for k,but in pairs(buttons) do if but.label == 'BUMPED' then ship.removeButton(but.index) end end
-    end
-end
-
--- Check which ship has it's base closest to position (large ships have large bases!), thats the owner
---  also check how far it is to the owner-changing position (out margin of safety)
--- Kinda tested: margin > 20mm = visually safe
-MoveModule.GetTokenOwner = function(tokenPos)
-    local out = {owner=nil, dist=0, margin=-1}
-    local nearShips = XW_ObjWithinDist(tokenPos, Convert_mm_igu(120), 'ship')
-    if nearShips[1] == nil then return out end
-    local baseDist = {}
-    -- Take the base size into account for distances
-    for k,ship in pairs(nearShips) do
-        local realDist = Dist_Pos(tokenPos, ship.getPosition())
-        if DB_isLargeBase(ship) == true then realDist = realDist-Convert_mm_igu(10) end
-        table.insert(baseDist, {ship=ship, dist=realDist})
-    end
-    local nearest = baseDist[1]
-    for k,data in pairs(baseDist) do
-        if data.dist < nearest.dist then nearest = data end
-    end
-    local nextNearest = {dist=999}
-    for k,data in pairs(baseDist) do
-        if data.ship ~= nearest.ship and (data.dist < nextNearest.dist) then
-            nextNearest = data
-        end
-    end
-    return {owner=nearest.ship, dist=nearest.dist, margin=(nextNearest.dist-nearest.dist)/2}
-end
--- Get tokens that should belong to this ship, cram them into token waiting for movement table
---  AND FIRE THE SHIP WAITING COROUTINE!
--- This should be only called immediately before changing position of a ship
-MoveModule.QueueShipTokensMove = function(ship, queueShipMove)
-    -- This is because token next to a large ship is MUCH FARTHER from it than token near a small ship
-    local isShipLargeBase = DB_isLargeBase(ship)
-    local maxShipReach = nil
-    if isShipLargeBase == true then
-        maxShipReach = Convert_mm_igu(mm_largeBase*math.sqrt(2)/2)
-    else
-        maxShipReach = Convert_mm_igu(mm_smallBase*math.sqrt(2)/2)
-    end
-
-    -- Check for nearby tokens
-    local selfTokens = XW_ObjWithinDist(ship.getPosition(), maxShipReach+Convert_mm_igu(50), 'token')
-    -- Exclude currently used cloak tokens
-    local tokensExcl = {}
-    for k, token in pairs(selfTokens) do
-        if token.getName() == 'Cloak' then
-            local active = true
-            local buttons = token.getButtons()
-            if buttons ~= nil then
-                for k2, but in pairs(buttons) do
-                    if but.label == 'Decloak' then active = false break end
-                end
-            end
-            if active == false then table.insert(tokensExcl, token) end
-        else
-            table.insert(tokensExcl, token)
-        end
-    end
-    selfTokens = tokensExcl
-    -- Check which ones have our ship nearest, put them in a queue to be moved after ship rests
-    for k, token in pairs(selfTokens) do
-        local owner = XW_ClosestWithinDist(token, Convert_mm_igu(80), 'ship').obj
-        if owner == ship then
-            local infoTable = {}
-            infoTable.token = token
-            infoTable.ship = ship
-            local offset = Vect_Between(ship.getPosition(), token.getPosition())
-            --local offset = Vect_Sum(token.getPosition(), Vect_Scale(ship.getPosition(), -1))
-            infoTable.offset = Vect_RotateDeg(offset, -1*ship.getRotation()[2])
-            infoTable.relRot = token.getRotation()[2] - ship.getRotation()[2]
-            table.insert(MoveModule.tokenWaitQueue, infoTable)
-        end
-    end
-
-    if queueShipMove ~= nil then
-        table.insert(MoveModule.restWaitQueue, {ship=ship, lastMove=queueShipMove})
-        startLuaCoroutine(Global, 'restWaitCoroutine')
-    elseif queueShipMove == 'none' then
-        table.insert(MoveModule.restWaitQueue, {ship=ship})
-        startLuaCoroutine(Global, 'restWaitCoroutine')
-    end
-end
-
--- COLOR CONFIGURATION FOR ANNOUNCEMENTS
-MoveModule.AnnounceColor = {}
-MoveModule.AnnounceColor.moveClear = {0.1, 1, 0.1}     -- Green
-MoveModule.AnnounceColor.moveCollision = {1, 0.5, 0.1} -- Orange
-MoveModule.AnnounceColor.action = {0.2, 0.2, 1}        -- Blue
-MoveModule.AnnounceColor.historyHandle = {0.1, 1, 1}   -- Cyan
-MoveModule.AnnounceColor.error = {1, 0.1, 0.1}         -- Red
-MoveModule.AnnounceColor.warn = {1, 0.25, 0.05}        -- Red - orange
-MoveModule.AnnounceColor.info = {0.6, 0.1, 0.6}        -- Purple
-
--- Notify color or all players of some event
--- Info: {ship=shipRef, info=announceInfo, target=targetStr}
--- announceInfo: {type=typeOfEvent, note=notificationString}
-MoveModule.Announce = function(info, target, shipPrefix)
-    local annString = ''
-    local annColor = {1, 1, 1}
-    local shipName = ''
-
-    if shipPrefix ~= nil then
-        if type(shipPrefix) == 'string' then
-            shipName = shipPrefix .. ' '
-        elseif type(shipPrefix) == 'userdata' then
-            shipName = shipPrefix.getName() .. ' '
-        end
-    end
-    if info.type == 'move' or info.type == 'slide' or info.type == 'stationary' then
-        if info.collidedShip == nil then
-            annString = shipName .. info.note .. ' (' .. info.code .. ')'
-            annColor = MoveModule.AnnounceColor.moveClear
-        else
-            annString = shipName .. info.note .. ' (' .. info.code .. ') but is now touching ' .. info.collidedShip.getName()
-            annColor = MoveModule.AnnounceColor.moveCollision
-        end
-    elseif info.type == 'overlap' then
-        annString = shipName .. info.note .. ' (' .. info.code .. ') but there was no space to complete the move'
-        annColor = MoveModule.AnnounceColor.moveCollision
-    elseif info.type == 'historyHandle' then
-        annString = shipName .. info.note
-        annColor = MoveModule.AnnounceColor.historyHandle
-    elseif info.type == 'action' then
-        annString = shipName .. info.note
-        annColor = MoveModule.AnnounceColor.action
-    elseif info.type:find('error') ~= nil then
-        annString = shipName .. info.note
-        annColor = MoveModule.AnnounceColor.error
-    elseif info.type:find('warn') ~= nil then
-        annString = shipName .. info.note
-        annColor = MoveModule.AnnounceColor.warn
-    elseif info.type:find('info') ~= nil then
-        annString = shipName .. info.note
-        annColor = MoveModule.AnnounceColor.info
-    end
-
-    if target == 'all' then
-        printToAll(annString, annColor)
-    else
-        printToColor(target, annString, annColor)
-    end
-end
--- END MAIN MOVEMENT MODULE
+-- END TOKEN MODULE
 --------
 
 --------
@@ -2420,39 +2509,7 @@ XW_cmd.AddCommand('r', 'action')
 XW_cmd.AddCommand('rd', 'dialHandle')
 XW_cmd.AddCommand('sd', 'dialHandle')
 
--- Assign a set of dials to a ship
--- Fit for calling from outside, removes a set if it already exists for a ship
--- set_ship table: {set=dialTable, ship=shipRef}
--- dialTable: {dial1, dial2, dial3, ...}
-function DialAPI_AssignSet(set_ship)
 
-    local actSet = DialModule.GetSet(set_ship.ship)
-
-    if actSet ~= nil then
-        DialModule.RemoveSet(set_ship.ship)
-    end
-
-    local validSet = {}
-
-    for k,dial in pairs(set_ship.set) do
-
-        -- If there already is a dial of same description in those that are added now
-        if validSet[dial.getDescription()] ~= nil then
-            MoveModule.Announce({type='error_DialModule', note='tried to assign few of same dials'}, 'all', set_ship.ship)
-        else
-
-            -- If dial description is (so far) unique
-            validSet[dial.getDescription()] = {dial=dial, originPos=dial.getPosition()}
-        end
-
-        if dial.getVar('assignedShip') == nil then
-            dial.call('setShip', {set_ship.ship})
-        end
-    end
-
-    DialModule.AddSet(set_ship.ship, validSet)
-
-end
 
 -- Print active sets in play, just for debug
 DialModule.PrintSets = function()
@@ -2692,12 +2749,6 @@ DialModule.SaveNearby = function(ship)
     MoveModule.Announce({type='info_dialModule', note='had ' .. dialCount .. ' dials assigned (' .. DialModule.DialCount(ship) .. ' total now)' }, 'all', ship)
 end
 
-function LayoutGuides_Remove(ship)
-    local buttons = ship.getButtons()
-    if buttons ~= nil then
-        for k,but in pairs(buttons) do if but.label == '' or but.label == 'REMOVE' then ship.removeButton(but.index) end end
-    end
-end
 
 -- Unassign this dial from any sets it is found in
 -- Could check what ship set this is first, but it's more reliable this way
@@ -2743,7 +2794,7 @@ DialModule.isAssigned = function(dial)
 end
 
 -- Handle destroyed objects that may be of DialModule interest
-DialModule.ObjDestroyedHandle = function(obj)
+DialModule.onObjectDestroyed = function(obj)
     -- Remove dial set of destroyed ship
     if obj.tag == 'Figurine' then
         if DialModule.GetSet(obj) ~= nil then
@@ -3244,9 +3295,7 @@ DialModule.StartSlide = function(dial, playerColor)
     end
 end
 
-function API_StartSlide(argTable)
-    return DialModule.StartSlide(argTable.obj, argTable.playerColor)
-end
+
 
 -- Get slide range of a ship based on his last move
 -- Return: {fLen=howMuchForwardCanSlide, bLen=howMuchBackwardCanSlide}
@@ -3728,8 +3777,8 @@ end
 function onObjectDestroyed(dying_object)
     for k, obj in pairs(watchedObj) do if dying_object == obj then table.remove(watchedObj, k) end end
     -- Handle killing rulers and unassignment of dial sets
-    DialModule.ObjDestroyedHandle(dying_object)
-    MoveModule.ObjDestroyedHandle(dying_object)
+    DialModule.onObjectDestroyed(dying_object)
+    MoveModule.onObjectDestroyed(dying_object)
 end
 
 -- When table is loaded up, this is called
