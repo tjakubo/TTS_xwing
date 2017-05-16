@@ -3,8 +3,7 @@
 -- Issues, history at: https://github.com/tjakubo2/TTS_xwing
 -- ~~~~~~
 
-set = false     -- Was this lock dropped and named already?
-tinted = false  -- Was this lock picked up and tinted already?
+set = false     -- Was this lock tinted and named already?
 
 -- Colors for tinting on pickup
 colorTable = {}
@@ -22,8 +21,8 @@ colorTable['Black']= {0, 0, 0}
 
 -- Save self state
 function onSave()
-    if assignedShip ~= nil then
-        local state = {set=set, tinted=tinted}
+    if set  then
+        local state = {set=set}
         return JSON.encode(state)
     end
 end
@@ -31,15 +30,12 @@ end
 -- Restore self state
 function onLoad(save_state)
     if save_state ~= '' and save_state ~= 'null' and save_state ~= nil then
-        local state = JSON.decode(save_state)
-        set = state.set
-        tinted = state.tinted
+        set = JSON.decode(save_state).set
     end
 end
 
 -- Set function for external calls
 function manualSet(color_name)
-    tinted = true
     set = true
     self.setColorTint(colorTable[color_name[1]])
     self.setName(color_name[2])
@@ -47,30 +43,32 @@ end
 
 -- Tint on pick up
 function onPickedUp()
-    if tinted == false and self.held_by_color ~= nil then
+    if not set and self.held_by_color ~= nil then
       self.setColorTint(colorTable[self.held_by_color])
-      tinted = true
     end
 end
 
 -- Set name on drop near a ship
 function onDropped()
-    local spos = self.getPosition()
-    local spos = self.getPosition()
-    local nearest = nil
-    local minDist = 5
-    for k,ship in pairs(getAllObjects()) do
-        if ship.tag == 'Figurine' and ship.name ~= '' then
-            local pos = ship.getPosition()
-            local dist = math.sqrt(math.pow((spos[1]-pos[1]),2) + math.pow((spos[3]-pos[3]),2))
-            if dist < minDist then
-                nearest = ship
-                minDist = dist
+    if not set then
+        local spos = self.getPosition()
+        local spos = self.getPosition()
+        local nearest = nil
+        local minDist = 5
+        for k,ship in pairs(getAllObjects()) do
+            if ship.tag == 'Figurine' and ship.name ~= '' then
+                local pos = ship.getPosition()
+                local dist = math.sqrt(math.pow((spos[1]-pos[1]),2) + math.pow((spos[3]-pos[3]),2))
+                if dist < minDist then
+                    nearest = ship
+                    minDist = dist
+                end
             end
         end
-    end
-    if nearest ~= nil then
-        printToAll('Target lock named for ' .. nearest.getName(), {0.2, 0.2, 1})
-        set = true
+        if nearest ~= nil then
+            self.setName(nearest.getName())
+            printToAll('Target lock named for ' .. nearest.getName(), {0.2, 0.2, 1})
+            set = true
+        end
     end
 end
