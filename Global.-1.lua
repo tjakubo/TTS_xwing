@@ -540,6 +540,9 @@ XW_cmd.Process = function(obj, cmd)
             MoveModule.RedoMove(obj)
         elseif cmd == 'keep' then
             MoveModule.SaveStateToHistory(obj, false)
+        elseif cmd:sub(1,8) == 'restore#' then
+            local keyNum = tonumber(cmd:sub(9, -1))
+            MoveModule.Restore(obj, keyNum)
         end
     elseif type == 'dialHandle' then
         if cmd == 'sd' then
@@ -1141,11 +1144,42 @@ end
 -- Entry: {pos=position, rot=rotation, move=moveThatGotShipHere, part=partOfMovePerformed}
 MoveModule.moveHistory = {}
 
+
+MoveModule.emergencyRestore = {}
+MoveModule.restoreBufferPointer = 0
+MoveModule.restoreBufferSize = 25
+-- {srcName=name, savedPos={pos=pos, rot=rot}}
+
+MoveModule.Restore = function(ship, key)
+    if #MoveModule.emergencyRestore < key or key <= 0 then
+        MoveModule.Announce({type='historyHandle', note='Restore key (number after the #) invalid'}, 'all')
+        return false
+    else
+        local data = MoveModule.emergencyRestore[key]
+        ship.setPosition(data.savedPos.pos)
+        ship.setRotation(data.savedPos.rot)
+        MoveModule.SaveStateToHistory(ship, true)
+        MoveModule.Announce({type='historyHandle', note='has been restored to position ' .. data.srcName .. ' was last seen at'}, 'all', ship)
+        return true
+    end
+end
+
+MoveModule.AddRestorePoint = function(entry)
+    local newKey = MoveModule.restoreBufferPointer + 1
+    if newKey > MoveModule.restoreBufferSize then
+        newKey = 1
+    end
+    MoveModule.Announce({type='historyHandle', note=entry.srcName .. '\'s ship has been deleted - you can respawn the model and use \'restore#' .. newKey .. '\' command to restore its position'}, 'all')
+    MoveModule.emergencyRestore[newKey] = entry
+    MoveModule.restoreBufferPointer = newKey
+end
+
 -- Hostory-related commads
 XW_cmd.AddCommand('[qz]', 'historyHandle')
 XW_cmd.AddCommand('undo', 'historyHandle')
 XW_cmd.AddCommand('redo', 'historyHandle')
 XW_cmd.AddCommand('keep', 'historyHandle')
+XW_cmd.AddCommand('restore#[1-9][0-9]?', 'historyHandle')
 
 -- Return history of a ship
 MoveModule.GetHistory = function(ship)
@@ -1331,9 +1365,13 @@ end
 -- Handle destroyed objects (delete their history)
 MoveModule.ObjDestroyedHandle = function(obj)
     if not XW_ObjMatchType(obj, 'ship') then return end
+    if MoveModule.GetLastMove(obj).move ~= 'none' then
+        local lastMove = MoveModule.GetLastMove(obj)
+        MoveModule.AddRestorePoint({srcName=obj.getName(), savedPos={pos=lastMove.pos, rot=lastMove.rot}})
+    end
     for k,hist in pairs(MoveModule.moveHistory) do
         if hist.ship == ship then
-            table.remove(ModeModule.moveHistory, k)
+            table.remove(MoveModule.moveHistory, k)
             break
         end
     end
