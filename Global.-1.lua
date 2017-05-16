@@ -93,6 +93,11 @@ function Vect_Sum(vec1, vec2)
     return out
 end
 
+-- Sebtract vector from another
+function Vect_Sub(vec1, vec2)
+    return Vect_Sum(vec1, Vect_Scale(vec2, -1))
+end
+
 -- Inverse each element of a vector
 function Vect_Inverse(vector)
     if type(vector) ~= 'table' then
@@ -129,6 +134,8 @@ function Vect_Length(vector)
     return math.sqrt(vector[1]*vector[1] + vector[3]*vector[3])
 end
 
+-- Scale the vector to have set length
+-- Negative "length" - opposite of set length
 function Vect_SetLength(vector, len)
     if type(vector) ~= 'table' or type(len) ~= 'number' then
         print('Vect_SetLength: arg not a table/number pair!')
@@ -143,13 +150,22 @@ function Vect_RotateDeg(vector, degRotation)
 end
 
 -- Rotation of a 3D vector over its second element axis, arg in radians
+-- Elements past 3rd are copied
 function Vect_RotateRad(vector, radRotation)
     if type(vector) ~= 'table' or type(radRotation) ~= 'number' then
         print('Vect_RotateRad: arg not a table/number pair!')
     end
     local newX = math.cos(radRotation) * vector[1] + math.sin(radRotation) * vector[3]
     local newZ = math.sin(radRotation) * vector[1] * -1 + math.cos(radRotation) * vector[3]
-    return {newX, vector[2], newZ}
+    local out = {newX, vector[2], newZ}
+
+    local k=4
+    while vector[k] ~= nil do
+        table.insert(out, vector[k])
+        k = k+1
+    end
+
+    return out
 end
 
 -- Vector pointing from one position to another
@@ -164,7 +180,7 @@ end
 function Vect_Print(vec, name)
     local out = ''
     if name ~= nil then
-        out = name .. '[ '
+        out = name .. ': [ '
     end
     local k = 1
     while vec[k] ~= nil do
@@ -219,7 +235,7 @@ function math.round(arg, decPlaces)
         return math.floor(num * mult + 0.5) / mult
     end
 end
-
+--============================
 -- Dumbest TTS issue ever workaround
 function TTS_Serialize(pos)
     return {pos[1], pos[2], pos[3]}
@@ -462,7 +478,6 @@ XW_cmd.Process = function(obj, cmd)
         elseif cmd == 'hist' then
             XW_cmd.ShowHist(obj)
         end
-        return true
     end
 
     -- Return if not ready, else lock object and process
@@ -599,7 +614,7 @@ MoveData.MoveLength = function(moveInfo)
 end
 
 -- Regex match for moves that support sliding base after execution
-MoveData.slideMatchTable = {'x[rle]', 'x[rle][fb]?', 'c[rle][fb]?', 't[rle][123]t', 'ch[rle][fb]'}
+MoveData.slideMatchTable = {'x[rle]', 'x[rle][fb]?', 'c[rle][fb]?', 't[rle][123]t', 'ch[rle][fb]', 'chadj'}
 -- Check if move allows sliding based on above table
 -- Argumant can be either move code or move info as per MoveData.DecodeInfo
 MoveData.IsSlideMove = function(moveInfoCode)
@@ -622,7 +637,7 @@ MoveData.IsSlideMove = function(moveInfoCode)
 end
 -- Get slide length (if move supports sliding) IN MILIMETERS
 MoveData.SlideLength = function(moveInfo)
-    if type(moveInfo) ~= 'table' and type(moveInfo.size) ~= 'string' then
+    if type(moveInfo) ~= 'table' then
         print('MoveData.SlideLength: arg of invalid type')
     end
     if moveInfo.traits.slide ~= true then
@@ -630,9 +645,9 @@ MoveData.SlideLength = function(moveInfo)
         return nil
     else
         baseSize = mm_baseSize[moveInfo.size]
-        if moveInfo.type == 'roll' or moveInfo.type == 'echo' then
+        if moveInfo.type == 'roll' then
             return baseSize
-        elseif moveInfo.type == 'turn' and moveInfo.extra == 'talon' then
+        elseif (moveInfo.type == 'turn' and moveInfo.extra == 'talon') or moveInfo.type == 'echo' then
             return baseSize/2
         end
     end
@@ -663,8 +678,11 @@ MoveData.SlideMoveOrigin = function(moveInfo)
             ang = 90
         end
         data = MoveData.LUT.ConstructData({type='bank', speed=2, size='small', code='br2'})
+        --local len =  MoveData.SlideLength(moveInfo)/2
+        --local backEntry = {-1*len/(math.sqrt(2)), 0, -1*len/(math.sqrt(2)), 0}
         if (moveInfo.dir == 'left' and moveInfo.extra == 'backward') or (moveInfo.dir == 'right' and moveInfo.extra == 'forward') then
             data = MoveData.LeftVariant(data)
+            --backEntry[1] = -1*backEntry[1]
         end
         data = MoveData.RotateEntry(data, ang)
         if moveInfo.dir == 'right' then
@@ -672,6 +690,8 @@ MoveData.SlideMoveOrigin = function(moveInfo)
         else
             data[4] = data[4] + 90
         end
+        --data = Vect_Sum(data, backEntry)
+        data[3] = data[3] - MoveData.SlideLength(moveInfo)/2
         --data[4] = data[4] - ang
         --[[if moveInfo.dir == 'right' then
             data[4] = data[4] - 90
@@ -695,8 +715,26 @@ end
 -- (MoveData.SlideMoveOrigin + this function) provide real ship position offset
 --   given some slide part
 MoveData.SlidePartOffset = function(moveInfo, part)
+
     if moveInfo.extra == 'talon' then
         return {0, 0, -1*MoveData.SlideLength(moveInfo)*(part/MoveData.partMax), 0}
+    elseif moveInfo.type == 'echo' then
+        if moveInfo.extra == 'adjust' then
+            --local dirVec = {0, 0, MoveData.SlideLength(moveInfo), 0}
+            --dirVec = Vect_SetLength(dirVec, MoveData.SlideLength(moveInfo)/2)
+            --local adjPart = part - 500
+            --return Vect_Scale(dirVec, adjPart/MoveData.partMax)
+
+            return {0, 0, MoveData.SlideLength(moveInfo)*(part/MoveData.partMax), 0}
+        else
+            print('spoenadj:' .. part)
+            local dirVec = {-1, 0, 1, 0}
+            if (moveInfo.dir == 'left' and moveInfo.extra == 'backward') or (moveInfo.dir == 'right' and moveInfo.extra == 'forward') then
+                dirVec[1] = -1*dirVec[1]
+            end
+            dirVec = Vect_SetLength(dirVec, MoveData.SlideLength(moveInfo))
+            return Vect_Scale(dirVec, part/MoveData.partMax)
+        end
     else
         return {0, 0, MoveData.SlideLength(moveInfo)*(part/MoveData.partMax), 0}
     end
@@ -881,6 +919,10 @@ MoveData.DecodeInfo = function (move_code, ship)
         end
         info.note = 'dechocloaked ' .. info.dir .. ' ' .. info.extra
         info.collNote = 'tried to dechocloak ' .. info.dir .. ' ' .. info.extra
+
+        if move_code == 'chadj' then
+            info.extra = 'adjust'
+        end
     elseif move_code:sub(1,1) == 'x' or move_code:sub(1,1) == 'c' then
         -- Rolls:
         -- These move have noPartial set to true so there's no move if final pos obstructed
@@ -968,7 +1010,8 @@ MoveData.DecodePartSlide = function(move_code, ship, part)
     local info = MoveData.DecodeInfo(move_code, ship)
     local slideOrigin = MoveData.SlideMoveOrigin(info)
     print('dps_ang: ' .. slideOrigin[4])
-    local offset = MoveData.SlidePartOffset(info, part)
+    local offset = Vect_RotateDeg(MoveData.SlidePartOffset(info, part), slideOrigin[4])
+    Vect_Print(offset, 'dps_offset')
     return Vect_Sum(slideOrigin, offset)
 end
 
@@ -1075,10 +1118,16 @@ MoveModule.PrintHistory = function(ship)
         local k=1
         while histData.history[k] ~= nil do
             local entry = histData.history[k]
-            if k == histData.actKey then
-                print(' >> ' .. entry.move)
+            local typeStr = ' (' .. entry.finType
+            if entry.part ~= nil then
+                typeStr = typeStr .. ':' .. entry.part .. ')'
             else
-                print(' -- ' .. entry.move)
+                typeStr = typeStr .. ')'
+            end
+            if k == histData.actKey then
+                print(' >> ' .. entry.move .. typeStr)
+            else
+                print(' -- ' .. entry.move .. typeStr)
             end
             k = k+1
         end
@@ -1130,7 +1179,7 @@ MoveModule.SaveStateToHistory = function(ship, beQuiet)
             MoveModule.Announce({type='historyHandle', note='already has current position saved'}, 'all', ship)
         end
     else
-        local entry = {pos=ship.getPosition(), rot=ship.getRotation(), move='position save', part=nil}
+        local entry = {pos=ship.getPosition(), rot=ship.getRotation(), move='position save', part=nil, finType='special'}
         MoveModule.AddHistoryEntry(ship, entry)
         if beQuiet ~= true then
             MoveModule.Announce({type='historyHandle', note='stored current position'}, 'all', ship)
@@ -3214,8 +3263,13 @@ DialModule.StartSlide = function(dial, playerColor)
         print('DialClick_SlideStart lastMove.move: ' .. lastMove.move)
         if lastMove.part ~= nil and lastMove.finType == 'slide' and MoveData.IsSlideMove(lastMove.move) then
             dial.setVar('Slide_ongoing', true)
-            local slideRange = DialModule.GetSlideRange(ship, lastMove.move, lastMove.part)
-            table.insert(DialModule.slideDataQueue, {dial=dial, ship=ship, pColor=playerColor, range=slideRange})
+            --print('moving')
+            local info = MoveData.DecodeInfo(lastMove.move, ship)
+            --local slideRange = DialModule.GetSlideRange(ship, info, lastMove.part)
+            --ship.setPosition(slideRange.pos)
+            --ship.setRotation(slideRange.rot)
+            local zeroPos = DialModule.SlideZeroPos(ship, info, lastMove.part)
+            table.insert(DialModule.slideDataQueue, {dial=dial, ship=ship, pColor=playerColor, zeroPos=zeroPos, moveInfo=info})
             TokenModule.QueueShipTokensMove(ship)
             XW_cmd.SetBusy(ship)
             MoveModule.Announce({type='move', note='manually adjusted base slide on his last move', code=lastMove.move}, 'all', ship)
@@ -3232,11 +3286,10 @@ end
 -- Get slide range of a ship based on his last move
 -- Return: {fLen=howMuchForwardCanSlide, bLen=howMuchBackwardCanSlide}
 -- Return nil if last move doesn't allow slides
-DialModule.GetSlideRange = function(ship, moveCode, currPart)
-    local info = MoveData.DecodeInfo(moveCode, ship)
-    local fullLength = Convert_mm_igu(MoveData.SlideLength(info))
-    local travelledLength = (currPart/MoveData.partMax)*fullLength
-    return {fLen = fullLength - travelledLength, bLen = travelledLength}
+DialModule.SlideZeroPos = function(ship, info, currPart)
+    local currData = MoveData.SlidePartOffset(info, currPart)
+    local zeroPos = MoveModule.EntryToPos(Vect_Scale(currData, -1), ship)
+    return zeroPos
 end
 
 -- Table with data slide coroutines pop and process
@@ -3251,45 +3304,52 @@ function SlideCoroutine()
     local dial = DialModule.slideDataQueue[#DialModule.slideDataQueue].dial
     local ship = DialModule.slideDataQueue[#DialModule.slideDataQueue].ship
     local pColor = DialModule.slideDataQueue[#DialModule.slideDataQueue].pColor
-    local range = DialModule.slideDataQueue[#DialModule.slideDataQueue].range
+    local zeroPos = DialModule.slideDataQueue[#DialModule.slideDataQueue].zeroPos
+    local info = DialModule.slideDataQueue[#DialModule.slideDataQueue].moveInfo
+    Vect_Print(zeroPos.pos, 'sc_zpp')
+    Vect_Print(zeroPos.rot, 'sc_zpr')
+    ---local slideVec = DialModule.slideDataQueue[#DialModule.slideDataQueue].slideVec
+    ---local range = DialModule.slideDataQueue[#DialModule.slideDataQueue].range
     table.remove(DialModule.slideDataQueue)
     ship.setVar('Slide_ongoing', true)
     broadcastToColor(ship.getName() .. '\'s slide adjust started!', pColor, {0.5, 1, 0.5})
-    local initShipPos = ship.getPosition()
-    local shipRot = ship.getRotation()[2]+180
+    ---local initShipPos = ship.getPosition()
+    ---local shipRot = ship.getRotation()[2]+180
     -- Position of the ship on most-backward slide
-    local zeroShipPos = Vect_Sum(initShipPos, Vect_RotateDeg({0, 0, -1*range.bLen}, shipRot))
+    ---local zeroShipPos = Vect_Sum(initShipPos, Vect_RotateDeg({0, 0, -1*range.bLen}, shipRot+45))
     -- Slide vector, adding it to zeroShipPos gives us position on most-forward slide
-    local tranVect = Vect_RotateDeg({0, 0, range.fLen + range.bLen}, shipRot)
+    --============================================================ FUCKKKKKKKKKKK
+    ---local tranVect = Vect_RotateDeg({0, 0, range.fLen + range.bLen}, shipRot+45)
+
 
     -- Ships that can collide with sliding one
     local collShips = {}
-    local shipCollRange = nil
+    local shipCollRange = Convert_mm_igu(mm_baseSize[info.size]*math.sqrt(2)/2)
     -- Since we'll be doing collision checks every frame, aggresively filter out duplicate ships
     local uniqueFilter = {}
     uniqueFilter[ship.getGUID()] = true
-    if DB_isLargeBase(ship) then
-        shipCollRange = mm_largeBase/2
-    else
-        shipCollRange = mm_smallBase/2
-    end
+
     -- Range = (large ship radius + current ship radius)*1.05 -- so it covers every ship
     --   a collision is possible with
     -- May be not enough for super long slides (for now its OK)
-    local totalCollRange = ((Convert_mm_igu((mm_largeBase/2)*math.sqrt(2)))+Convert_mm_igu(shipCollRange*math.sqrt(2)))*1.05
+    local totalCollRange = ( Convert_mm_igu(mm_largeBase*math.sqrt(2)/2) + shipCollRange ) * 1.05
     -- Add ships near zero position
-    for k,cShip in pairs(XW_ObjWithinDist(zeroShipPos, totalCollRange, 'ship')) do
-        if cShip ~= ship and uniqueFilter[cShip.getGUID()] == nil then
+    for k,cShip in pairs(XW_ObjWithinDist(zeroPos.pos, totalCollRange, 'ship')) do
+        if uniqueFilter[cShip.getGUID()] == nil then
             table.insert(collShips, cShip)
             uniqueFilter[cShip.getGUID()] = true
         end
     end
     -- Add ships near max position
-    for k,cShip in pairs(XW_ObjWithinDist(Vect_Sum(zeroShipPos, tranVect), totalCollRange, 'ship')) do
+    for k,cShip in pairs(XW_ObjWithinDist(MoveModule.EntryToPos(MoveData.SlidePartOffset(info, MoveData.partMax), zeroPos).pos, totalCollRange, 'ship')) do
         if uniqueFilter[cShip.getGUID()] == nil then
             table.insert(collShips, cShip)
             uniqueFilter[cShip.getGUID()] = true
         end
+    end
+
+    for k, cShip in pairs(collShips) do
+        print('cs: ' .. cShip.getName())
     end
 
     -- Get a "measurement" based on sliding player cursor position
@@ -3307,9 +3367,13 @@ function SlideCoroutine()
 
     -- Set up initial shift offset so user doesn't get a "snap" on imperfect position button click
     -- Also add it if slide is not even forward/backward
-    local initShift=getPointerOffset(dial,pColor).shift
-    local len = range.fLen + range.bLen
-    initShift = initShift + (range.fLen/(range.fLen + range.bLen))*3 - 1.5
+    local initShift = getPointerOffset(dial,pColor).shift
+    local fullSlideLen = Convert_mm_igu(MoveData.SlideLength(info))
+    --local sPos = ship.getPosition()
+    local lenToTravel = fullSlideLen - Dist_Pos(ship.getPosition(), zeroPos.pos)
+    --local len = range.fLen + range.bLen
+    --initShift = initShift + (range.fLen/(range.fLen + range.bLen))*3 - 1.5
+    initShift = initShift + (lenToTravel/(fullSlideLen))*3 - 1.5
     local lastShift = initShift
 
     -- To skip some checks if we already slid into collision, skip subsequent check
@@ -3347,11 +3411,14 @@ function SlideCoroutine()
         adjMeas = adjMeas + 1.5
 
         -- Check for collisions on requested slide position
-        local targetPos = Vect_Sum(zeroShipPos, Vect_Scale(tranVect, adjMeas/3))
-        local collInfo = MoveModule.CheckCollisions(ship, {pos=targetPos, rot=ship.getRotation()}, collShips)
+        --local targetPos = Vect_Sum(zeroShipPos, Vect_Scale(tranVect, adjMeas/3))
+        local measPart = adjMeas*(MoveData.partMax/3)
+        targetPos = MoveModule.EntryToPos(MoveData.SlidePartOffset(info, measPart), zeroPos)
+        local collInfo = MoveModule.CheckCollisions(ship, {pos=targetPos.pos, rot=targetPos.rot}, collShips)
         if collInfo.coll == nil then
             -- If position is clear, set it
-            ship.setPosition(targetPos)
+            ship.setPosition(targetPos.pos)
+            ship.setRotation(targetPos.rot)
             lastShift = adjMeas
             -- Set the blocking variables to false
             blockFwd = false
@@ -3368,12 +3435,16 @@ function SlideCoroutine()
                 dirFwd = false
             end
             if (dirFwd and not blockFwd) or (not dirFwd and not blockBwd) then
-                local tryPos = Vect_Sum(zeroShipPos, Vect_Scale(tranVect, adjMeas/3))
+                measPart = adjMeas*(MoveData.partMax/3)
+                local tryPos = MoveModule.EntryToPos(MoveData.SlidePartOffset(info, measPart), zeroPos)
+                --local tryPos = Vect_Sum(zeroShipPos, Vect_Scale(tranVect, adjMeas/3))
                 -- Check for collisions there
-                collInfo = MoveModule.CheckCollisions(ship, {pos=tryPos, rot=ship.getRotation()}, collShips)
+                collInfo = MoveModule.CheckCollisions(ship, {pos=tryPos.pos, rot=tryPos.rot}, collShips)
                 -- If it is clear, set it
                 if collInfo.coll == nil then
-                    ship.setPosition(Vect_Sum(zeroShipPos, Vect_Scale(tranVect, adjMeas/3)))
+                    --ship.setPosition(Vect_Sum(zeroShipPos, Vect_Scale(tranVect, adjMeas/3)))
+                    ship.setPosition(tryPos.pos)
+                    ship.setRotation(tryPos.rot)
                     lastShift = adjMeas
                 else
                     -- Indicate that this sirection is blocked
@@ -3385,6 +3456,7 @@ function SlideCoroutine()
                 end
             end
         end
+        print('scrt: ' .. tostring(blockFwd) .. ' : ' .. tostring(blockBwd) .. tostring(nil))
         coroutine.yield(0)
 
         -- This ends if player switches color, ship or dial vanishes or button is clicked setting slide var to false
@@ -3392,7 +3464,12 @@ function SlideCoroutine()
     if Player[pColor] ~= nil then broadcastToColor(ship.getName() .. '\'s slide adjust ended!', pColor, {0.5, 1, 0.5}) end
     dial.setVar('Slide_ongoing', false)
     ship.setVar('Slide_ongoing', false)
-    MoveModule.AddHistoryEntry(ship, {pos=ship.getPosition(), rot=ship.getRotation(), move='manual slide'})
+    if info.type == 'echo' and info.extra ~= 'adjust' then
+        MoveModule.AddHistoryEntry(ship, {pos=ship.getPosition(), rot=ship.getRotation(), move='chadj', part=MoveData.partMax/2, finType='slide'})
+    else
+        MoveModule.AddHistoryEntry(ship, {pos=ship.getPosition(), rot=ship.getRotation(), move='manual slide', finType='special'})
+    end
+
     return 1
 end
 
