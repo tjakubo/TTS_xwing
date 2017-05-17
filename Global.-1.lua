@@ -5,6 +5,12 @@
 -- Based on a work of: Flolania, Hera Vertigo
 -- ~~~~~~
 
+-- ~~~~~~
+-- Code contributions
+--  - Characted width data: Indimeco
+--  - http://github.com/Indimeco/Tabletop-Simulator-Misc
+-- ~~~~~~
+
 -- Should the code execute print functions or skip them?
 -- This should be set to false on every release
 print_debug = true
@@ -209,7 +215,7 @@ end
 
 -- Check if table is empty
 function table.empty(tab)
-    return (next(myTable) == nil)
+    return (next(tab) == nil)
 end
 
 -- Sign function, zero for zero
@@ -2339,7 +2345,13 @@ TokenModule.TakeToken = function(type, playerColor, dest)
     return newToken
 end
 
---===============================
+-- Get owner info from a token or positions
+-- Return:  {
+--      token   <- passed token ref if arg was a token ref
+--      owner   <- ship ref to owner, nil if none
+--      dist    <- distance to owner (igu)
+--      margin  <- how far from owner token would have to be moved to change owner
+--          }
 TokenModule.TokenOwnerInfo = function(tokenPos)
     local pos = nil
         local out = {token=nil, owner=nil, dist=0, margin=-1}
@@ -2382,6 +2394,7 @@ TokenModule.TokenOwnerInfo = function(tokenPos)
     return out
 end
 
+-- Return table of MoveModule.GetTokenInfo entries for all tokens withis some distance of given position
 TokenModule.GetNearTokensInfo = function(pos, dist)
     local reachDist = TokenModule.tokenReachDistance
     if dist ~= nil then
@@ -2396,6 +2409,7 @@ TokenModule.GetNearTokensInfo = function(pos, dist)
     return shipTokensInfo
 end
 
+-- Return table of MoveModule.GetTokenInfo enties for all tokens that are owned by given ship
 TokenModule.GetShipTokensInfo = function(ship)
     -- Check for nearby tokens
     local nearTokens = XW_ObjWithinDist(ship.getPosition(), TokenModule.tokenReachDistance, 'token')
@@ -2409,6 +2423,7 @@ TokenModule.GetShipTokensInfo = function(ship)
     return shipTokensInfo
 end
 
+-- Return table of object references for all tokens that are owned by given ship
 TokenModule.GetShipTokens = function(ship)
     -- Check for nearby tokens
     local shipTokensInfo = TokenModule.GetShipTokensInfo(ship)
@@ -2419,10 +2434,10 @@ TokenModule.GetShipTokens = function(ship)
     return tokens
 end
 
-TokenModule.MoveOnBase = function(token, ship)
-
-end
-
+-- Clear given distance within position from tokens
+-- If given third argument, this hip tokens will be ignored
+-- Tokens that have an owner will be moved near(er)/on it
+-- Stray tokens will be yanked away
 TokenModule.ClearPosition = function(pos, dist, ignoreShip)
     local clearDist = dist + Convert_mm_igu(20)
     local posTokenInfo = TokenModule.GetNearTokensInfo(pos, clearDist)
@@ -2436,12 +2451,10 @@ TokenModule.ClearPosition = function(pos, dist, ignoreShip)
                 else
                     tokenInfo.token.setPositionSmooth(visPos)
                 end
-            else --if tokenInfo.owner ~= ignoreShip then
+            else
                 local ptVect = Vect_Between(pos, tokenInfo.token.getPosition())
-                --local ptVect = Vect_Sum(Vect_Scale(pos, -1), tokenInfo.token.getPosition())
                 ptVect[2] = 0
                 local actDist = Dist_Pos(tokenInfo.token.getPosition(), pos)
-                --print('CD: ' .. clearDist .. ' AD: ' .. actDist)
                 local distToMove = 2*clearDist - actDist
                 local targetPos = Vect_Sum(tokenInfo.token.getPosition(), Vect_SetLength(ptVect, distToMove))
                 targetPos[2] = targetPos[2] + 0.5
@@ -2488,7 +2501,7 @@ function DialPickedUp(dialTable)
 end
 
 -- This is called evey time a dialling is dropped
--- Spawn first buttos if this is an active dial or return if it's not
+-- Spawn first buttons if this is an active dial or return if it's not
 function DialDropped(dialTable)
     if dialTable.ship == nil then return end
     local actSet = DialModule.GetSet(dialTable.ship)
@@ -2501,14 +2514,14 @@ end
 
 DialModule = {}
 
--- set: {ship=shipRef, activeDial=actDialInfo, dialSet=dialData}
+-- Active dial sets for ships
+-- {Set1, Set2, ... , SetN}
+-- Set: {ship=shipRef, activeDial=actDialInfo, dialSet=dialData}
 -- dialData: {dial1Info, dial2Info, dial3Info ...}
--- dialInfo (and actDialInfo): {dial=dialRef, originPos=origin}
+-- dialInfo, actDialInfo: {dial=dialRef, originPos=origin}
 DialModule.ActiveSets = {}
-XW_cmd.AddCommand('r', 'action')
 XW_cmd.AddCommand('rd', 'dialHandle')
 XW_cmd.AddCommand('sd', 'dialHandle')
-
 
 
 -- Print active sets in play, just for debug
@@ -2580,13 +2593,14 @@ DialModule.AddSet = function(ship, set)
     end
 end
 
--- Distance (circle from ship) at wchich dials can be to be registered
+-- Distance (circle from ship) at which dials can be palce to be registered
 saveNearbyCircleDist = Convert_mm_igu(160)
 
 -- Save nearby dials layout
 -- Detects layout center (straight dials as reference) and assigns dials that are appropriately placed
 -- If dials are already assigned to this ship, they are ignored
 -- If one of dials is assigned to other ship, unassign and proceed
+-- TO_DO: Split this shit down
 DialModule.SaveNearby = function(ship)
     local nearbyDialsAll = XW_ObjWithinDist(ship.getPosition(), saveNearbyCircleDist, 'dial')
     -- Nothing nearby
@@ -2902,6 +2916,9 @@ DialModule.onSave = function()
     return DialModule.GetSaveData()
 end
 
+-- Range ruler action
+XW_cmd.AddCommand('r', 'action')
+
 -- Perform an automated action
 -- Can be called externally for stuff like range ruler spawning
 DialModule.PerformAction = function(ship, type, playerColor)
@@ -2961,7 +2978,7 @@ DialModule.PerformAction = function(ship, type, playerColor)
     MoveModule.Announce(announceInfo, 'all', ship)
 end
 
--- Keep spawned rulers here so you can delete them with same button as for spawn
+-- Spawned rulers are kept there
 -- Entry: {ship=shipRef, ruler=rulerObjRef}
 DialModule.SpawnedRulers = {}
 -- Click function for ruler button
@@ -2971,11 +2988,13 @@ function Ruler_SelfDestruct(obj)
     end
     obj.destruct()
 end
-
--- ================== ON DESTROY REMOVE!!!!!!!!!!
+-- Spawned tempaltes are kept there
+-- Entry: {ship=shipRef, template=templateObjRef}
 DialModule.SpawnedTemplates = {}
 
-
+-- Position data for template spawning
+-- "Trim" entries are to fine-tune the position
+-- (its quite rough by the numbers since their origin was not perfectly at the center)
 DialModule.TemplateData = {}
 DialModule.TemplateData.straight = {}
 DialModule.TemplateData.straight[1] = {0, 0, 20, 0}
@@ -3000,6 +3019,11 @@ DialModule.TemplateData.baseOffset = {}
 DialModule.TemplateData.baseOffset.small = {0, 0, 20, 0}
 DialModule.TemplateData.baseOffset.large = {0, 0, 40, 0}
 
+-- Spawn a tempalte on given ship
+-- dialCode is move code PLUS identifier if ship arelready did it or not
+-- be3_A means "spawn a bank left 3 template behind me" (A as in after move)
+-- tr1_B means "spawn a turn right 1 tempalte in front of me" (B as in before move)
+-- Return template reference
 DialModule.SpawnTemplate = function(ship, dialCode)
     local moveCode = dialCode:sub(1, -3)
     local moveInfo = MoveData.DecodeInfo(moveCode, ship)
@@ -3007,7 +3031,6 @@ DialModule.SpawnTemplate = function(ship, dialCode)
         return nil
     end
     local tempEntry = DialModule.TemplateData[moveInfo.type][moveInfo.speed]
-    print('ST: ' .. ship.getName() .. ' : ' .. dialCode)
     tempEntry = Vect_Sum(tempEntry, DialModule.TemplateData.baseOffset[DB_getBaseSize(ship)])
     local ref = ship
     if dialCode:sub(-1,-1) == 'A' then
@@ -3037,7 +3060,6 @@ DialModule.SpawnTemplate = function(ship, dialCode)
             tempEntry = Vect_Sum(tempEntry, Vect_Scale(DialModule.TemplateData[moveInfo.type].trim[moveInfo.dir][moveInfo.speed], -1))
         end
     end
-    print('Y: ' .. tempEntry[2])
     local finPos = MoveModule.EntryToPos(tempEntry, ref)
     print(finPos.pos[2])
     local src = TokenModule.tokenSources[moveInfo.type:sub(1,1) .. moveInfo.speed]
@@ -3049,6 +3071,7 @@ DialModule.SpawnTemplate = function(ship, dialCode)
     return newTemplate
 end
 
+-- Delete template spawned for a ship, return true if deleted, false if there was none
 DialModule.DeleteTemplate = function(ship)
     for k,info in pairs(DialModule.SpawnedTemplates) do
         if info.ship == ship then
@@ -3060,6 +3083,8 @@ DialModule.DeleteTemplate = function(ship)
     return false
 end
 
+-- Spawn a ruler for a ship, base size aware
+-- Return new ruler reference
 DialModule.SpawnRuler = function(ship)
         -- New ruler to be spawned
         local obj_parameters = {}
@@ -3086,6 +3111,7 @@ DialModule.SpawnRuler = function(ship)
         return newRuler
 end
 
+-- Delete ruler spawned for a ship, return true if deleted, false if there was none
 DialModule.DeleteRuler = function(ship)
     for k,info in pairs(DialModule.SpawnedRulers) do
         if info.ship == ship then
@@ -3113,13 +3139,13 @@ end
 function DialClick_Move(dial)
     local actShip = dial.getVar('assignedShip')
     if XW_cmd.Process(actShip, dial.getDescription()) == true then
-        DialModule.SetMainButtonState(dial, 'undo')
+        DialModule.SetMoveUndoButtonState(dial, 'undo')
     end
 end
 function DialClick_Undo(dial)
     if  MoveModule.GetLastMove(dial.getVar('assignedShip')).move == dial.getDescription() and
         XW_cmd.Process(dial.getVar('assignedShip'), 'q') == true then
-            DialModule.SetMainButtonState(dial, 'move')
+            DialModule.SetMoveUndoButtonState(dial, 'move')
     else
         XW_cmd.Process(dial.getVar('assignedShip'), 'q')
     end
@@ -3148,39 +3174,57 @@ function DialClick_SpawnMoveTemplate(dial)
 end
 function DialClick_BoostS(dial)
     XW_cmd.Process(dial.getVar('assignedShip'), 's1b')
-    DialModule.SetMainButtonState(dial, 'none')
+    if DialModule.GetMoveUndoButtonState(dial) == 2 then
+        DialModule.SetMoveUndoButtonState(dial, 'none')
+    end
 end
 function DialClick_BoostR(dial)
     XW_cmd.Process(dial.getVar('assignedShip'), 'br1b')
-    DialModule.SetMainButtonState(dial, 'none')
+    if DialModule.GetMoveUndoButtonState(dial) == 2 then
+        DialModule.SetMoveUndoButtonState(dial, 'none')
+    end
 end
 function DialClick_BoostL(dial)
     XW_cmd.Process(dial.getVar('assignedShip'), 'be1b')
-    DialModule.SetMainButtonState(dial, 'none')
+    if DialModule.GetMoveUndoButtonState(dial) == 2 then
+        DialModule.SetMoveUndoButtonState(dial, 'none')
+    end
 end
 function DialClick_RollR(dial)
     XW_cmd.Process(dial.getVar('assignedShip'), 'xr')
-    DialModule.SetMainButtonState(dial, 'none')
+    if DialModule.GetMoveUndoButtonState(dial) == 2 then
+        DialModule.SetMoveUndoButtonState(dial, 'none')
+    end
 end
 function DialClick_RollRF(dial)
     XW_cmd.Process(dial.getVar('assignedShip'), 'xrf')
-    DialModule.SetMainButtonState(dial, 'none')
+    if DialModule.GetMoveUndoButtonState(dial) == 2 then
+        DialModule.SetMoveUndoButtonState(dial, 'none')
+    end
 end
 function DialClick_RollRB(dial)
     XW_cmd.Process(dial.getVar('assignedShip'), 'xrb')
-    DialModule.SetMainButtonState(dial, 'none')
+    if DialModule.GetMoveUndoButtonState(dial) == 2 then
+        DialModule.SetMoveUndoButtonState(dial, 'none')
+    end
 end
 function DialClick_RollL(dial)
     XW_cmd.Process(dial.getVar('assignedShip'), 'xe')
-    DialModule.SetMainButtonState(dial, 'none')
+    if DialModule.GetMoveUndoButtonState(dial) == 2 then
+        DialModule.SetMoveUndoButtonState(dial, 'none')
+    end
 end
 function DialClick_RollLF(dial)
     XW_cmd.Process(dial.getVar('assignedShip'), 'xef')
-    DialModule.SetMainButtonState(dial, 'none')
+    if DialModule.GetMoveUndoButtonState(dial) == 2 then
+        DialModule.SetMoveUndoButtonState(dial, 'none')
+    end
 end
 function DialClick_RollLB(dial)
     XW_cmd.Process(dial.getVar('assignedShip'), 'xeb')
-    DialModule.SetMainButtonState(dial, 'none')
+    if DialModule.GetMoveUndoButtonState(dial) == 2 then
+        DialModule.SetMoveUndoButtonState(dial, 'none')
+    end
 end
 function DialClick_Ruler(dial)
     DialModule.PerformAction(dial.getVar('assignedShip'), 'ruler')
@@ -3205,8 +3249,8 @@ function DialClick_ToggleInitialExpanded(dial)
     end
 end
 function DialClick_SlideStart(dial, playerColor)
-    if DialModule.GetMainButtonState(dial) == 2 then
-        DialModule.SetMainButtonState(dial, 'none')
+    if DialModule.GetMoveUndoButtonState(dial) == 2 then
+        DialModule.SetMoveUndoButtonState(dial, 'none')
     end
     DialModule.StartSlide(dial, playerColor)
 end
@@ -3233,8 +3277,12 @@ DialModule.Buttons.undo = {label = 'Q', click_function='DialClick_Undo', height=
 DialModule.Buttons.nameButton = function(ship)
     local shortName = DialModule.GetShortName(ship)
     local nameWidth = 900
-    local len = string.len(shortName)
-    if len*150 > nameWidth then nameWidth = len*150 end
+    --local len = string.len(shortName)
+    --if len*150 > nameWidth then nameWidth = len*150 end
+    local strWidth = StringLen.GetStringLength(shortName)/15
+    if strWidth > nameWidth then
+        nameWidth = strWidth
+    end
     return {label=shortName, click_function='DialClick_HighlightShip', height=300, width=nameWidth, position={0, -0.5, -1}, rotation={180, 180, 0}, font_size=250}
 end
 DialModule.Buttons.nameButtonLifted = function(ship)
@@ -3255,8 +3303,8 @@ DialModule.Buttons.ruler = {label='R', click_function='DialClick_Ruler', height=
 DialModule.Buttons.targetLock = {label='TL', click_function='DialClick_TargetLock', height=500, width=365, position={1.5, 0.5, 2}, font_size=250}
 DialModule.Buttons.slide = {label='Slide', click_function='DialClick_SlideStart', height=250, width=1600, position={2.5, 0.5, 0}, font_size=250, rotation={0, 90, 0}}
 
+-- Get a button data if it was to be placen on the other side of a  card
 DialModule.Buttons.FlipVersion = function(buttonEntry)
-    --print('Flip: ' .. buttonEntry.label)
     local out = Lua_ShallowCopy(buttonEntry)
     if out.rotation == nil then out.rotation = {0, 0, 0} end
     out.rotation = {out.rotation[1]+180, out.rotation[2]+180, out.rotation[3]}
@@ -3264,6 +3312,12 @@ DialModule.Buttons.FlipVersion = function(buttonEntry)
     return out
 end
 
+-- Start the magic slide action (will return if move doesn't allow slides)
+-- No depiction of the hand move zone or anything, hardcoded in the coroutine
+-- Player's hand position is object-scale-invariant
+-- Args:
+--      dial            <- Obj ref to an object relative to which player moves the hand to slide
+--      playerColor     <- Color of the player whose hand we watch
 DialModule.StartSlide = function(dial, playerColor)
     if dial.getVar('slideOngoing') == true then
         dial.setVar('slideOngoing', false)
@@ -3274,11 +3328,7 @@ DialModule.StartSlide = function(dial, playerColor)
         print('DialClick_SlideStart lastMove.move: ' .. lastMove.move)
         if lastMove.part ~= nil and lastMove.finType == 'slide' and MoveData.IsSlideMove(lastMove.move) then
             dial.setVar('slideOngoing', true)
-            --print('moving')
             local info = MoveData.DecodeInfo(lastMove.move, ship)
-            --local slideRange = DialModule.GetSlideRange(ship, info, lastMove.part)
-            --ship.setPosition(slideRange.pos)
-            --ship.setRotation(slideRange.rot)
             local zeroPos = DialModule.SlideZeroPos(ship, info, lastMove.part)
             table.insert(DialModule.slideDataQueue, {dial=dial, ship=ship, pColor=playerColor, zeroPos=zeroPos, moveInfo=info})
             TokenModule.QueueShipTokensMove(ship)
@@ -3297,9 +3347,7 @@ end
 
 
 
--- Get slide range of a ship based on his last move
--- Return: {fLen=howMuchForwardCanSlide, bLen=howMuchBackwardCanSlide}
--- Return nil if last move doesn't allow slides
+-- Get the part-zero-position for a ship given his state, last move and part it is at currently
 DialModule.SlideZeroPos = function(ship, info, currPart)
     local currData = MoveData.SlidePartOffset(info, currPart)
     local zeroPos = MoveModule.EntryToPos(Vect_Scale(currData, -1), ship)
@@ -3307,9 +3355,30 @@ DialModule.SlideZeroPos = function(ship, info, currPart)
 end
 
 -- Table with data slide coroutines pop and process
--- Entry: {dial=dialRef, ship=shipRef, pColor=playerColor, range={fLen=forwardLength, bLen=backwardLength}}
+-- Entry: {dial=dialRef, ship=shipRef, pColor=playerColor, zeroPos=slidePartZeroPos, moveInfo=moveInfo}
 DialModule.slideDataQueue = {}
 
+-- Sliding coroutine
+-- It, uh, works
+--[[
+                                  (slide zone)
+                                        V
+     + - - - - - - - - - +           + - - +    ^
+     |                   |           |     |    |
+     |    (dial here)    |           |     |    |
+     |                   |           |     |    |
+     |                   |           |  X  |    | 3.0
+     |                   |           |     |    |
+     |                   |           |     |    |
+     |                   |           |     |    |
+     + - - - - - - - - - +           + - - +    V
+              < - - - - - - - - - - - - >
+                        3.566
+
+]]--
+-- X is the position where user should hold their mouse to get around "middle slide"
+-- Movement left/right is ingored until it snaps too far and turns off slide
+-- Movement up/down slides the ship until it snaps too far and turns off slide
 function SlideCoroutine()
     if #DialModule.slideDataQueue < 1 then
         return 1
@@ -3320,21 +3389,9 @@ function SlideCoroutine()
     local pColor = DialModule.slideDataQueue[#DialModule.slideDataQueue].pColor
     local zeroPos = DialModule.slideDataQueue[#DialModule.slideDataQueue].zeroPos
     local info = DialModule.slideDataQueue[#DialModule.slideDataQueue].moveInfo
-    Vect_Print(zeroPos.pos, 'sc_zpp')
-    Vect_Print(zeroPos.rot, 'sc_zpr')
-    ---local slideVec = DialModule.slideDataQueue[#DialModule.slideDataQueue].slideVec
-    ---local range = DialModule.slideDataQueue[#DialModule.slideDataQueue].range
     table.remove(DialModule.slideDataQueue)
     ship.setVar('slideOngoing', true)
     broadcastToColor(ship.getName() .. '\'s slide adjust started!', pColor, {0.5, 1, 0.5})
-    ---local initShipPos = ship.getPosition()
-    ---local shipRot = ship.getRotation()[2]+180
-    -- Position of the ship on most-backward slide
-    ---local zeroShipPos = Vect_Sum(initShipPos, Vect_RotateDeg({0, 0, -1*range.bLen}, shipRot+45))
-    -- Slide vector, adding it to zeroShipPos gives us position on most-forward slide
-    --============================================================ FUCKKKKKKKKKKK
-    ---local tranVect = Vect_RotateDeg({0, 0, range.fLen + range.bLen}, shipRot+45)
-
 
     -- Ships that can collide with sliding one
     local collShips = {}
@@ -3362,10 +3419,6 @@ function SlideCoroutine()
         end
     end
 
-    for k, cShip in pairs(collShips) do
-        print('cs: ' .. cShip.getName())
-    end
-
     -- Get a "measurement" based on sliding player cursor position
     -- Dial scale invariant
     -- Return: {shift=forwardCursorSway, sideslip=sidewaysCursorSway}
@@ -3383,10 +3436,7 @@ function SlideCoroutine()
     -- Also add it if slide is not even forward/backward
     local initShift = getPointerOffset(dial,pColor).shift
     local fullSlideLen = Convert_mm_igu(MoveData.SlideLength(info))
-    --local sPos = ship.getPosition()
     local lenToTravel = fullSlideLen - Dist_Pos(ship.getPosition(), zeroPos.pos)
-    --local len = range.fLen + range.bLen
-    --initShift = initShift + (range.fLen/(range.fLen + range.bLen))*3 - 1.5
     initShift = initShift + (lenToTravel/(fullSlideLen))*3 - 1.5
     local lastShift = initShift
 
@@ -3425,7 +3475,6 @@ function SlideCoroutine()
         adjMeas = adjMeas + 1.5
 
         -- Check for collisions on requested slide position
-        --local targetPos = Vect_Sum(zeroShipPos, Vect_Scale(tranVect, adjMeas/3))
         local measPart = adjMeas*(MoveData.partMax/3)
         targetPos = MoveModule.EntryToPos(MoveData.SlidePartOffset(info, measPart), zeroPos)
         local collInfo = MoveModule.CheckCollisions(ship, {pos=targetPos.pos, rot=targetPos.rot}, collShips)
@@ -3451,12 +3500,10 @@ function SlideCoroutine()
             if (dirFwd and not blockFwd) or (not dirFwd and not blockBwd) then
                 measPart = adjMeas*(MoveData.partMax/3)
                 local tryPos = MoveModule.EntryToPos(MoveData.SlidePartOffset(info, measPart), zeroPos)
-                --local tryPos = Vect_Sum(zeroShipPos, Vect_Scale(tranVect, adjMeas/3))
                 -- Check for collisions there
                 collInfo = MoveModule.CheckCollisions(ship, {pos=tryPos.pos, rot=tryPos.rot}, collShips)
                 -- If it is clear, set it
                 if collInfo.coll == nil then
-                    --ship.setPosition(Vect_Sum(zeroShipPos, Vect_Scale(tranVect, adjMeas/3)))
                     ship.setPosition(tryPos.pos)
                     ship.setRotation(tryPos.rot)
                     lastShift = adjMeas
@@ -3470,7 +3517,6 @@ function SlideCoroutine()
                 end
             end
         end
-        print('scrt: ' .. tostring(blockFwd) .. ' : ' .. tostring(blockBwd) .. tostring(nil))
         coroutine.yield(0)
 
         -- This ends if player switches color, ship or dial vanishes or button is clicked setting slide var to false
@@ -3488,27 +3534,91 @@ function SlideCoroutine()
 end
 
 -- Get short name of a ship for dial indication "button"
+
+-- Char width table by Indimeco
+StringLen = {}
+StringLen.charWidthTable = {
+        ['`'] = 2381, ['~'] = 2381, ['1'] = 1724, ['!'] = 1493, ['2'] = 2381,
+        ['@'] = 4348, ['3'] = 2381, ['#'] = 3030, ['4'] = 2564, ['$'] = 2381,
+        ['5'] = 2381, ['%'] = 3846, ['6'] = 2564, ['^'] = 2564, ['7'] = 2174,
+        ['&'] = 2777, ['8'] = 2564, ['*'] = 2174, ['9'] = 2564, ['('] = 1724,
+        ['0'] = 2564, [')'] = 1724, ['-'] = 1724, ['_'] = 2381, ['='] = 2381,
+        ['+'] = 2381, ['q'] = 2564, ['Q'] = 3226, ['w'] = 3704, ['W'] = 4167,
+        ['e'] = 2174, ['E'] = 2381, ['r'] = 1724, ['R'] = 2777, ['t'] = 1724,
+        ['T'] = 2381, ['y'] = 2564, ['Y'] = 2564, ['u'] = 2564, ['U'] = 3030,
+        ['i'] = 1282, ['I'] = 1282, ['o'] = 2381, ['O'] = 3226, ['p'] = 2564,
+        ['P'] = 2564, ['['] = 1724, ['{'] = 1724, [']'] = 1724, ['}'] = 1724,
+        ['|'] = 1493, ['\\'] = 1923, ['a'] = 2564, ['A'] = 2777, ['s'] = 1923,
+        ['S'] = 2381, ['d'] = 2564, ['D'] = 3030, ['f'] = 1724, ['F'] = 2381,
+        ['g'] = 2564, ['G'] = 2777, ['h'] = 2564, ['H'] = 3030, ['j'] = 1075,
+        ['J'] = 1282, ['k'] = 2381, ['K'] = 2777, ['l'] = 1282, ['L'] = 2174,
+        [';'] = 1282, [':'] = 1282, ['\''] = 855, ['"'] = 1724, ['z'] = 1923,
+        ['Z'] = 2564, ['x'] = 2381, ['X'] = 2777, ['c'] = 1923, ['C'] = 2564,
+        ['v'] = 2564, ['V'] = 2777, ['b'] = 2564, ['B'] = 2564, ['n'] = 2564,
+        ['N'] = 3226, ['m'] = 3846, ['M'] = 3846, [','] = 1282, ['<'] = 2174,
+        ['.'] = 1282, ['>'] = 2174, ['/'] = 1923, ['?'] = 2174, [' '] = 1282,
+        ['avg'] = 2500
+    }
+
+-- Get real string lenght per char table
+StringLen.GetStringLength = function(str)
+    local len = 0
+    for i = 1, #str do
+        local c = str:sub(i,i)
+        if StringLen.charWidthTable[c] ~= nil then
+            len = len + StringLen.charWidthTable[c]
+        else
+            len = len + StringLen.charWidthTable.avg
+        end
+    end
+    return len
+end
+
+-- Get a short name for some ship
+-- Avoid user-added LGS
+-- Avoid name prepositions as in ambigNames
+-- Avoid too short or long names
+-- Add a single number/char on the end if there is one on the ship
 DialModule.GetShortName = function(ship)
     local shipNameWords = {}
     local numWords = 0
-    local ambigNames = 'The Captain Colonel Cartel'
-    for word in ship.getName():gmatch('%w+') do table.insert(shipNameWords, word) numWords = numWords+1 end
-    for k,w in pairs(shipNameWords) do if w == 'LGS' then table.remove(shipNameWords, k) numWords = numWords-1 end end
-    local currWord = 1
-    local shipShortName = shipNameWords[1]
-    if ambigNames:find(shipShortName) ~= nil then shipShortName = shipNameWords[2] currWord = 2 end
-    if shipShortName:len() > 9 and shipNameWords[currWord+1] ~= nil then
-        if shipNameWords[currWord+1]:len() > 3 and shipNameWords[currWord+1]:len() < shipShortName:len() then
-            shipShortName = shipNameWords[currWord+1]
-            currWord = currWord + 1
-        end
+    local ambigNames = 'The Captain Colonel Cartel Lieutenant Commander'
+    local shipName = ship.getName()
+    shipName = shipName:gsub('LGS', '')             -- Delete LGS
+    shipName = shipName:match( "^%s*(.-)%s*$" )     -- Trim whitespaces
+    -- Fill words table
+    for word in shipName:gmatch('[\'\"%w]+') do
+        table.insert(shipNameWords, word)
     end
-    if shipShortName:sub(1,1) == '\'' or shipShortName:sub(1,1) == '\"' then shipShortName = shipShortName:sub(2, -1) end
-    if shipNameWords[numWords]:len() == 1 then shipShortName = shipShortName .. ' ' .. shipNameWords[numWords]:sub(1,1) end
-    return shipShortName
+    -- Delete first word if ambiguous and there's more
+    if ambigNames:find(shipNameWords[1]) ~= nil and #shipNameWords > 1 then
+        table.remove(shipNameWords, 1)
+    end
+    -- Fucntion for checking if "short name"
+    local function sizeJustRight(str)
+        if str == nil then
+            return false
+        end
+        return ( (str:len() < 10) and (str:len() > 3) )
+    end
+    -- Delete the first word if too short/long and next is better
+    if ( not sizeJustRight(shipNameWords[1]) ) and ( sizeJustRight(shipNameWords[2]) ) then
+        table.remove(shipNameWords, 1)
+    end
+    -- Take the resulting first "valid" word
+    local shortName = shipNameWords[1]
+    -- If there were apostrophes and they are asymmetrical now, trim them
+    if ( (string.find('\'\"', shortName:sub(1,1)) ~= nil) or (string.find('\'\"', shortName:sub(-1,-1)) ~= nil) ) and ( shortName:sub(1,1) ~= shortName:sub(-1,-1) ) then
+        shortName = shortName:gsub('\'', '')
+        shortName = shortName:gsub('\"', '')
+    end
+    if shipNameWords[#shipNameWords]:len() == 1 then
+        shortName = shortName .. ' ' .. shipNameWords[#shipNameWords]
+    end
+    return shortName
 end
 
--- Spawn first buttons on a dial (flip, indication, delete)
+-- Spawn first buttons on a dial (flip, indication, delete, name, action expand)
 DialModule.SpawnFirstActiveButtons = function(dialTable)
     dialTable.dial.clearButtons()
     ClearButtonsPatch(dialTable.dial)
@@ -3518,7 +3628,7 @@ DialModule.SpawnFirstActiveButtons = function(dialTable)
     dialTable.dial.createButton(DialModule.Buttons.toggleInitialExpanded)
 end
 
--- Spawn main buttons on a dial (move, actions, undo) when it is flipped over
+-- Spawn main buttons on a dial (move, actions, undo, templade, return) when it is flipped over
 DialModule.SpawnMainActiveButtons = function (dialTable)
     dialTable.dial.clearButtons()
     ClearButtonsPatch(dialTable.dial)
@@ -3528,7 +3638,11 @@ DialModule.SpawnMainActiveButtons = function (dialTable)
     dialTable.dial.createButton(DialModule.Buttons.toggleMainExpanded)
 end
 
-
+-- Get the state of initial buttons (before flipped over)
+-- Return:
+--          -1      <- no buttons at all (error state)
+--           0      <- initial buttons set
+--           1      <- initial set + expanded actions
 DialModule.GetInitialButtonsState = function(dial)
     local state = 0
     local buttons = dial.getButtons()
@@ -3539,13 +3653,16 @@ DialModule.GetInitialButtonsState = function(dial)
     return state
 end
 
+-- Set initial buttons state (before flipped over) to desired state
+-- newState arg:
+--           0      <- initial buttons set
+--           1      <- initial set + expanded actions
 DialModule.SetInitialButtonsState = function(dial, newState)
     local actShip = dial.getVar('assignedShip')
     local extActionsMatch = ' Br B Bl Xf X Xb TL R F S E Q Slide '  -- labels for buttons of EXTENDED set
     local nameButton = DialModule.Buttons.nameButton(actShip)
     local currentState = DialModule.GetInitialButtonsState(dial)
 
-        --print(currentState .. ' -> ' .. newState)
     if newState > currentState then
             dial.createButton(DialModule.Buttons.FlipVersion(DialModule.Buttons.boostS))
             dial.createButton(DialModule.Buttons.FlipVersion(DialModule.Buttons.boostR))
@@ -3583,11 +3700,12 @@ DialModule.SetInitialButtonsState = function(dial, newState)
 end
 
 
--- Check what buttons state the dial is in
--- -1: no buttons, generally should not occur
--- 0: just basic buttons
--- 1: above plus FSEQ buttons
--- 2: above plus boost, rolls, ruler and lock
+-- Get the state of main buttons (after flipping over)
+-- Return:
+--          -1      <- no buttons at all (error state)
+--           0      <- basic (move, delete, A, T etc)
+--           1      <- above + FSEQ
+--           2      <- above + boosts, rolls, R, TL
 DialModule.GetMainButtonsState = function(dial)
     local state = 0
     local buttons = dial.getButtons()
@@ -3600,7 +3718,11 @@ DialModule.GetMainButtonsState = function(dial)
 end
 
 
--- Adjust button set between states like explained over GetMainButtonsState function
+-- Set the state of main buttons (after flipping over)
+-- newState arg:
+--           0      <- basic (move, delete, A, T etc)
+--           1      <- above + FSEQ
+--           2      <- above + boosts, rolls, R, TL
 DialModule.SetMainButtonsState = function(dial, newState)
     local standardActionsMatch = ' F S E Q -'           -- labels for buttons of STANDARD set
     local extActionsMatch = ' Br B Bl Xf X Xb TL R Slide '  -- labels for buttons of EXTENDED set
@@ -3644,7 +3766,12 @@ DialModule.SetMainButtonsState = function(dial, newState)
     end
 end
 
-DialModule.GetMainButtonState = function(dial)
+-- Get the state of the move/undo button on activated dial
+-- Return:
+--      0       <- no button
+--      1       <- Move button present
+--      2       <- Undo button present
+DialModule.GetMoveUndoButtonState = function(dial)
     local buttons = dial.getButtons()
     local state = 0
     for k,but in pairs(buttons) do
@@ -3657,7 +3784,12 @@ DialModule.GetMainButtonState = function(dial)
     return state
 end
 
-DialModule.SetMainButtonState = function(dial, newState)
+-- Set the state of the move/undo button on activated dial
+-- newState arg:
+--      0 OR 'none'      <- Delete any
+--      1 OR 'move'      <- Set to Move
+--      2 OR 'undo'      <- Set to Undo
+DialModule.SetMoveUndoButtonState = function(dial, newState)
     if type(newState) == 'string' then
         if newState == 'none' then
             newState = 0
@@ -3778,14 +3910,13 @@ function onObjectDestroyed(dying_object)
     for k, obj in pairs(watchedObj) do if dying_object == obj then table.remove(watchedObj, k) end end
     -- Handle killing rulers and unassignment of dial sets
     DialModule.onObjectDestroyed(dying_object)
+    -- Handle history delete and emergency restore saving
     MoveModule.onObjectDestroyed(dying_object)
 end
 
 -- When table is loaded up, this is called
 -- save_state contains everything separate modules saved before to restore table state
--- TO_DO: I swear I wanted to save/load something else too
 function onLoad(save_state)
-    --print('LOAD: ' .. save_state)
     if save_state ~= '' and save_state ~= nil and save_state ~= '[]' then
         MoveModule.Announce({note='Attempting to restore state. If you are rewinding game, STOP! \nPlease read the \'Undoing things\' page from wiki (on side note).', type='info'}, 'all')
         local savedData = JSON.decode(save_state)
@@ -3896,6 +4027,13 @@ end
 -- SHIP DATABASE MODULE
 -- Lets us check type and base size of a ship easily
 
+-- Get full ship info
+-- Return:  {
+--      shipType        <- ship type name, exact as on pilot card
+--      largeBase       <- TRUE if ship is large base, FALSE otherwise
+--      faction         <- 'Rebel', 'Scum' or 'Imperial'
+--          }
+-- Return nil and warn if ship unrecognized
 function DB_getShipInfo(shipRef)
     if shipRef.getTable('DB_shipInfo') ~= nil then
         return shipRef.getTable('DB_shipInfo')
@@ -3918,8 +4056,18 @@ function DB_getShipInfo(shipRef)
             end
         end
     end
+    if shipRef.getVar('missingModelWarned') ~= true then
+        printToAll(shipRef.getName() .. '\'s model not recognized - use LGS in name if large base and contact author about the issue', {1, 0.1, 0.1})
+        shipRef.setVar('missingModelWarned', true)
+    end
     return nil
 end
+
+-- Same as above with table argument to allow call from outside Global
+function DB_getShipInfoCallable(table)
+    return DB_getShipInfo(table[1])
+end
+
 -- Return ship type like it's written on the back of a dial
 -- Return 'Unknown' is ship is not in the database
 function DB_getShipType(shipRef)
@@ -3928,6 +4076,11 @@ function DB_getShipType(shipRef)
         return shipInfo.shipType
     end
     return 'Unknown'
+end
+
+-- Same as above with table argument to allow call from outside Global
+function DB_getShipTypeCallable(table)
+    return DB_getShipType(table[1])
 end
 
 -- Return true if large base, false if small
@@ -3940,22 +4093,8 @@ function DB_isLargeBase(shipRef)
     if shipRef.getName():find('LGS') ~= nil then
         return true
     else
-        if shipRef.getVar('missingModelWarned') ~= true then
-            printToAll(shipRef.getName() .. '\'s model not recognized - use LGS in name if large base and contact author about the issue', {1, 0.1, 0.1})
-            shipRef.setVar('missingModelWarned', true)
-        end
         return false
     end
-end
-
--- Same as above with table argument to allow call from outside Global
-function DB_getShipTypeCallable(table)
-    return DB_getShipType(table[1])
-end
-
--- Same as above with table argument to allow call from outside Global
-function DB_getShipInfoCallable(table)
-    return DB_getShipInfo(table[1])
 end
 
 -- Get the ship size as in 'large' or 'small'
