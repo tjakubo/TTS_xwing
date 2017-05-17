@@ -12,6 +12,10 @@
 -- Table of all images to be cycled through with NextImage()
 imageSet = {'http://i.imgur.com/dczrasC.jpg',
             'http://i.imgur.com/6IkNucB.jpg',
+            'http://i.imgur.com/dKYBJMX.png',
+            'http://i.imgur.com/sb2AJOz.png',
+            'http://i.imgur.com/8UxgcoQ.png',
+            'http://i.imgur.com/spWTWy7.png',
             'http://i.imgur.com/YdIAcvP.png',
             'http://i.imgur.com/5CcjDzM.jpg',
             'http://i.imgur.com/4WMSCSV.jpg',

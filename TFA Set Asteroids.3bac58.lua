@@ -8,8 +8,10 @@
 
 function onLoad()
     selfSide = 1
+    controlledMatName = 'Teal-Blue Playmat'
     if self.getPosition()[1] < 0 then
         selfSide = -1
+        controlledMatName = 'Green-Red Playmat'
     end
     rulersOnLoad()
     playmatOnLoad()
@@ -172,7 +174,7 @@ end
 
 function updatePlaymatRef()
     for k,obj in pairs(getAllObjects()) do
-        if obj.getName() == 'Green-Red Playmat' then matObject = obj end
+        if obj.getName() == controlledMatName then matObject = obj end
     end
 end
 
