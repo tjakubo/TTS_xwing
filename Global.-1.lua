@@ -415,6 +415,7 @@ function DialAPI_AssignSet(argTable)
             if dial.getVar('assignedShip') == nil then
                 validSet[dial.getDescription()] = {dial=dial, originPos=dial.getPosition()}
                 dial.call('setShip', {argTable.ship})
+                dial.setName(argTable.ship.getName())
             else
                 MoveModule.Announce({type='error_DialModule', note='tried to assign dial that belong to other ship (API call)'}, 'all', argTable.ship)
             end
@@ -1149,9 +1150,7 @@ end
 MoveData.DecodePartSlide = function(move_code, ship, part)
     local info = MoveData.DecodeInfo(move_code, ship)
     local slideOrigin = MoveData.SlideMoveOrigin(info)
-    print('dps_ang: ' .. slideOrigin[4])
     local offset = Vect_RotateDeg(MoveData.SlidePartOffset(info, part), slideOrigin[4])
-    Vect_Print(offset, 'dps_offset')
     return Vect_Sum(slideOrigin, offset)
 end
 
@@ -2237,8 +2236,6 @@ TokenModule.NearPosition = function(tokenName, ship)
             name = tokenName
     elseif type(tokenName) == 'userdata' then
         name = tokenName.getName()
-    else
-        print('fill me pls2')
     end
     return TokenModule.TokenPos(name, ship, TokenModule.nearPos)
 end
@@ -3056,12 +3053,10 @@ DialModule.SpawnTemplate = function(ship, dialCode)
             elseif moveInfo.dir == 'left' then
                 moveInfo.dir = 'right'
             end
-            --tempEntry = Vect_Sum(tempEntry, MoveData.ReverseVariant(DialModule.TemplateData[moveInfo.type].trim[moveInfo.dir][moveInfo.speed]))
             tempEntry = Vect_Sum(tempEntry, Vect_Scale(DialModule.TemplateData[moveInfo.type].trim[moveInfo.dir][moveInfo.speed], -1))
         end
     end
     local finPos = MoveModule.EntryToPos(tempEntry, ref)
-    print(finPos.pos[2])
     local src = TokenModule.tokenSources[moveInfo.type:sub(1,1) .. moveInfo.speed]
     local newTemplate = src.takeObject({position=finPos.pos, rotation=finPos.rot})
     newTemplate.lock()
@@ -3139,13 +3134,22 @@ end
 function DialClick_Move(dial)
     local actShip = dial.getVar('assignedShip')
     if XW_cmd.Process(actShip, dial.getDescription()) == true then
+        if DialModule.GetMainButtonsState(dial) == 0 then
+            DialModule.SetMainButtonsState(dial, 1)
+        end
         DialModule.SetMoveUndoButtonState(dial, 'undo')
     end
 end
 function DialClick_Undo(dial)
-    if  MoveModule.GetLastMove(dial.getVar('assignedShip')).move == dial.getDescription() and
-        XW_cmd.Process(dial.getVar('assignedShip'), 'q') == true then
-            DialModule.SetMoveUndoButtonState(dial, 'move')
+    if MoveModule.GetLastMove(dial.getVar('assignedShip')).move == dial.getDescription() and
+                                XW_cmd.Process(dial.getVar('assignedShip'), 'q') == true then
+        DialModule.SetMoveUndoButtonState(dial, 'move')
+        if DialModule.GetMainButtonsState(dial) == 1 then
+            DialModule.SetMainButtonsState(dial, 0)
+        end
+    elseif MoveModule.GetOldMove(dial.getVar('assignedShip'), 1).move == dial.getDescription() and
+                                XW_cmd.Process(dial.getVar('assignedShip'), 'q') == true then
+        DialModule.SetMoveUndoButtonState(dial, 'undo')
     else
         XW_cmd.Process(dial.getVar('assignedShip'), 'q')
     end
@@ -3325,7 +3329,6 @@ DialModule.StartSlide = function(dial, playerColor)
         local ship = dial.getVar('assignedShip')
         if XW_cmd.isReady(ship) ~= true then return end
         local lastMove = MoveModule.GetLastMove(ship)
-        print('DialClick_SlideStart lastMove.move: ' .. lastMove.move)
         if lastMove.part ~= nil and lastMove.finType == 'slide' and MoveData.IsSlideMove(lastMove.move) then
             dial.setVar('slideOngoing', true)
             local info = MoveData.DecodeInfo(lastMove.move, ship)
@@ -3703,7 +3706,7 @@ end
 -- Get the state of main buttons (after flipping over)
 -- Return:
 --          -1      <- no buttons at all (error state)
---           0      <- basic (move, delete, A, T etc)
+--           0      <- basic (move, delete, A etc)
 --           1      <- above + FSEQ
 --           2      <- above + boosts, rolls, R, TL
 DialModule.GetMainButtonsState = function(dial)
@@ -3720,7 +3723,7 @@ end
 
 -- Set the state of main buttons (after flipping over)
 -- newState arg:
---           0      <- basic (move, delete, A, T etc)
+--           0      <- basic (move, delete, A etc)
 --           1      <- above + FSEQ
 --           2      <- above + boosts, rolls, R, TL
 DialModule.SetMainButtonsState = function(dial, newState)
@@ -3766,7 +3769,7 @@ DialModule.SetMainButtonsState = function(dial, newState)
     end
 end
 
--- Get the state of the move/undo button on activated dial
+-- Get the state of the move/undo and template button on activated dial
 -- Return:
 --      0       <- no button
 --      1       <- Move button present
@@ -3784,11 +3787,11 @@ DialModule.GetMoveUndoButtonState = function(dial)
     return state
 end
 
--- Set the state of the move/undo button on activated dial
+-- Set the state of the move/undo and template button on activated dial
 -- newState arg:
 --      0 OR 'none'      <- Delete any
---      1 OR 'move'      <- Set to Move
---      2 OR 'undo'      <- Set to Undo
+--      1 OR 'move'      <- Set to Move and Template
+--      2 OR 'undo'      <- Set to Undo and Template
 DialModule.SetMoveUndoButtonState = function(dial, newState)
     if type(newState) == 'string' then
         if newState == 'none' then
@@ -3801,14 +3804,16 @@ DialModule.SetMoveUndoButtonState = function(dial, newState)
     end
     local buttons = dial.getButtons()
     for k,but in pairs(buttons) do
-        if but.label == 'Undo' or but.label == 'Move' then
+        if but.label == 'Undo' or but.label == 'Move' or but.label == 'T' then
             dial.removeButton(but.index)
         end
     end
     if newState == 1 then
         dial.createButton(DialModule.Buttons.move)
+        dial.createButton(DialModule.Buttons.moveTemplate)
     elseif newState == 2 then
         dial.createButton(DialModule.Buttons.undoMove)
+        dial.createButton(DialModule.Buttons.moveTemplate)
     end
 end
 
