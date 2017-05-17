@@ -3585,7 +3585,7 @@ end
 DialModule.GetShortName = function(ship)
     local shipNameWords = {}
     local numWords = 0
-    local ambigNames = 'The Captain Colonel Cartel Lieutenant Commander'
+    local ambigNames = 'The Captain Colonel Cartel Lieutenant Commander Old'
     local shipName = ship.getName()
     shipName = shipName:gsub('LGS', '')             -- Delete LGS
     shipName = shipName:match( "^%s*(.-)%s*$" )     -- Trim whitespaces

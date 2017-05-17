@@ -90,7 +90,7 @@ function SpawnDecloakButtons()
     idle = false
     self.clearButtons()
     ClearButtonsPatch(self)
-    if assignedShip.getName() ~= 'Echo' then
+    if assignedShip.getName():find('Echo') ~= nil then
         local decloakStr_Button = {['function_owner'] = self,['click_function'] = 'decloakStraight', ['label'] = 'CS', ['position'] = {0, 0.25, -2}, ['rotation'] =  {0, 0, 0}, ['width'] = 365, ['height'] = 520, ['font_size'] = 250}
         self.createButton(decloakStr_Button)
         local decloakLF_Button = {['function_owner'] = self,['click_function'] = 'decloakLF', ['label'] = 'CF', ['position'] = {-1.5, 0.25, -1}, ['rotation'] =  {0, 0, 0}, ['width'] = 365, ['height'] = 520, ['font_size'] = 250}
