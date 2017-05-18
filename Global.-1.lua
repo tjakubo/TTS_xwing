@@ -1950,6 +1950,7 @@ function restWaitCoroutine()
     local waitData = MoveModule.restWaitQueue[#MoveModule.restWaitQueue]
     local actShip = waitData.ship
     table.remove(MoveModule.restWaitQueue, #MoveModule.restWaitQueue)
+    actShip.unlock()
     -- Wait
     repeat
         coroutine.yield(0)
