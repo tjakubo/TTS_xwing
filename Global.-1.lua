@@ -386,10 +386,14 @@ function dummy() return end
 -- (TTS requires external call to have a single table as an argument)
 
 -- Perform a move using a standard move command
--- Does not assert command validity
 -- Argument: { code = moveCode, ship = shipReference, ignoreCollisions = [true/false] }
 -- Return: TRUE if move completed, FALSE if overlap prevented ship from moving
+-- Return:                         FALSE if invalid (non-move) command or ship not ready
 function API_PerformMove(argTable)
+    local type = XW_cmd.CheckCommand(argTable.code)
+    if (type ~= 'move' and type ~= 'actionMove') or not XW_cmd.isReady(argTable.ship) then
+        return false
+    end
     return MoveModule.PerformMove(argTable.code, argTable.ship, argTable.ignoreCollisions)
 end
 
@@ -1047,12 +1051,12 @@ MoveData.DecodeInfo = function (move_code, ship)
         info.type = 'echo'
         info.dir = 'right'
         info.extra = 'forward'
+        if move_code:sub(4,4) == 'b' then
+            info.extra = 'backward'
+        end
         if move_code:sub(3,3) == 'l' or move_code:sub(3,3) == 'e' then
             -- Ones going right/left
             info.dir = 'left'
-            if move_code:sub(4,4) == 'b' then
-                info.extra = 'backward'
-            end
         elseif move_code:sub(3,3) == 's' then
             -- Ones going forward
             info = MoveData.DecodeInfo('b' .. move_code:sub(4,4) .. '2', ship)
@@ -1695,7 +1699,7 @@ MoveModule.GetFinalPosData = function(move_code, ship, ignoreCollisions)
     -- NON-COLLISION VERSION
     if ignoreCollisions then
         -- If move can slide at the end, get final position including 'backward'/'forward' modifiers
-        if info.traits.slide == true ~= nil then
+        if info.traits.slide == true then
             local initPart = MoveData.partMax/2
             if info.extra == 'forward' then
                 initPart = MoveData.partMax
@@ -3591,7 +3595,7 @@ DialModule.GetShortName = function(ship)
     shipName = shipName:gsub('LGS', '')             -- Delete LGS
     shipName = shipName:match( "^%s*(.-)%s*$" )     -- Trim whitespaces
     -- Fill words table
-    for word in shipName:gmatch('[\'\"%w]+') do
+    for word in shipName:gmatch('[\'\"%-%w]+') do
         table.insert(shipNameWords, word)
     end
     -- Delete first word if ambiguous and there's more
