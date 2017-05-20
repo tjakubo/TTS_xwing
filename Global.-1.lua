@@ -2270,7 +2270,7 @@ TokenModule.VisiblePosition = function(tokenName, ship, preferredPos)
     local currTokensInfo = TokenModule.GetShipTokensInfo(ship)
     local currStack = {qty=-2, obj=nil}
     for k,tokenInfo in pairs(currTokensInfo) do
-        if tokenInfo.token.getName() == tokenName and tokenInfo.token.getQuantity() > currStack.qty then
+        if tokenInfo.token.getName() == tokenName and tokenInfo.token.getQuantity() > currStack.qty and (not tokenInfo.token.IsSmoothMoving()) then
             currStack.obj = tokenInfo.token
             currStack.qty = currStack.obj.getQuantity()
         end
