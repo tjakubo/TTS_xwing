@@ -1919,7 +1919,8 @@ MoveModule.MoveShip = function(ship, finData, saveName)
     end
     ship.setPositionSmooth(finPos.pos, false, true)
     ship.setRotationSmooth(finPos.rot, false, true)
-    MoveModule.WaitForResting(ship)
+    -- Wait for resting, but provide final position to set so smooth move doesn't fuck with accuracy
+    MoveModule.WaitForResting(ship, finPos)
     if saveName ~= nil then
         MoveModule.AddHistoryEntry(ship, {pos=finPos.pos, rot=finPos.rot, move=saveName, part=finData.finPart, finType=finData.finType})
     end
@@ -1929,7 +1930,7 @@ end
 -- Basically, if anything needs to be done after the ship rests, this can trigger it
 
 -- Ships waiting to be resting
--- Entry: {ship = shipRef}
+-- Entry: {ship = shipRef, finPos={pos=posToSet, rot=rotToSet}}
 MoveModule.restWaitQueue = {}
 
 -- Tokens waiting to be moved with ships
@@ -1939,13 +1940,14 @@ MoveModule.restWaitQueue = {}
 MoveModule.tokenWaitQueue = {}
 
 -- Add ship to the queue so it fires once it completes the move
-MoveModule.WaitForResting = function(ship)
-    table.insert(MoveModule.restWaitQueue, {ship=ship})
+MoveModule.WaitForResting = function(ship, finPos)
+    table.insert(MoveModule.restWaitQueue, {ship=ship, finPos=finPos})
     startLuaCoroutine(Global, 'restWaitCoroutine')
 end
 
 -- This completes when a ship is resting at a table level
 -- Does token movement and ship locking after
+-- IF a final position wa provided in the data table, set it at the end
 function restWaitCoroutine()
     if MoveModule.restWaitQueue[1] == nil then
         return 1
@@ -1953,12 +1955,17 @@ function restWaitCoroutine()
 
     local waitData = MoveModule.restWaitQueue[#MoveModule.restWaitQueue]
     local actShip = waitData.ship
+    local finPos = waitData.finPos
     table.remove(MoveModule.restWaitQueue, #MoveModule.restWaitQueue)
-    actShip.unlock()
     -- Wait
     repeat
         coroutine.yield(0)
     until actShip.resting == true and actShip.isSmoothMoving() == false and actShip.held_by_color == nil and actShip.getVar('slideOngoing') ~= true
+
+    if finPos ~= nil then
+        actShip.setPosition(finPos.pos)
+        actShip.setRotation(finPos.rot)
+    end
 
     local newTokenTable = {}
     for k,tokenSetInfo in pairs(MoveModule.tokenWaitQueue) do
