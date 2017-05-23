@@ -6,6 +6,7 @@
 TempModule = {}
 TempModule.objects = {}
 TempModule.objects['[b]INSTRUCTIONS[/b]']='empty'
+TempModule.objects['[b]ITEM BROWSER INSTRUCTIONS[/b]']='empty'
 TempModule.objects['Example squad to paste']='empty'
 TempModule.objects['Spawner Bags']='empty'
 TempModule.objects['Upgrade Collection']='empty'
@@ -170,11 +171,21 @@ SBM_buttons.builder = {
     height = 400,
     font_size = 300
 }
+SBM_buttons.itemSpawner = {
+    click_function = 'SBM_clickItemBrowser',
+    function_owner = self,
+    label = 'Item Browser',
+    position = {-15, 0, -1},
+    rotation = {0, 180, 0},
+    width = 2100,
+    height = 400,
+    font_size = 300
+}
 SBM_buttons.collection = {
     click_function = 'SBM_clickCollection',
     function_owner = self,
     label = 'Collection',
-    position = {-15, 0, -1},
+    position = {-15, 0, -2},
     rotation = {0, 180, 0},
     width = 2100,
     height = 400,
@@ -239,6 +250,35 @@ end
 
 function builderFinish()
     TM.DeleteAllChildren()
+end
+
+function SBM_clickItemBrowser()
+    TM.DeleteAllChildren()
+    local sPos = self.getPosition()
+    local spawnerBag = TM.Instantiate('Spawner Bags', Vect_Sum(sPos, {0, -5, 0}), {1, 1, 1}, {0, 90, 0})
+    spawnerBag.lock()
+    local bags = spawnerBag.getObjects()
+    local bagsOffset = {}
+    bagsOffset['Upgrades Bag'] = {-11, 0.5, 0}
+    bagsOffset['Accesories Bag'] = {-13.5, 0.5, 0}
+    bagsOffset['Ship Models Bag'] = {-11, 0.5, 2.5}
+    bagsOffset['Pilot Cards Bag'] = {-11, 0.5, -2.5}
+    local bagRefs = {}
+    for k,oTable in pairs(bags) do
+        local newBag = spawnerBag.takeObject({guid=oTable.guid, position=Vect_Sum(sPos, bagsOffset[oTable.name])})
+        if oTable.name == 'Upgrades Bag' then
+            newBag.setDescription('itemBrowserMode')
+        end
+        bagRefs[newBag.getName()] = newBag
+        newBag.setRotation({0, 90, 0})
+        newBag.setPosition(Vect_Sum(sPos, bagsOffset[oTable.name]))
+        newBag.lock()
+        TempModule.AddChildren('Upgrades Bag', newBag)
+    end
+    local iNote = TM.Instantiate('[b]ITEM BROWSER INSTRUCTIONS[/b]', Vect_Sum(sPos, {1, 0.5, 11}), {1.8, 1.8, 1.8}, {0, -90, 0})
+    iNote.setLuaScript('')
+    iNote.interactable = true
+    iNote.unlock()
 end
 
 function SBM_clickCollection()
@@ -309,5 +349,6 @@ function onLoad(save_state)
     TempModule.Init()
     self.createButton(SBM_buttons.none)
     self.createButton(SBM_buttons.builder)
+    self.createButton(SBM_buttons.itemSpawner)
     self.createButton(SBM_buttons.collection)
 end

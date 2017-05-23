@@ -3,6 +3,29 @@
 -- Issues, history at: https://github.com/tjakubo2/TTS_xwing
 -- ~~~~~~
 
+--[[
+                                                 ,  ,
+                                               / \/ \
+                                              (/ //_ \_
+     .-._                                      \||  .  \
+      \  '-._                            _,:__.-"/---\_ \
+ ______/___  '.    .--------------------'~-'--.)__( , )\ \
+`'--.___  _\  /    |             Here        ,'    \)|\ `\|
+     /_.-' _\ \ _:,_          Be Dragons           " ||   (
+   .'__ _.' \'-/,`-~`                                |/
+       '. ___.> /=,|  Abandon hope all ye who enter  |
+        / .-'/_ )  '---------------------------------'
+        )'  ( /(/
+             \\ "
+              '=='
+
+This bag serves as a main source for list spawner and item browser with kind of piggybacked
+functionaliy for collection generation. Includes how to (not really) do a state machine, give
+up on it halfway and *still* make it work. I could really use someone deleting all of it
+and forcing me to rewrite this from scratch.
+For the most part though, it works out just fine.
+--]]
+
 --------
 -- SPAWNER MODULE
 
@@ -13,7 +36,7 @@
 -- Items are keyed by name, case-indifferent
 -- Passing items with same names not allowed - modify names if necesary (e.g. prefix option)
 
--- No connection to builder module, no elaborate error handling
+-- No connection to builder module, no elaborate error handling ( <- I wish this was still true )
 
 Spawner = {}
 
@@ -30,7 +53,11 @@ Spawner.Fill = function(bagRef, prefix)
         if Spawner.items[string.lower(prefix .. info.name)] ~= nil then
             print('WARNING: Double item \'' .. string.lower(prefix .. info.name) .. '\' from \'' .. bagRef.getName() .. '\' bag')
         end
-        Spawner.items[string.lower(prefix .. info.name)] = {source='bag', ref=bagRef, bGUID=info.guid}
+        local desc = nil
+        --if Spawner.extraInfo[info.name] ~= nil then
+        --    desc = Spawner.extraInfo[info.name]
+        --end
+        Spawner.items[string.lower(prefix .. info.name)] = {source='bag', ref=bagRef, bGUID=info.guid, name=info.name}--, desc=info.description}
     end
 end
 
@@ -44,7 +71,11 @@ Spawner.Spawn = function(itemName, pos, rot)
     end
     -- Fill variables
     if pos == nil then pos = {0, 0, 0} end
-    if rot == nil then rot = {0, 0, 0} end
+    if rot == nil then
+        rot = {0, 0, 0}
+    elseif type(rot) == 'number' then
+        rot = {0, rot, 0}
+    end
     -- Take LOWERCASE name
     local item = Spawner.items[string.lower(itemName)]
     local newObj = nil
@@ -71,10 +102,122 @@ Spawner.Spawn = function(itemName, pos, rot)
     return newObj
 end
 
+-- Spawn an item keyed as itemName at provided postion and rotation
+-- Return the spawned item reference, nil if not found
+-- Instead of switching the item to object source mode, put it back in the bag if taken from bag
+Spawner.SpawnReturn = function(itemName, pos, rot)
+    -- Item not found
+    if Spawner.items[string.lower(itemName)] == nil then
+        print('ERROR: Attempt to spawn unknown item \'' .. string.lower(itemName) .. '\'')
+        return nil
+    end
+    -- Fill variables
+    if pos == nil then pos = {0, 0, 0} end
+    if rot == nil then
+        rot = {0, 0, 0}
+    elseif type(rot) == 'number' then
+        rot = {0, rot, 0}
+    end
+    -- Take LOWERCASE name
+    local item = Spawner.items[string.lower(itemName)]
+    local newObj = nil
+    -- If it was not yet spawned (still in bag)
+    if item.source == 'bag' then
+        -- Take the object
+        newObj = item.ref.takeObject({guid=item.bGUID, position=pos, rotation=rot})
+        local cloneObj = newObj.clone({})
+        cloneObj.lock()
+        cloneObj.setPosition(Builder.LocalPos({0, -3, 0}, item.ref))
+        item.ref.putObject(cloneObj)
+    else
+        -- If origin object was deleted
+        if item.ref == nil then
+            print('ERROR: Origin item \'' .. string.lower(itemName) .. '\' ref nil')
+            return nil
+        else
+        -- If origin object exists, clone it
+            newObj = item.ref.clone({position=pos})
+        end
+    end
+    newObj.setPosition(pos)
+    newObj.setRotation(rot)
+    return newObj
+end
+
 -- Return true if queried name exists, false if it doesn't
 Spawner.Find = function(itemName)
     if Spawner.items[string.lower(itemName)] == nil then return false
     else return true end
+end
+
+-- Return item matches
+-- Arg: {word1, word2, ... , wordN}
+-- Return: {ships={entry1, entry2, ...}, upgrades={entry1, entry2, ...}, misc={entry1, entry2, ...}}
+-- Entry: {name=prettyItemName, key=itemSpawnKey}
+Spawner.ReturnMatches = function(searchWords)
+    local matches = {ships={}, upgrades={}, misc={}}
+
+    for itemName,itemInfo in pairs(Spawner.items) do
+        for k,word in pairs(searchWords) do
+            local acronym = true
+            for i=1,word:len() do
+                if word:sub(i,i) ~= string.upper(word:sub(i,i)) or tonumber(word:sub(i,i)) ~= nil then
+                    acronym = false
+                end
+            end
+            if acronym then
+                local nameWords = {}
+                for nameWord in itemInfo.name:gmatch('[^%s]+') do
+                    table.insert(nameWords, nameWord)
+                end
+                local match = true
+                if #nameWords ~= word:len() then
+                    match = false
+                end
+                if match then
+                    for k,nameWord in pairs(nameWords) do
+                        if string.lower(nameWord:sub(1,1)) ~= string.lower(word:sub(k,k)) then
+                            match = false
+                            break
+                        end
+                    end
+                end
+                if match then
+                    if itemName:sub(1,8) == 'upgrade:' then
+                        table.insert(matches.upgrades, {name=itemInfo.name, key=itemName})
+                    elseif itemName:sub(1,5) == 'ship:' then
+                        local listName = itemInfo.name
+                        --print(itemName)
+                        --if itemName:find(' v[1-9]') ~= nil then
+                        --    listName = listName:sub(1, -3) .. '(' .. itemInfo.desc .. ')'
+                        --    print('hit')
+                        --end
+                        table.insert(matches.ships, {name=listName, key=itemName})
+                    elseif itemName:find('refcard') ~= nil or itemName:find('dials') ~= nil then
+                        table.insert(matches.misc, {name=itemInfo.name, key=itemName})
+                    end
+                end
+            elseif word:len() > 2 then
+                if itemName:find(string.lower(word)) ~= nil then
+                    if itemName:sub(1,8) == 'upgrade:' then
+                        table.insert(matches.upgrades, {name=itemInfo.name, key=itemName})
+                    elseif itemName:sub(1,5) == 'ship:' then
+                        local listName = itemInfo.name
+                        --print(itemName)
+                        --if itemName:find(' v[1-9]') ~= nil then
+                        --    listName = listName:sub(1, -3) .. '(' .. itemInfo.desc .. ')'
+                        --    print('hit')
+                        --end
+                        table.insert(matches.ships, {name=listName, key=itemName})
+                    elseif itemName:find('refcard') ~= nil or itemName:find('dials') ~= nil then
+                        table.insert(matches.misc, {name=itemInfo.name, key=itemName})
+                    end
+                end
+            end
+        end
+    end
+
+    return matches
 end
 
 -- END SPAWNER MODULE
@@ -86,6 +229,27 @@ end
 -- Builds lists, usually.
 
 Builder = {}
+
+
+-- Initialize this bag in squadron builder mode
+function startAsBuilder()
+    init()
+    local rot = {self.getRotation()[1], self.getRotation()[2]+180, self.getRotation()[3]}
+    Builder.noteObj = Spawner.Spawn('Spawn Me', Builder.LocalPos({-15, 0.5, 2}), rot)
+
+    -- Change button to spawning function:
+    self.clearButtons()
+    Builder.generalButton.click_function = 'start'
+    Builder.generalButton.label = 'Spawn it!'
+    Builder.generalButton.width = 3500
+    self.createButton(Builder.generalButton)
+end
+
+-- Start the spawn routine
+function start()
+    self.clearButtons()
+    Builder.ParseInput(note)
+end
 
 -- Elements placement config
 Builder.config = {
@@ -298,6 +462,7 @@ Builder.ResolveChoice = function(clickedCard)
     Builder.pilots[cTable.pilotsIndex].sRef = corrShip
     corrPilot.setName(Builder.pilots[cTable.pilotsIndex].name)
     corrShip.setName(Builder.pilots[cTable.pilotsIndex].name)
+    --corrShip.setDescription('')
     cTable.resolved = true
 
     -- Advance spawn state if that was the last choice
@@ -451,7 +616,8 @@ Builder.generalButton = {
     position = {0, 0.5, 3},
     rotation = {0, 0, 0},
     height = 800,
-    font_size = 20000
+    font_size = 20000,
+    click_function='dummy'
 }
 
 -- Click function for the "Parse notebook" button
@@ -692,6 +858,9 @@ Builder.LocalPos = function(pos, ref, hOff)
     if type(ref) == 'table' then
         refOffset = ref
         refRot = ref.rotation
+        if refRot == nil then
+            refRot = 0
+        end
     elseif type(ref) == 'userdata' then
         refOffset = ref.getPosition()
         refRot = math.rad(-1*ref.getRotation()[2])
@@ -1240,13 +1409,6 @@ Builder.FillSources = function()
         end
     end
 end
-
--- Start the spawn routine
-function start()
-    self.clearButtons()
-    Builder.ParseInput(note)
-end
-
 -- Clear buttons for when it was not working
 function ClearButtonsPatch(obj)
     local buttons = obj.getButtons()
@@ -1257,15 +1419,321 @@ function ClearButtonsPatch(obj)
     end
 end
 
--- On load
-function onLoad()
-    -- INITIALIZE BUTTON
-    Builder.generalButton.click_function = 'init'
-    Builder.generalButton.label = 'Initialize'
-    Builder.generalButton.width = 3500
-    self.createButton(Builder.generalButton)
+-- Move note aside
+Builder.MoveNote = function()
+    Builder.noteObj.setPosition(Builder.LocalPos({9.5, 0, 2}))
+    local sRot = self.getRotation()
+    local nScale = Builder.noteObj.getScale()
+    Builder.noteObj.setRotation({sRot[1], sRot[2]-90, sRot[3]})
+    Builder.noteObj.setScale({nScale[1]*0.8, nScale[2]*0.8, nScale[3]*0.8})
 end
 
+-- END BUILDER MODULE
+--------
+
+--------
+-- BROWSER MODULE
+
+-- Allows for compnent search and spawn, usually
+
+Browser = {}
+
+-- Start as browser - spawn the search note
+function startAsBrowser()
+    self.clearButtons()
+    init()
+    local rot = {self.getRotation()[1], self.getRotation()[2]+180, self.getRotation()[3]}
+    Browser.noteObj = Spawner.Spawn('[b]Item Browser[/b]', Builder.LocalPos({-15, 0, 2}, nil, 0), rot)
+    Browser.noteObj.lock()
+    Browser.noteObj.setRotation(rot)
+    Browser.CreateMainButtons()
+end
+
+-- Simple shallow copy to cope with Lua reference handling
+function Lua_DeepCopy(orig)
+    local orig_type = type(orig)
+    local copy
+    if orig_type == 'table' then
+        copy = {}
+        for orig_key, orig_value in pairs(orig) do
+            if type(orig_value) == 'table' then
+                copy[orig_key] = Lua_DeepCopy(orig_value)
+            else
+                copy[orig_key] = orig_value
+            end
+        end
+    else
+        copy = orig
+    end
+    return copy
+end
+
+Browser.buttonData = {}
+
+-- Dummy 'SHIPS' button
+Browser.buttonData.shipsListingButton = {
+                                            function_owner = self,
+                                            position = {12.5, 0.5, -9},
+                                            heigth = 1000,
+                                            width = 2500,
+                                            label = 'SHIPS:',
+                                            click_function = 'dummy'
+                                        }
+-- Dummy 'UPGRADES' button
+Browser.buttonData.upgsListingButton =  {
+                                            function_owner = self,
+                                            position = {26, 0.5, -9},
+                                            heigth = 1000,
+                                            width = 4200,
+                                            label = 'UPGRADES:',
+                                            click_function = 'dummy'
+                                        }
+-- Search note words button
+Browser.buttonData.searchButton =       {
+                                            function_owner = self,
+                                            position = {-11, 0.5, 3},
+                                            heigth = 800,
+                                            width = 2500,
+                                            label = 'Search',
+                                            click_function = 'searchFromNote',
+                                            color = {0.8, 0.8, 0.8}
+                                        }
+
+-- Data for storing what ship/upgrade button should spawn
+-- Entry: {name=prettyName, key=spawnName}
+Browser.buttonData.shipsButtons = {}
+Browser.buttonData.upgsButtons = {}
+
+-- Ship spawn position
+Browser.mainShipPos = Builder.ShipInitPos(1)
+-- Pilot spawn position
+Browser.mainPilotPos = Builder.PilotForShip(Browser.mainShipPos)
+-- Current misc (refcards, conditions etc) item position
+Browser.currentMiscPos = Builder.LocalPos({2.4, 0, -0.4}, Browser.mainPilotPos, 0)
+-- Current upgrade position
+Browser.currentUpgPos = Builder.UpgForPilotInit(Browser.mainPilotPos, 3)
+-- Current upgrade count
+Browser.upgCount = 0
+
+function dummy() end
+
+-- Create maim buttons, duh
+Browser.CreateMainButtons = function()
+    self.createButton(Browser.buttonData.shipsListingButton)
+    self.createButton(Browser.buttonData.upgsListingButton)
+    self.createButton(Browser.buttonData.searchButton)
+end
+
+-- Click functions for spawn buttons
+function P_ch1_click() Browser.Click('ships', 1) end
+function P_ch2_click() Browser.Click('ships', 2) end
+function P_ch3_click() Browser.Click('ships', 3) end
+function P_ch4_click() Browser.Click('ships', 4) end
+function P_ch5_click() Browser.Click('ships', 5) end
+function P_ch6_click() Browser.Click('ships', 6) end
+function P_ch7_click() Browser.Click('ships', 7) end
+function U_ch1_click() Browser.Click('upgs', 1) end
+function U_ch2_click() Browser.Click('upgs', 2) end
+function U_ch3_click() Browser.Click('upgs', 3) end
+function U_ch4_click() Browser.Click('upgs', 4) end
+function U_ch5_click() Browser.Click('upgs', 5) end
+function U_ch6_click() Browser.Click('upgs', 6) end
+function U_ch7_click() Browser.Click('upgs', 7) end
+
+-- Search for strings separeted by newlines
+function searchFromNote()
+    local noteDesc = Browser.noteObj.getDescription()
+    local words = {}
+    for word in noteDesc:gmatch('[^\n]+') do
+        word = word:gsub('-', '%%-')
+        if word:len() > 1 then
+            word = word:match( "^%s*(.-)%s*$" )
+            if word ~= nil and word ~= '' then
+                table.insert(words, word)
+            end
+        end
+    end
+    Browser.Update(words)
+end
+
+-- Stuff that was spawned (moved aside with every new ship)
+Browser.spawnedStuff = {}
+function onObjectLeaveScriptingZone(_, obj)
+    for k,spObj in pairs(Browser.spawnedStuff) do
+        if obj == spObj then
+            table.remove(Browser.spawnedStuff, k)
+            break
+        end
+    end
+end
+function onObjectDestroyed(obj)
+    for k,spObj in pairs(Browser.spawnedStuff) do
+        if obj == spObj then
+            table.remove(Browser.spawnedStuff, k)
+            break
+        end
+    end
+end
+
+-- Misc items to spawn for each item listed as key
+Browser.bindTable = {   ['Shield Upgrade'] = 'Shield',
+                        ['Jabba the Hutt'] = 'Extra Illicit',
+                        ['General Hux'] = 'Fanatical Devotion condition',
+                        ['Fanatical Devotion condition'] = 'Fanatical Devotion condition token',
+                        ['Kylo Ren'] = 'I\'ll Show You The Dark Side condition',
+                        ['I\'ll Show You The Dark Side condition'] = 'I\'ll Show You The Dark Side condition token',
+                        ['A Score to Settle'] = 'A Debt To Pay condition',
+                        ['A Debt To Pay condition'] = 'A Debt To Pay condition token',
+                        ['Captain Rex'] = 'Suppresive Fire condition',
+                        ['Suppresive Fire condition'] = 'Suppresive Fire condition token'
+                    }
+
+-- Update spawn options with passed words
+Browser.Update = function(words)
+    self.clearButtons()
+    Browser.CreateMainButtons()
+    -- Grab mecthes to be listed as buttons
+    local results = Spawner.ReturnMatches(words)
+
+    -- Ship spawn buttons
+    local shipBpos = Lua_DeepCopy(Browser.buttonData.dummyButtons.shipsListing.position)
+    shipBpos[3] = shipBpos[3]+1
+    local function shipBposStep(cPos)
+        return {cPos[1], cPos[2], cPos[3]+2}
+    end
+    Browser.buttonData.shipsButtons = {}
+    for k,sTable in pairs(results.ships) do
+        if k > 7 then
+            break
+        end
+        shipBpos = shipBposStep(shipBpos)
+        Browser.buttonData.shipsButtons[k] = sTable
+        local sBut = Lua_DeepCopy(Builder.generalButton)
+        sBut.width = StringLen.GetStringLength(sTable.name)/9.5 + 250
+        sBut.label = sTable.name
+        sBut.height = 650
+        sBut.font_size = 500
+        sBut.click_function = 'P_ch' .. k .. '_click'
+        sBut.position = shipBpos
+        self.createButton(sBut)
+    end
+
+    -- Upgrade spawn buttons
+    local upgBpos = Lua_DeepCopy(Browser.buttonData.dummyButtons.upgsListing.position)
+    upgBpos[3] = upgBpos[3]+1
+    local function upgBposStep(cPos)
+        return {cPos[1], cPos[2], cPos[3]+2}
+    end
+    Browser.buttonData.upgsButtons = {}
+    for k,uTable in pairs(results.upgrades) do
+        if k > 7 then
+            break
+        end
+        upgBpos = upgBposStep(upgBpos)
+        Browser.buttonData.upgsButtons[k] = uTable
+        local uBut = Lua_DeepCopy(Builder.generalButton)
+        uBut.width = StringLen.GetStringLength(uTable.name)/9.5 + 250
+        uBut.label = uTable.name
+        uBut.height = 650
+        uBut.font_size = 500
+        uBut.click_function = 'U_ch' .. k .. '_click'
+        uBut.position = upgBpos
+        self.createButton(uBut)
+    end
+end
+
+-- Reset upgrade position to 1st
+Browser.ResetUpgPos = function()
+    Browser.currentUpgPos = Builder.UpgForPilotInit(Browser.mainPilotPos, 3)
+    Browser.upgCount = 0
+    Browser.currentMiscPos = Builder.LocalPos({2.6, 0, -0.6}, Browser.mainPilotPos, 0)
+end
+-- Move spawned shit aside to make room for new spawns
+Browser.MoveSpawnedAside = function()
+    local stillSpawnedStuff = {}
+    for k,obj in pairs(Browser.spawnedStuff) do
+        if obj.getPosition()[1] < -56 then
+            obj.translate({0, 0.5, -5.5})
+            table.insert(stillSpawnedStuff, obj)
+        end
+    end
+    Browser.spawnedStuff = stillSpawnedStuff
+end
+
+-- Spawn a new ship, pilot card, refcard
+Browser.ShipSpawn = function(shipKey, prettyName)
+    Browser.ResetUpgPos()
+    Browser.MoveSpawnedAside()
+    table.insert(Browser.spawnedStuff, Spawner.SpawnReturn(shipKey, Builder.LocalPos(Browser.mainShipPos), self.getRotation()))
+    local shipType = Global.call('DB_getShipTypeCallable', {Browser.spawnedStuff[#Browser.spawnedStuff]})
+    if Spawner.Find(shipType .. ' Refcard') then
+        Browser.MiscSpawn(shipType .. ' Refcard')
+    end
+    if Browser.bindTable[prettyName] ~= nil then
+        Browser.MiscSpawn(Browser.bindTable[prettyName])
+    end
+    table.insert(Browser.spawnedStuff, Spawner.SpawnReturn(shipKey:gsub('ship: ', ''), Builder.LocalPos(Browser.mainPilotPos), self.getRotation()))
+end
+
+-- Spawn a new upgrade
+Browser.UpgSpawn = function(upgKey, prettyName)
+    table.insert(Browser.spawnedStuff, Spawner.SpawnReturn(upgKey, Builder.LocalPos(Browser.currentUpgPos), self.getRotation()))
+    Browser.upgCount = Browser.upgCount + 1
+    if Browser.bindTable[prettyName] ~= nil then
+        Browser.MiscSpawn(Browser.bindTable[prettyName])
+    end
+    Browser.currentUpgPos = Builder.UpgStep(Browser.currentUpgPos, Browser.upgCount)
+end
+
+-- Spawna  new thingamajig
+Browser.MiscSpawn = function(itemKey)
+    local function miscPosStep(miscPos)
+        return {miscPos[1], miscPos[2]+0.1, miscPos[3]+0.5}
+    end
+    table.insert(Browser.spawnedStuff, Spawner.SpawnReturn(itemKey, Builder.LocalPos(Browser.currentMiscPos), self.getRotation()))
+    if Browser.bindTable[itemKey] ~= nil then
+        Browser.MiscSpawn(Browser.bindTable[itemKey])
+    end
+    Browser.currentMiscPos = miscPosStep(Browser.currentMiscPos)
+end
+
+-- Real dispatch click function
+Browser.Click = function(type,key)
+    local data = Browser.buttonData[type .. 'Buttons'][key]
+    if type == 'ships' then
+        Browser.ShipSpawn(data.key, data.name)
+    else
+        Browser.UpgSpawn(data.key, data.name)
+    end
+end
+
+-- END BROWSER MODULE
+--------
+
+--------
+-- COMMON FUNCTIONS
+
+function onDestroy()
+    if Browser.noteObj ~= nil then
+        Browser.noteObj.destruct()
+    end
+end
+
+-- On load
+function onLoad()
+    if self.getDescription() ~= 'itemBrowserMode' then
+        -- INITIALIZE BUTTON
+        Builder.generalButton.click_function = 'startAsBuilder'
+        Builder.generalButton.label = 'Initialize'
+        Builder.generalButton.width = 3500
+        self.createButton(Builder.generalButton)
+    else
+        Builder.generalButton.click_function = 'startAsBrowser'
+        Builder.generalButton.label = 'Initialize'
+        Builder.generalButton.width = 3500
+        self.createButton(Builder.generalButton)
+    end
+end
 
 -- INITIALIZE BAG
 function init()
@@ -1314,25 +1782,103 @@ function init()
 
     -- Get the note
     Spawner.Fill(self)
-    local rot = {self.getRotation()[1], self.getRotation()[2]+180, self.getRotation()[3]}
-    Builder.noteObj = Spawner.Spawn('Spawn Me', Builder.LocalPos({-15, 0.5, 2}), rot)
-
-    -- Change button to spawning function:
-    self.clearButtons()
-    Builder.generalButton.click_function = 'start'
-    Builder.generalButton.label = 'Spawn it!'
-    Builder.generalButton.width = 3500
-    self.createButton(Builder.generalButton)
 end
 
--- Move note aside
-Builder.MoveNote = function()
-    Builder.noteObj.setPosition(Builder.LocalPos({9.5, 0, 2}))
-    local sRot = self.getRotation()
-    local nScale = Builder.noteObj.getScale()
-    Builder.noteObj.setRotation({sRot[1], sRot[2]-90, sRot[3]})
-    Builder.noteObj.setScale({nScale[1]*0.8, nScale[2]*0.8, nScale[3]*0.8})
+
+
+-- Char width table by Indimeco
+StringLen = {}
+StringLen.charWidthTable = {
+        ['`'] = 2381, ['~'] = 2381, ['1'] = 1724, ['!'] = 1493, ['2'] = 2381,
+        ['@'] = 4348, ['3'] = 2381, ['#'] = 3030, ['4'] = 2564, ['$'] = 2381,
+        ['5'] = 2381, ['%'] = 3846, ['6'] = 2564, ['^'] = 2564, ['7'] = 2174,
+        ['&'] = 2777, ['8'] = 2564, ['*'] = 2174, ['9'] = 2564, ['('] = 1724,
+        ['0'] = 2564, [')'] = 1724, ['-'] = 1724, ['_'] = 2381, ['='] = 2381,
+        ['+'] = 2381, ['q'] = 2564, ['Q'] = 3226, ['w'] = 3704, ['W'] = 4167,
+        ['e'] = 2174, ['E'] = 2381, ['r'] = 1724, ['R'] = 2777, ['t'] = 1724,
+        ['T'] = 2381, ['y'] = 2564, ['Y'] = 2564, ['u'] = 2564, ['U'] = 3030,
+        ['i'] = 1282, ['I'] = 1282, ['o'] = 2381, ['O'] = 3226, ['p'] = 2564,
+        ['P'] = 2564, ['['] = 1724, ['{'] = 1724, [']'] = 1724, ['}'] = 1724,
+        ['|'] = 1493, ['\\'] = 1923, ['a'] = 2564, ['A'] = 2777, ['s'] = 1923,
+        ['S'] = 2381, ['d'] = 2564, ['D'] = 3030, ['f'] = 1724, ['F'] = 2381,
+        ['g'] = 2564, ['G'] = 2777, ['h'] = 2564, ['H'] = 3030, ['j'] = 1075,
+        ['J'] = 1282, ['k'] = 2381, ['K'] = 2777, ['l'] = 1282, ['L'] = 2174,
+        [';'] = 1282, [':'] = 1282, ['\''] = 855, ['"'] = 1724, ['z'] = 1923,
+        ['Z'] = 2564, ['x'] = 2381, ['X'] = 2777, ['c'] = 1923, ['C'] = 2564,
+        ['v'] = 2564, ['V'] = 2777, ['b'] = 2564, ['B'] = 2564, ['n'] = 2564,
+        ['N'] = 3226, ['m'] = 3846, ['M'] = 3846, [','] = 1282, ['<'] = 2174,
+        ['.'] = 1282, ['>'] = 2174, ['/'] = 1923, ['?'] = 2174, [' '] = 1282,
+        ['avg'] = 2500
+    }
+
+-- Get real string lenght per char table
+StringLen.GetStringLength = function(str)
+    local len = 0
+    for i = 1, #str do
+        local c = str:sub(i,i)
+        if StringLen.charWidthTable[c] ~= nil then
+            len = len + StringLen.charWidthTable[c]
+        else
+            len = len + StringLen.charWidthTable.avg
+        end
+    end
+    return len
 end
+
+-- INITIALIZE BAG
+function init()
+    -- Make sure all sources are ready
+    if Builder.SourcesReady() ~= true then
+        Builder.FillSources()
+        if Builder.SourcesReady() ~= true then
+            Builder.Log('Source bags not ready... Stop')
+            Builder.DisplayLog()
+            return
+        end
+    end
+
+    local sObj = self.getObjects()
+    local minorBags = {}
+    local hOff = -3
+
+    local sbm = nil
+    for k,obj in pairs(getAllObjects()) do
+        if obj.getName() == 'Squad Builder module' then
+            sbm = obj
+        end
+    end
+
+    for k, objInfo in pairs(sObj) do
+        if objInfo.name:find('Bag') ~= nil then
+            local nPos = Builder.LocalPos({0, 0, 0}, self, hOff)
+            local newObj = self.takeObject({guid=objInfo.guid, position=nPos})
+            newObj.lock()
+            newObj.interactable = false
+            newObj.tooltip = false
+            newObj.setPosition(nPos)
+            sbm.call('builderAddChild', {newObj})
+            table.insert(minorBags, newObj)
+        end
+    end
+
+    -- Pass the sources to the spawner
+    Spawner.Fill(Builder.sources['Ship Models Bag'], 'Ship: ')
+    Spawner.Fill(Builder.sources['Pilot Cards Bag'])
+    Spawner.Fill(Builder.sources['Accesories Bag'])
+    for k,bag in pairs(minorBags) do
+        Spawner.Fill(bag, 'Upgrade: ')
+    end
+    Builder.Log('Source bags ready')
+
+    -- Get the note
+    Spawner.Fill(self)
+end
+
+-- END COMMON FUNCTIONS
+--------
+
+--------
+-- SHIP STATS DATABASE
 
 -- Ship stats database
 -- Key: shipType, {shieldCount=shieldCount}
@@ -1384,3 +1930,6 @@ shipStatsDatabase['TIE Adv. Prototype'] = { shieldCount=2 }
 shipStatsDatabase['TIE Striker'] = { shieldCount=0 }
 shipStatsDatabase['TIE/sf Fighter'] = { shieldCount=3 }
 shipStatsDatabase['Upsilon Class Shuttle'] = { shieldCount=6 }
+
+-- END SHIP STATS DATABASE
+--------

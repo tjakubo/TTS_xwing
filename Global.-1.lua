@@ -589,6 +589,9 @@ end
 -- Return false if object cannot process commands right now or command was invalid
 XW_cmd.Process = function(obj, cmd)
 
+    -- Trim whitespaces
+    cmd = cmd:match( "^%s*(.-)%s*$" )
+
     -- Resolve command type
     local type = XW_cmd.CheckCommand(cmd)
 
