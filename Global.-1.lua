@@ -279,6 +279,9 @@ end
 -- Return false if object cannot process commands right now or command was invalid
 XW_cmd.Process = function(obj, cmd)
 
+    -- Trim whitespaces
+    cmd = cmd:match( "^%s*(.-)%s*$" )
+
     -- Return if object is not ready
     if XW_cmd.isReady(obj) ~= true then return false end
 
