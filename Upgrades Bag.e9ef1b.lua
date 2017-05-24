@@ -1474,8 +1474,9 @@ Browser.buttonData = {}
 Browser.buttonData.shipsListingButton = {
                                             function_owner = self,
                                             position = {12.5, 0.5, -9},
-                                            heigth = 1000,
+                                            height = 1000,
                                             width = 2500,
+                                            font_size = 1000,
                                             label = 'SHIPS:',
                                             click_function = 'dummy'
                                         }
@@ -1483,8 +1484,9 @@ Browser.buttonData.shipsListingButton = {
 Browser.buttonData.upgsListingButton =  {
                                             function_owner = self,
                                             position = {26, 0.5, -9},
-                                            heigth = 1000,
+                                            height = 1000,
                                             width = 4200,
+                                            font_size = 1000,
                                             label = 'UPGRADES:',
                                             click_function = 'dummy'
                                         }
@@ -1492,8 +1494,9 @@ Browser.buttonData.upgsListingButton =  {
 Browser.buttonData.searchButton =       {
                                             function_owner = self,
                                             position = {-11, 0.5, 3},
-                                            heigth = 800,
+                                            height = 800,
                                             width = 2500,
+                                            font_size = 1000,
                                             label = 'Search',
                                             click_function = 'searchFromNote',
                                             color = {0.8, 0.8, 0.8}
@@ -1521,7 +1524,7 @@ function dummy() end
 Browser.CreateMainButtons = function()
     self.createButton(Browser.buttonData.shipsListingButton)
     self.createButton(Browser.buttonData.upgsListingButton)
-    self.createButton(Browser.buttonData.searchButton)
+    --self.createButton(Browser.buttonData.searchButton)
 end
 
 -- Click functions for spawn buttons
@@ -1556,19 +1559,34 @@ function searchFromNote()
     Browser.Update(words)
 end
 
+Browser.lastDesc = ''
+
+function update()
+    if Browser.noteObj ~= nil then
+        local noteDesc = Browser.noteObj.getDescription()
+        if noteDesc:len() ~= Browser.lastDesc:len() and noteDesc ~= Browser.lastDesc then
+            searchFromNote()
+            --print('up')
+            Browser.lastDesc = noteDesc
+        end
+    end
+end
+
 -- Stuff that was spawned (moved aside with every new ship)
 Browser.spawnedStuff = {}
-function onObjectLeaveScriptingZone(_, obj)
+--[[function onObjectLeaveScriptingZone(_, obj)
     for k,spObj in pairs(Browser.spawnedStuff) do
         if obj == spObj then
+            print(obj.getName() .. 'lsz')
             table.remove(Browser.spawnedStuff, k)
             break
         end
     end
-end
+end]]--
 function onObjectDestroyed(obj)
     for k,spObj in pairs(Browser.spawnedStuff) do
         if obj == spObj then
+            ---print(obj.getName() .. 'ddd')
             table.remove(Browser.spawnedStuff, k)
             break
         end
@@ -1576,8 +1594,7 @@ function onObjectDestroyed(obj)
 end
 
 -- Misc items to spawn for each item listed as key
-Browser.bindTable = {   ['Shield Upgrade'] = 'Shield',
-                        ['Jabba the Hutt'] = 'Extra Illicit',
+Browser.bindTable = {   ['Jabba the Hutt'] = 'Extra Illicit',
                         ['General Hux'] = 'Fanatical Devotion condition',
                         ['Fanatical Devotion condition'] = 'Fanatical Devotion condition token',
                         ['Kylo Ren'] = 'I\'ll Show You The Dark Side condition',
@@ -1596,7 +1613,7 @@ Browser.Update = function(words)
     local results = Spawner.ReturnMatches(words)
 
     -- Ship spawn buttons
-    local shipBpos = Lua_DeepCopy(Browser.buttonData.dummyButtons.shipsListing.position)
+    local shipBpos = Lua_DeepCopy(Browser.buttonData.shipsListingButton.position)
     shipBpos[3] = shipBpos[3]+1
     local function shipBposStep(cPos)
         return {cPos[1], cPos[2], cPos[3]+2}
@@ -1619,7 +1636,7 @@ Browser.Update = function(words)
     end
 
     -- Upgrade spawn buttons
-    local upgBpos = Lua_DeepCopy(Browser.buttonData.dummyButtons.upgsListing.position)
+    local upgBpos = Lua_DeepCopy(Browser.buttonData.upgsListingButton.position)
     upgBpos[3] = upgBpos[3]+1
     local function upgBposStep(cPos)
         return {cPos[1], cPos[2], cPos[3]+2}
@@ -1652,8 +1669,11 @@ end
 Browser.MoveSpawnedAside = function()
     local stillSpawnedStuff = {}
     for k,obj in pairs(Browser.spawnedStuff) do
+        --print(obj.getName())
         if obj.getPosition()[1] < -56 then
-            obj.translate({0, 0.5, -5.5})
+            --obj.translate({0, 0.5, -5.5})
+            local oPos = obj.getPosition()
+            obj.setPositionSmooth({oPos[1], oPos[2]+0.2, oPos[3]-5.5}, false, true)
             table.insert(stillSpawnedStuff, obj)
         end
     end
@@ -1669,6 +1689,7 @@ Browser.ShipSpawn = function(shipKey, prettyName)
     if Spawner.Find(shipType .. ' Refcard') then
         Browser.MiscSpawn(shipType .. ' Refcard')
     end
+    --print(prettyName)
     if Browser.bindTable[prettyName] ~= nil then
         Browser.MiscSpawn(Browser.bindTable[prettyName])
     end
@@ -1688,13 +1709,15 @@ end
 -- Spawna  new thingamajig
 Browser.MiscSpawn = function(itemKey)
     local function miscPosStep(miscPos)
-        return {miscPos[1], miscPos[2]+0.1, miscPos[3]+0.5}
+        return {miscPos[1], miscPos[2]+0.3, miscPos[3]+0.5}
     end
-    table.insert(Browser.spawnedStuff, Spawner.SpawnReturn(itemKey, Builder.LocalPos(Browser.currentMiscPos), self.getRotation()))
+    --local tP = Builder.LocalPos(Browser.currentMiscPos, self, Browser.currentMiscPos[2])
+    table.insert(Browser.spawnedStuff, Spawner.SpawnReturn(itemKey, Builder.LocalPos(Browser.currentMiscPos, self, Browser.currentMiscPos[2]), self.getRotation()))
+    --Browser.spawnedStuff[#Browser.spawnedStuff].lock()
+    Browser.currentMiscPos = miscPosStep(Browser.currentMiscPos)
     if Browser.bindTable[itemKey] ~= nil then
         Browser.MiscSpawn(Browser.bindTable[itemKey])
     end
-    Browser.currentMiscPos = miscPosStep(Browser.currentMiscPos)
 end
 
 -- Real dispatch click function
