@@ -2178,7 +2178,7 @@ end
 TokenModule.tokenReachDistance = Convert_mm_igu(100)
 -- By how much this token has to be distant from other ship "interception zone" to be visible
 -- (how far from an owner-switching-border it has to be so you can see whose it is)
-TokenModule.visibleMargin = Convert_mm_igu(15)
+TokenModule.visibleMargin = Convert_mm_igu(20)
 
 -- Preset positions for tokens on and near the base
 -- Generally used only when their current position switches its owner after a move

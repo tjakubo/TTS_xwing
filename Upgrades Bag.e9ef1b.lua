@@ -827,6 +827,8 @@ Builder.ParseSquad.geordanr_BB = function(input)
     -- Cut all the footer stuff
     local t_b,t_e = input:find('%[b%]%[i%]Total:')
     local cutInput = input:sub(1, t_b-1)
+    -- Replace negative costs since they fuck it up later
+    cutInput = cutInput:gsub('%(%-', '(')
     -- Strip parentheses with text inside
     cutInput = cutInput:gsub('[%s]%([^%d][%w%s\']+%)', '')
     -- Split input into lines marked by BB Code bold/italic symbols
