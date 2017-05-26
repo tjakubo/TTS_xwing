@@ -1097,8 +1097,21 @@ Builder.SpawnMisc = function()
     Builder.SpawnExtraIllicit()
     Builder.SpawnConditionCards()
     Builder.SpawnArcIndicators()
+    Builder.SpawnBoShekDials()
     Builder.AdvanceState(Builder.states.MiscSpawned)
 end
+
+-- Spawn BoShek lookup dial stack so people can resolve his effect easily
+Builder.SpawnBoShekDials = function()
+    for k,pTable in pairs(Builder.pilots) do
+        if Builder.HasUpgrade('BoShek', k) then
+            sRot = self.getRotation()
+            local boShekDials = Spawner.Spawn('BoShek Lookup Dials (search me)', Builder.LocalPos({-1, 0, 0}, pTable.pRef), {sRot[1], sRot[2], sRot[3]+180})
+            table.insert(Builder.misc.other, {ref=boShekDials, com='BoShek lookup dials'})
+        end
+    end
+end
+
 
 -- Spawn arc indicator for Lancer-Class Pursuit Crafts
 Builder.SpawnArcIndicators = function()
