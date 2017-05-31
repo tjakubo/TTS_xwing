@@ -949,6 +949,7 @@ Builder.Errata['IG88-C'] = 'IG-88C'
 Builder.Errata['IG88-D'] = 'IG-88D'
 Builder.Errata['Fire Control System'] = 'Fire-Control System'
 Builder.Errata['Burnout Slam'] = 'Burnout SLAM'
+Builder.Errata['StarViper Mk. II'] = 'StarViper Mk.II'
 
 -- Check if a name should be corrected
 -- Return correct version (same if no correction entry)
@@ -1098,7 +1099,24 @@ Builder.SpawnMisc = function()
     Builder.SpawnConditionCards()
     Builder.SpawnArcIndicators()
     Builder.SpawnBoShekDials()
+    Builder.SpawnSVrollToken()
     Builder.AdvanceState(Builder.states.MiscSpawned)
+end
+
+Builder.SpawnSVrollToken = function()
+    for k=1,#Builder.pilots,1 do
+            local upgrades = Builder.GetUpgrades(k)
+            local sRot = self.getRotation()
+            local rot = {sRot[1], sRot[2]-90, sRot[3]}
+            local offset = {0, 0.1, 0.2}
+            for k2,uTable in pairs(upgrades) do
+                if uTable.name == 'StarViper Mk.II' then
+                    local newRollToken = Spawner.Spawn('StarViper Mk.II roll token', Builder.LocalPos(offset, uTable.ref, 0.1), rot)
+                    table.insert(Builder.misc.tokens, {tRef=newRollToken, pRef=uTable.ref})
+                end
+            end
+    end
+
 end
 
 -- Spawn BoShek lookup dial stack so people can resolve his effect easily

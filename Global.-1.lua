@@ -258,7 +258,7 @@ function XW_ObjMatchType(obj, type)
     elseif type == 'ship' then
         return (obj.tag == 'Figurine')
     elseif type == 'token' then
-        if obj.getName() == 'Cloak' then
+        if obj.getName() == 'Cloak' or obj.getName():find('roll token') ~= nil then
             return (obj.getVar('idle') == true)
         end
         if (obj.tag == 'Chip' or obj.getVar('set') ~= nil) and obj.getName() ~= 'Shield' then
@@ -684,6 +684,7 @@ XW_cmd.AddCommand('c[srle]', 'actionMove')      -- Decloaks side middle + straig
 XW_cmd.AddCommand('c[rle][fb]', 'actionMove')   -- Decloaks side forward + backward
 XW_cmd.AddCommand('ch[rle][fb]', 'actionMove')  -- Echo's bullshit
 XW_cmd.AddCommand('chs[rle]', 'actionMove')     -- Echo's bullshit, part 2
+XW_cmd.AddCommand('vr[rle][fb]', 'actionMove')  -- StarViper Mk.II rolls
 
 MoveData = {}
 
@@ -750,7 +751,14 @@ MoveData.MoveLength = function(moveInfo)
 end
 
 -- Regex match for moves that support sliding base after execution
-MoveData.slideMatchTable = {'x[rle]', 'x[rle][fb]?', 'c[rle][fb]?', 't[rle][123]t', 'ch[rle][fb]', 'chadj'}
+MoveData.slideMatchTable = {    'x[rle]',
+                                'x[rle][fb]?',
+                                'c[rle][fb]?',
+                                't[rle][123]t',
+                                'ch[rle][fb]',
+                                'chadj',
+                                'vr[rle][fb]',
+                                'vradj'             }
 -- Check if move allows sliding based on above table
 -- Argumant can be either move code or move info as per MoveData.DecodeInfo
 MoveData.IsSlideMove = function(moveInfoCode)
@@ -783,7 +791,7 @@ MoveData.SlideLength = function(moveInfo)
         baseSize = mm_baseSize[moveInfo.size]
         if moveInfo.type == 'roll' then
             return baseSize
-        elseif (moveInfo.type == 'turn' and moveInfo.extra == 'talon') or moveInfo.type == 'echo' then
+        elseif (moveInfo.type == 'turn' and moveInfo.extra == 'talon') or moveInfo.type == 'echo' or moveInfo.type == 'viper' then
             return baseSize/2
         end
     end
@@ -808,13 +816,16 @@ MoveData.SlideMoveOrigin = function(moveInfo)
         data = MoveData.RotateEntry(data, ang)
         data[4] = data[4] - ang
         data[3] = data[3] - MoveData.SlideLength(moveInfo)/2
-    elseif moveInfo.type == 'echo' then
+    elseif moveInfo.type == 'echo' or moveInfo.type == 'viper' then
         -- FUCKING ECHO is appropriate bank 2 rotated 90deg sideways
+        -- Viper is same but bank 1
         local ang = -90
         if moveInfo.dir == 'right' then
             ang = 90
         end
-        data = MoveData.LUT.ConstructData({type='bank', speed=2, size='small', code='br2'})
+        local bankSpeed = 2
+        if moveInfo.type == 'viper' then bankSpeed = 1 end
+        data = MoveData.LUT.ConstructData({type='bank', speed=bankSpeed, size='small', code='br' .. tostring(bankSpeed)})
         if (moveInfo.dir == 'left' and moveInfo.extra == 'backward') or (moveInfo.dir == 'right' and moveInfo.extra == 'forward') then
             data = MoveData.LeftVariant(data)
         end
@@ -843,7 +854,7 @@ end
 -- THIS IS ZERO-SLIDE-POSITION RELATIVE
 MoveData.SlidePartOffset = function(moveInfo, part)
 
-    if moveInfo.type == 'echo' then
+    if moveInfo.type == 'echo' or moveInfo.type == 'viper' then
         if moveInfo.extra == 'adjust' then
             -- Echo 2nd adjust is similair to a barrel roll
             -- This is when ship is slid against the template
@@ -1049,9 +1060,13 @@ MoveData.DecodeInfo = function (move_code, ship)
             info.collNote = 'tried to turn ' .. info.dir .. ' ' .. info.speed
         end
     -- Barrel rolls and decloaks, spaghetti
-    elseif move_code:sub(1,2) == 'ch' then
+elseif move_code:sub(1,2) == 'ch' or move_code:sub(1,2) == 'vr' then
         -- Echo's fucking bullshit which goes against ALL the standards
+        -- StarViper handled the same
         info.type = 'echo'
+        if move_code:sub(1,2) == 'vr' then
+            info.type = 'viper'
+        end
         info.dir = 'right'
         info.extra = 'forward'
         if move_code:sub(4,4) == 'b' then
@@ -1066,15 +1081,22 @@ MoveData.DecodeInfo = function (move_code, ship)
             info.traits.part = false
             info.code = move_code
         end
-        if info.type == 'echo' then
-            info.note = 'dechocloaked ' .. info.dir .. ' ' .. info.extra
-            info.collNote = 'tried to dechocloak ' .. info.dir .. ' ' .. info.extra
+        if move_code:sub(1,2) == 'ch' then
+            -- Echo dedscriptions
+            if info.type == 'echo' then
+                info.note = 'dechocloaked ' .. info.dir .. ' ' .. info.extra
+                info.collNote = 'tried to dechocloak ' .. info.dir .. ' ' .. info.extra
+            else
+                info.note = 'dechocloaked forward ' .. info.dir
+                info.collNote = 'tried to dechocloak forward ' .. info.dir
+            end
         else
-            info.note = 'dechocloaked forward ' .. info.dir
-            info.collNote = 'tried to dechocloak forward ' .. info.dir
+            -- SV descriptions
+            info.note = 'bank rolled ' .. info.dir .. ' ' .. info.extra
+            info.collNote = 'tried to bank roll ' .. info.dir .. ' ' .. info.extra
         end
         -- Special 2nd adjust move
-        if move_code == 'chadj' then
+        if move_code == 'chadj' or move_code == 'vradj' then
             info.extra = 'adjust'
         end
     elseif move_code:sub(1,1) == 'x' or move_code:sub(1,1) == 'c' then
@@ -3351,7 +3373,7 @@ DialModule.StartSlide = function(dial, playerColor)
             table.insert(DialModule.slideDataQueue, {dial=dial, ship=ship, pColor=playerColor, zeroPos=zeroPos, moveInfo=info})
             TokenModule.QueueShipTokensMove(ship)
             XW_cmd.SetBusy(ship)
-            MoveModule.Announce({type='move', note='manually adjusted base slide on his last move', code=lastMove.move}, 'all', ship)
+            MoveModule.Announce({type='move', note='manually adjusted base slide on the last move', code=lastMove.move}, 'all', ship)
             startLuaCoroutine(Global, 'SlideCoroutine')
             MoveModule.WaitForResting(ship)
             return true
@@ -3542,8 +3564,12 @@ function SlideCoroutine()
     if Player[pColor] ~= nil then broadcastToColor(ship.getName() .. '\'s slide adjust ended!', pColor, {0.5, 1, 0.5}) end
     dial.setVar('slideOngoing', false)
     ship.setVar('slideOngoing', false)
-    if info.type == 'echo' and info.extra ~= 'adjust' then
-        MoveModule.AddHistoryEntry(ship, {pos=ship.getPosition(), rot=ship.getRotation(), move='chadj', part=MoveData.partMax/2, finType='slide'})
+    if (info.type == 'echo' or info.type == 'viper') and info.extra ~= 'adjust' then
+        if info.type == 'echo' then
+            MoveModule.AddHistoryEntry(ship, {pos=ship.getPosition(), rot=ship.getRotation(), move='chadj', part=MoveData.partMax/2, finType='slide'})
+        elseif info.type == 'viper' then
+            MoveModule.AddHistoryEntry(ship, {pos=ship.getPosition(), rot=ship.getRotation(), move='vradj', part=MoveData.partMax/2, finType='slide'})
+        end
     else
         MoveModule.AddHistoryEntry(ship, {pos=ship.getPosition(), rot=ship.getRotation(), move='manual slide', finType='special'})
     end
