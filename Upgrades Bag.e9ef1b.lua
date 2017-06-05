@@ -950,6 +950,7 @@ Builder.Errata['IG88-D'] = 'IG-88D'
 Builder.Errata['Fire Control System'] = 'Fire-Control System'
 Builder.Errata['Burnout Slam'] = 'Burnout SLAM'
 Builder.Errata['StarViper Mk. II'] = 'StarViper Mk.II'
+Builder.Errata['Countermeasures'] = 'Counter-Measures'
 
 -- Check if a name should be corrected
 -- Return correct version (same if no correction entry)
@@ -1635,7 +1636,8 @@ Browser.bindTable = {   ['Jabba the Hutt'] = 'Extra Illicit',
                         ['A Score to Settle'] = 'A Debt To Pay condition',
                         ['A Debt To Pay condition'] = 'A Debt To Pay condition token',
                         ['Captain Rex'] = 'Suppresive Fire condition',
-                        ['Suppresive Fire condition'] = 'Suppresive Fire condition token'
+                        ['Suppresive Fire condition'] = 'Suppresive Fire condition token',
+                        ['StarViper Mk.II'] = 'StarViper Mk.II roll token'
                     }
 
 -- Update spawn options with passed words
