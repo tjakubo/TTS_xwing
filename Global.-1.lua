@@ -3133,7 +3133,8 @@ DialModule.SpawnRuler = function(ship)
             custom.collider = 'http://pastebin.com/raw/zucpQryb'
             scale = {0.623, 0.623, 0.623}
         else
-            custom.mesh = 'http://pastebin.com/raw/p3cjDpBk'
+            -- custom.mesh = 'http://pastebin.com/raw/p3cjDpBk'
+            custom.mesh = 'http://cloud-3.steamusercontent.com/ugc/841458808201836847/CB89AC292B6C153D3CF171352586815622E0A680/'
             custom.collider = 'http://pastebin.com/raw/5G8JN2B6'
             scale = {0.629, 0.629, 0.629}
         end
