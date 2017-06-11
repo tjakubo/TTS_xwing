@@ -1957,6 +1957,7 @@ shipStatsDatabase['Z-95 Headhunter Rebel'] = { shieldCount=2 }
 shipStatsDatabase['TIE Fighter Rebel'] = { shieldCount=0 }
 shipStatsDatabase['U-Wing'] = { shieldCount=4 }
 shipStatsDatabase['ARC-170'] = { shieldCount=3 }
+shipStatsDatabase['Auzituck Gunship'] = { shieldCount=3 }
 
 shipStatsDatabase['Firespray-31 Scum'] = { shieldCount=4 }
 shipStatsDatabase['Z-95 Headhunter Scum'] = { shieldCount=2 }

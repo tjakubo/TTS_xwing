@@ -264,6 +264,9 @@ function XW_ObjMatchType(obj, type)
         if (obj.tag == 'Chip' or obj.getVar('set') ~= nil) and obj.getName() ~= 'Shield' then
             return true
         end
+        if obj.getName():find('Reinforce') ~= nil then
+            return true
+        end
     elseif type == 'lock' then
         return (obj.getVar('set') ~= nil)
     elseif type == 'dial' then
@@ -4171,6 +4174,7 @@ shipTypeDatabase = {
     ['TIE Fighter Rebel'] = { faction = 'Rebel', largeBase = false, meshes = {'https://paste.ee/r/aCJSv', 'http://cloud-3.steamusercontent.com/ugc/82591194029072635/C7C5DAD08935A68E342BED0A8583D23901D28753/', 'http://cloud-3.steamusercontent.com/ugc/200804981461390083/2E300B481E6474A8F71781FB38D1B0CD74BBC427/'}},
     ['U-Wing'] = { faction = 'Rebel', largeBase = true, meshes = {'https://paste.ee/r/D4Jjb', 'http://cloud-3.steamusercontent.com/ugc/82591194029075014/E561AA8493F86562F48EE85AB0C02F9C4F54D1B3/', 'http://cloud-3.steamusercontent.com/ugc/89352927638740227/F17424FAEF4C4429CE544FEF03DAE0E7EA2A672E/'}},
     ['ARC-170'] = { faction = 'Rebel', largeBase = false, meshes = {'http://cloud-3.steamusercontent.com/ugc/489018224649021380/CF0BE9820D8123314E976CF69F3EA0A2F52A19AA/'}},
+    ['Auzituck Gunship'] = {faction = 'Rebel', largeBase = false, meshes = {'http://cloud-3.steamusercontent.com/ugc/830199836523150434/792F09608618B0AC2FF114BAA88567BA214B4A62/'}},
 
     ['Firespray-31 Scum'] = { faction = 'Scum', largeBase = true, meshes = {'https://paste.ee/r/3INxK', 'http://cloud-3.steamusercontent.com/ugc/82591194029069521/B5F857033DD0324E7508645821F17B572BC1AF6A/'}},
     ['Z-95 Headhunter Scum'] = { faction = 'Scum', largeBase = false, meshes = {'https://paste.ee/r/OZrhd', 'http://cloud-3.steamusercontent.com/ugc/82591194029101027/02AE170F8A35A5619E57B3380F9F7FE0E127E567/'}},
