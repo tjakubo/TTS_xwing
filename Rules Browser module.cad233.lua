@@ -210,7 +210,7 @@ end
 function RBM_clickRules()
     TM.DeleteAllChildren()
     local sPos = self.getPosition()
-    local usageNote = TM.Instantiate('[b]BOOKS USAGE[/b]', Vect_Sum(sPos, {0, 0.5, -13}), {1, 1, 1}, {0, 90, 0})
+    local usageNote = TM.Instantiate('[b]BOOKS USAGE[/b]', Vect_Sum(sPos, {3, 0.5, -13}), {1, 1, 1}, {0, 90, 0})
     usageNote.setLuaScript('')
     usageNote.interactable = true
     usageNote.unlock()
@@ -224,6 +224,9 @@ function RBM_clickRules()
             newObj.setPosition(Vect_Sum(sPos, {0, 0.5, -2}))
         elseif newObj.getName() == 'Rules Reference Index' then
             newObj.setPosition(Vect_Sum(sPos, {0, 0.5, 20}))
+        elseif newObj.getName() == 'Reference Cards' then
+            newObj.setPosition(Vect_Sum(sPos, {-3, 0.5, -13}))
+            newObj.setRotation({0, 0, 0})
         else
             newObj.setPosition(Vect_Sum(sPos, {0, 0.5, 11}))
         end
