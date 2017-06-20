@@ -157,17 +157,17 @@ end
 Spawner.ReturnMatches = function(searchWords)
     local matches = {ships={}, upgrades={}, misc={}}
 
-    for itemName,itemInfo in pairs(Spawner.items) do
-        for k,word in pairs(searchWords) do
-            local acronym = true
-            for i=1,word:len() do
-                if word:sub(i,i) ~= string.upper(word:sub(i,i)) or tonumber(word:sub(i,i)) ~= nil then
-                    acronym = false
-                end
+    for k,word in pairs(searchWords) do
+        local acronym = true
+        for i=1,word:len() do
+            if word:sub(i,i) ~= string.upper(word:sub(i,i)) and tonumber(word:sub(i,i)) == nil then
+                acronym = false
             end
-            if acronym then
+        end
+        if acronym then
+            for itemName,itemInfo in pairs(Spawner.items) do
                 local nameWords = {}
-                for nameWord in itemInfo.name:gmatch('[^%s]+') do
+                for nameWord in itemInfo.name:gmatch('[^%s-]+') do
                     table.insert(nameWords, nameWord)
                 end
                 local match = true
@@ -197,7 +197,9 @@ Spawner.ReturnMatches = function(searchWords)
                         table.insert(matches.misc, {name=itemInfo.name, key=itemName})
                     end
                 end
-            elseif word:len() > 2 then
+            end
+        elseif word:len() > 2 then
+            for itemName,itemInfo in pairs(Spawner.items) do
                 if itemName:find(string.lower(word)) ~= nil then
                     if itemName:sub(1,8) == 'upgrade:' then
                         table.insert(matches.upgrades, {name=itemInfo.name, key=itemName})
@@ -1598,7 +1600,7 @@ Browser.lastDesc = ''
 function update()
     if Browser.noteObj ~= nil then
         local noteDesc = Browser.noteObj.getDescription()
-        if noteDesc:len() ~= Browser.lastDesc:len() and noteDesc ~= Browser.lastDesc then
+        if noteDesc ~= Browser.lastDesc then
             searchFromNote()
             --print('up')
             Browser.lastDesc = noteDesc
@@ -1958,6 +1960,7 @@ shipStatsDatabase['TIE Fighter Rebel'] = { shieldCount=0 }
 shipStatsDatabase['U-Wing'] = { shieldCount=4 }
 shipStatsDatabase['ARC-170'] = { shieldCount=3 }
 shipStatsDatabase['Auzituck Gunship'] = { shieldCount=3 }
+shipStatsDatabase['Scurrg H-6 Bomber Rebel'] = { shieldCount=5 }
 
 shipStatsDatabase['Firespray-31 Scum'] = { shieldCount=4 }
 shipStatsDatabase['Z-95 Headhunter Scum'] = { shieldCount=2 }
@@ -1973,6 +1976,7 @@ shipStatsDatabase['G-1A StarFighter'] = { shieldCount=4 }
 shipStatsDatabase['Lancer-Class Pursuit Craft'] = { shieldCount=3 }
 shipStatsDatabase['Quadjumper'] = { shieldCount=0 }
 shipStatsDatabase['Protectorate Starfighter'] = { shieldCount=0 }
+shipStatsDatabase['Scurrg H-6 Bomber Scum'] = { shieldCount=5 }
 
 shipStatsDatabase['TIE Fighter'] = { shieldCount=0 }
 shipStatsDatabase['TIE Interceptor'] = { shieldCount=0 }
