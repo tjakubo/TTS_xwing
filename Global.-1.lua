@@ -2897,11 +2897,8 @@ DialModule.PerformAction = function(ship, type, playerColor)
     if type:find('ruler') ~= nil then
         local scPos = type:find(':')
         local rulerCode = type:sub(scPos+1,-1)
-        if RulerModule.SpawnRuler(ship, rulerCode) ~= nil then
-            announceInfo.note = 'spawned a ruler (' .. rulerCode .. ')'
-        else
-            return
-        end
+        RulerModule.ToggleRuler(ship, rulerCode)
+        return
     elseif type:find('spawnMoveTemplate') ~= nil then
         if DialModule.DeleteTemplate(ship) == false then
             local scPos = type:find(':')
@@ -3152,8 +3149,20 @@ function DialClick_RollLB(dial)
         DialModule.SetMoveUndoButtonState(dial, 'none')
     end
 end
-function DialClick_Ruler(dial)
-    DialModule.PerformAction(dial.getVar('assignedShip'), 'ruler:a')
+function DialClick_RulerArc(dial)
+    DialModule.PerformAction(dial.getVar('assignedShip'), 'ruler:A')
+end
+function DialClick_RulerTurr(dial)
+    DialModule.PerformAction(dial.getVar('assignedShip'), 'ruler:AT')
+end
+function DialClick_RulerR1(dial)
+    DialModule.PerformAction(dial.getVar('assignedShip'), 'ruler:R1')
+end
+function DialClick_RulerR2(dial)
+    DialModule.PerformAction(dial.getVar('assignedShip'), 'ruler:R2')
+end
+function DialClick_RulerR3(dial)
+    DialModule.PerformAction(dial.getVar('assignedShip'), 'ruler:R3')
 end
 function DialClick_ToggleMainExpanded(dial)
     local befMove = false
@@ -3225,7 +3234,11 @@ DialModule.Buttons.rollRB = {label='Xb', click_function='DialClick_RollRB', heig
 DialModule.Buttons.rollL = {label='X', click_function='DialClick_RollL', height=500, width=365, position={-1.5, 0.5, 0}, font_size=250}
 DialModule.Buttons.rollLF = {label='Xf', click_function='DialClick_RollLF', height=500, width=365, position={-1.5, 0.5, -1}, font_size=250}
 DialModule.Buttons.rollLB = {label='Xb', click_function='DialClick_RollLB', height=500, width=365, position={-1.5, 0.5, 1}, font_size=250}
-DialModule.Buttons.ruler = {label='R', click_function='DialClick_Ruler', height=500, width=365, position={-1.5, 0.5, 2}, font_size=250}
+DialModule.Buttons.rulerArc = {label='Arc', click_function='DialClick_RulerArc', height=500, width=600, position={-1.7, 0.5, 2}, font_size=250}
+DialModule.Buttons.rulerTurr = {label='RT', click_function='DialClick_RulerTurr', height=500, width=365, position={-2.7, 0.5, 2.5}, font_size=250}
+DialModule.Buttons.rulerR1 = {label='1', click_function='DialClick_RulerR1', height=500, width=200, position={-2.1, 0.5, 3}, font_size=250}
+DialModule.Buttons.rulerR2 = {label='2', click_function='DialClick_RulerR2', height=500, width=200, position={-1.7, 0.5, 3}, font_size=250}
+DialModule.Buttons.rulerR3 = {label='3', click_function='DialClick_RulerR3', height=500, width=200, position={-1.3, 0.5, 3}, font_size=250}
 DialModule.Buttons.targetLock = {label='TL', click_function='DialClick_TargetLock', height=500, width=365, position={1.5, 0.5, 2}, font_size=250}
 DialModule.Buttons.slide = {label='Slide', click_function='DialClick_SlideStart', height=250, width=1600, position={2.5, 0.5, 0}, font_size=250, rotation={0, 90, 0}}
 
@@ -3588,7 +3601,7 @@ end
 --           1      <- initial set + expanded actions
 DialModule.SetInitialButtonsState = function(dial, newState)
     local actShip = dial.getVar('assignedShip')
-    local extActionsMatch = ' Br B Bl Xf X Xb TL R F S E Q Slide '  -- labels for buttons of EXTENDED set
+    local extActionsMatch = ' Br B Bl Xf X Xb TL RT Arc 1 2 3 F S E Q Slide '  -- labels for buttons of EXTENDED set
     local nameButton = DialModule.Buttons.nameButton(actShip)
     local currentState = DialModule.GetInitialButtonsState(dial)
 
@@ -3602,7 +3615,11 @@ DialModule.SetInitialButtonsState = function(dial, newState)
             dial.createButton(DialModule.Buttons.FlipVersion(DialModule.Buttons.rollL))
             dial.createButton(DialModule.Buttons.FlipVersion(DialModule.Buttons.rollLF))
             dial.createButton(DialModule.Buttons.FlipVersion(DialModule.Buttons.rollLB))
-            dial.createButton(DialModule.Buttons.FlipVersion(DialModule.Buttons.ruler))
+            dial.createButton(DialModule.Buttons.FlipVersion(DialModule.Buttons.rulerArc))
+            dial.createButton(DialModule.Buttons.FlipVersion(DialModule.Buttons.rulerTurr))
+            dial.createButton(DialModule.Buttons.FlipVersion(DialModule.Buttons.rulerR1))
+            dial.createButton(DialModule.Buttons.FlipVersion(DialModule.Buttons.rulerR2))
+            dial.createButton(DialModule.Buttons.FlipVersion(DialModule.Buttons.rulerR3))
             dial.createButton(DialModule.Buttons.FlipVersion(DialModule.Buttons.targetLock))
             dial.createButton(DialModule.Buttons.FlipVersion(DialModule.Buttons.slide))
             dial.createButton(DialModule.Buttons.FlipVersion(DialModule.Buttons.focus))
@@ -3654,7 +3671,7 @@ end
 --           2      <- above + boosts, rolls, R, TL
 DialModule.SetMainButtonsState = function(dial, newState)
     local standardActionsMatch = ' F S E Q -'           -- labels for buttons of STANDARD set
-    local extActionsMatch = ' Br B Bl Xf X Xb TL R Slide '  -- labels for buttons of EXTENDED set
+    local extActionsMatch = ' Br B Bl Xf X Xb TL RT Arc 1 2 3 Slide '  -- labels for buttons of EXTENDED set
 
     local currentState = DialModule.GetMainButtonsState(dial)
     if newState > currentState then
@@ -3675,7 +3692,11 @@ DialModule.SetMainButtonsState = function(dial, newState)
             dial.createButton(DialModule.Buttons.rollL)
             dial.createButton(DialModule.Buttons.rollLF)
             dial.createButton(DialModule.Buttons.rollLB)
-            dial.createButton(DialModule.Buttons.ruler)
+            dial.createButton(DialModule.Buttons.rulerArc)
+            dial.createButton(DialModule.Buttons.rulerTurr)
+            dial.createButton(DialModule.Buttons.rulerR1)
+            dial.createButton(DialModule.Buttons.rulerR2)
+            dial.createButton(DialModule.Buttons.rulerR3)
             dial.createButton(DialModule.Buttons.targetLock)
             dial.createButton(DialModule.Buttons.slide)
         end
@@ -3835,7 +3856,7 @@ RulerModule.meshes = {}
 RulerModule.meshes.smallBase = {}
 RulerModule.meshes.smallBase.scale = {0.629, 0.629, 0.629}
 RulerModule.meshes.smallBase.collider = 'http://pastebin.com/raw/5G8JN2B6'
-RulerModule.meshes.smallBase.all = 'http://cloud-3.steamusercontent.com/ugc/856096260992686885/93A78E32E8B4D456A8850956D0A394AFDD339BD7/'
+RulerModule.meshes.smallBase.full = 'http://cloud-3.steamusercontent.com/ugc/856096260992686885/93A78E32E8B4D456A8850956D0A394AFDD339BD7/'
 RulerModule.meshes.smallBase.primary = 'http://cloud-3.steamusercontent.com/ugc/856096260992683070/F2A246F3E449439892E5721CC8210097D0717FB1/'
 RulerModule.meshes.smallBase.side = 'http://cloud-3.steamusercontent.com/ugc/856096260992684737/67D7CC3612702885FAF89DABA36B7FF03102E245/'
 RulerModule.meshes.smallBase.rear = 'http://cloud-3.steamusercontent.com/ugc/856096260992274940/BCD8DB9C2B0ABC3975EA2742979D5D1D2B0C29F2/'
@@ -3849,7 +3870,7 @@ RulerModule.meshes.smallBase.range[4] = 'http://cloud-3.steamusercontent.com/ugc
 RulerModule.meshes.largeBase = {}
 RulerModule.meshes.largeBase.scale = {0.623, 0.623, 0.623}
 RulerModule.meshes.largeBase.collider = 'http://pastebin.com/raw/zucpQryb'
-RulerModule.meshes.largeBase.all = 'http://cloud-3.steamusercontent.com/ugc/856096260994307914/2022E0748DDB4695583F4DD32D4514B9A71D8A7A/'
+RulerModule.meshes.largeBase.full = 'http://cloud-3.steamusercontent.com/ugc/856096260994307914/2022E0748DDB4695583F4DD32D4514B9A71D8A7A/'
 RulerModule.meshes.largeBase.primary = 'http://cloud-3.steamusercontent.com/ugc/856096260994304623/DDEEE542CE2CCFD3E5B9C9F76C159028D5926833/'
 RulerModule.meshes.largeBase.side = 'http://cloud-3.steamusercontent.com/ugc/856096260994305380/E709140C72864CCC651E01F84DFC8789BF81C511/'
 RulerModule.meshes.largeBase.rear = 'http://cloud-3.steamusercontent.com/ugc/856096260994305005/06D006D4FFD6E300AD4DB5DB355C998557E4967E/'
@@ -3877,7 +3898,7 @@ XW_cmd.AddCommand('a[apsrtm]?', 'rulerHandle')  -- Rulers with arc lines
 
 -- Translate ruler code to a mesh entry
 RulerModule.typeToKey = {}
-RulerModule.typeToKey['AA'] = 'all'
+RulerModule.typeToKey['AA'] = 'full'
 RulerModule.typeToKey['AP'] = 'primary'
 RulerModule.typeToKey['AS'] = 'side'
 RulerModule.typeToKey['AR'] = 'rear'
@@ -3907,6 +3928,23 @@ RulerModule.GetRulerData = function(ship, rulerType)
     out.scale = RulerModule.meshes[baseSize .. 'Base'].scale
     out.collider = RulerModule.meshes[baseSize .. 'Base'].collider
     return out
+end
+
+-- Return a descriptive arc name of command (for announcements)
+RulerModule.DescriptiveName = function(ship, rulerType)
+    if rulerType:sub(1,1) == 'R' then
+        ranges = rulerType:sub(2,2)
+        if ranges == '' then
+            ranges = '1-3'
+        end
+        return 'range ' .. ranges .. ' ruler'
+    else
+        if rulerType == 'A' then
+            rulerType = rulerType .. RulerModule.DefaultShipArc(ship)
+        end
+        local arcName = RulerModule.typeToKey[rulerType]
+        return arcName .. ' arc ruler'
+    end
 end
 
 -- Get the default ship arc type code
@@ -3942,7 +3980,7 @@ end
 
 -- Spawn a ruler for a ship
 -- Returns new ruler reference
-RulerModule.SpawnRuler = function(ship, rulerType)
+RulerModule.SpawnRuler = function(ship, rulerType, beQuiet)
     local rulerData = RulerModule.CreateCustomTables(ship, rulerType)
     local newRuler = spawnObject(rulerData.params)
     newRuler.setCustomObject(rulerData.custom)
@@ -3971,10 +4009,15 @@ end
 -- Toggle ruler for a ship
 -- If a ruler of queried type exists, just delete it and return nil
 -- If any other ruler exists, delete it (and spawn queried one), return new ruler ref
-RulerModule.ToggleRuler = function(ship, rulerType)
+RulerModule.ToggleRuler = function(ship, rulerType, beQuiet)
     local destType = RulerModule.DeleteRuler(ship)
     if destType ~= rulerType then
-        return RulerModule.SpawnRuler(ship, rulerType)
+        if beQuiet ~= true then
+            local annInfo = {type='action'}
+            annInfo.note = ' spawned a ' .. RulerModule.DescriptiveName(ship, rulerType) .. ' (' .. rulerType .. ')'
+            AnnModule.Announce(annInfo, 'all', ship)
+        end
+        return RulerModule.SpawnRuler(ship, rulerType, beQuiet)
     end
 end
 
@@ -3999,7 +4042,6 @@ AnnModule.announceColor.warn = {1, 0.25, 0.05}        -- Red - orange
 AnnModule.announceColor.info = {0.6, 0.1, 0.6}        -- Purple
 
 -- Notify color or all players of some event
--- Info: {ship=shipRef, info=announceInfo, target=targetStr}
 -- announceInfo: {type=typeOfEvent, note=notificationString}
 AnnModule.Announce = function(info, target, shipPrefix)
     local annString = ''
