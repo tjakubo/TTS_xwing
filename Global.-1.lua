@@ -481,14 +481,14 @@ XW_cmd.AddCommand = function(cmdRegex, type)
     -- When adding available commands, assert beggining and end of string automatically
     if cmdRegex:sub(1,1) ~= '^' then cmdRegex = '^' .. cmdRegex end
     if cmdRegex:sub(-1,-1) ~= '$' then cmdRegex = cmdRegex .. '$' end
-    table.insert(XW_cmd.ValidCommands, {cmdRegex, type})
+    table.insert(XW_cmd.ValidCommands, {string.lower(cmdRegex), type})
 end
 
 -- Check if command is registered as valid
 -- If it is return its type identifier, if not return nil
 XW_cmd.CheckCommand = function(cmd)
     -- Trim whitespaces
-    cmd = cmd:match( "^%s*(.-)%s*$" )
+    cmd = string.lower(cmd:match( "^%s*(.-)%s*$" ))
     local type = nil
     -- Resolve command type
     for k,pat in pairs(XW_cmd.ValidCommands) do
@@ -638,8 +638,9 @@ XW_cmd.Process = function(obj, cmd)
         elseif cmd == 'rd' then
             DialModule.RemoveSet(obj)
         end
+    elseif type == 'rulerHandle' then
+        RulerModule.ToggleRuler(obj, string.upper(cmd))
     elseif type == 'action' then
-        if cmd == 'r' then cmd = 'ruler' end
         DialModule.PerformAction(obj, cmd)
     end
     obj.setDescription('')
@@ -2859,13 +2860,6 @@ DialModule.onObjectDestroyed = function(obj)
             if lockInfo.lock == obj then table.remove(TokenModule.locksToBeSet, k) break end
         end
     end
-    -- Remove ruler with ship it is on and remove ruler from list if it is manually deleted
-    for k,info in pairs(DialModule.SpawnedRulers) do
-        if info.ship == obj or info.ruler == obj then
-            info.ruler.destruct()
-            table.remove(DialModule.SpawnedRulers, k)
-        end
-    end
     for k,info in pairs(DialModule.SpawnedTemplates) do
         if info.ship == obj or info.template == obj then
             info.template.destruct()
@@ -2953,19 +2947,17 @@ DialModule.onSave = function()
     return DialModule.GetSaveData()
 end
 
--- Range ruler action
-XW_cmd.AddCommand('r', 'action')
-
 -- Perform an automated action
 -- Can be called externally for stuff like range ruler spawning
 DialModule.PerformAction = function(ship, type, playerColor)
     local tokenActions = ' Focus Evade Stress Target Lock '
     announceInfo = {type='action'}
     -- Ruler spawning
-    if type == 'ruler' then
-        if DialModule.DeleteRuler(ship) == false then
-            DialModule.SpawnRuler(ship)
-            announceInfo.note = 'spawned a ruler'
+    if type:find('ruler') ~= nil then
+        local scPos = type:find(':')
+        local rulerCode = type:sub(scPos+1,-1)
+        if RulerModule.SpawnRuler(ship, rulerCode) ~= nil then
+            announceInfo.note = 'spawned a ruler (' .. rulerCode .. ')'
         else
             return
         end
@@ -3015,16 +3007,6 @@ DialModule.PerformAction = function(ship, type, playerColor)
     MoveModule.Announce(announceInfo, 'all', ship)
 end
 
--- Spawned rulers are kept there
--- Entry: {ship=shipRef, ruler=rulerObjRef}
-DialModule.SpawnedRulers = {}
--- Click function for ruler button
-function Ruler_SelfDestruct(obj)
-    for k, info in pairs(DialModule.SpawnedRulers) do
-        if info.ruler == obj then table.remove(DialModule.SpawnedRulers, k) end
-    end
-    obj.destruct()
-end
 -- Spawned tempaltes are kept there
 -- Entry: {ship=shipRef, template=templateObjRef}
 DialModule.SpawnedTemplates = {}
@@ -3117,48 +3099,6 @@ DialModule.DeleteTemplate = function(ship)
     end
     return false
 end
-
--- Spawn a ruler for a ship, base size aware
--- Return new ruler reference
-DialModule.SpawnRuler = function(ship)
-        -- New ruler to be spawned
-        local obj_parameters = {}
-        obj_parameters.type = 'Custom_Model'
-        obj_parameters.position = ship.getPosition()
-        obj_parameters.rotation = { 0, ship.getRotation()[2], 0 }
-        local newRuler = spawnObject(obj_parameters)
-        local custom = {}
-        if DB_isLargeBase(ship) == true then
-            custom.mesh = 'http://pastebin.com/raw/sZkuCV8a'
-            custom.collider = 'http://pastebin.com/raw/zucpQryb'
-            scale = {0.623, 0.623, 0.623}
-        else
-            -- custom.mesh = 'http://pastebin.com/raw/p3cjDpBk'
-            custom.mesh = 'http://cloud-3.steamusercontent.com/ugc/841458808201836847/CB89AC292B6C153D3CF171352586815622E0A680/'
-            custom.collider = 'http://pastebin.com/raw/5G8JN2B6'
-            scale = {0.629, 0.629, 0.629}
-        end
-        newRuler.setCustomObject(custom)
-        newRuler.lock()
-        newRuler.setScale(scale)
-        local button = {click_function = 'Ruler_SelfDestruct', label = 'DEL', position = {0, 0.5, 0}, rotation =  {0, 0, 0}, width = 900, height = 900, font_size = 250}
-        newRuler.createButton(button)
-        table.insert(DialModule.SpawnedRulers, {ruler=newRuler, ship=ship})
-        return newRuler
-end
-
--- Delete ruler spawned for a ship, return true if deleted, false if there was none
-DialModule.DeleteRuler = function(ship)
-    for k,info in pairs(DialModule.SpawnedRulers) do
-        if info.ship == ship then
-            info.ruler.destruct()
-            table.remove(DialModule.SpawnedRulers, k)
-            return true
-        end
-    end
-    return false
-end
-
 
 -- DIAL BUTTON CLICK FUNCTIONS (self-explanatory)
 function DialClick_Delete(dial)
@@ -3272,7 +3212,7 @@ function DialClick_RollLB(dial)
     end
 end
 function DialClick_Ruler(dial)
-    DialModule.PerformAction(dial.getVar('assignedShip'), 'ruler')
+    DialModule.PerformAction(dial.getVar('assignedShip'), 'ruler:a')
 end
 function DialClick_ToggleMainExpanded(dial)
     local befMove = false
@@ -3917,6 +3857,188 @@ end
 -- END AUTO DIALS MODULE
 --------
 
+--------
+-- RULERS MODULE
+
+-- Since there are many ruler types (models) and commands, this takes carre of all ruler-related handling
+-- TO_DO: ActionModule and include it there
+
+RulerModule = {}
+
+-- Table of existing spawned rulers
+-- Entry: {ship=shipRef, tuler=rulerRef, type=rulerTypeCode}
+RulerModule.spawnedRulers = {}
+-- Click function for ruler button (destroy)
+function Ruler_SelfDestruct(obj)
+    for k, rTable in pairs(RulerModule.spawnedRulers) do
+        if rTable.ruler == obj then
+            table.remove(RulerModule.spawnedRulers, k)
+            break
+        end
+    end
+    obj.destruct()
+end
+-- Remove appropriate entry if ruler is destroyed
+RulerModule.onObjectDestroyed = function(obj)
+    for k,info in pairs(RulerModule.spawnedRulers) do
+        if info.ship == obj or info.ruler == obj then
+            if info.ship == obj then info.ruler.destruct() end
+            table.remove(RulerModule.spawnedRulers, k)
+            break
+        end
+    end
+end
+
+-- RULER MESHES DATABASE
+RulerModule.meshes = {}
+RulerModule.meshes.smallBase = {}
+RulerModule.meshes.smallBase.scale = {0.629, 0.629, 0.629}
+RulerModule.meshes.smallBase.collider = 'http://pastebin.com/raw/5G8JN2B6'
+RulerModule.meshes.smallBase.all = 'http://cloud-3.steamusercontent.com/ugc/856096260992686885/93A78E32E8B4D456A8850956D0A394AFDD339BD7/'
+RulerModule.meshes.smallBase.primary = 'http://cloud-3.steamusercontent.com/ugc/856096260992683070/F2A246F3E449439892E5721CC8210097D0717FB1/'
+RulerModule.meshes.smallBase.side = 'http://cloud-3.steamusercontent.com/ugc/856096260992684737/67D7CC3612702885FAF89DABA36B7FF03102E245/'
+RulerModule.meshes.smallBase.rear = 'http://cloud-3.steamusercontent.com/ugc/856096260992274940/BCD8DB9C2B0ABC3975EA2742979D5D1D2B0C29F2/'
+RulerModule.meshes.smallBase.turret = 'http://cloud-3.steamusercontent.com/ugc/856096260992685072/A3075630B5140D7BF0823686F2351E97E6567B05/'
+RulerModule.meshes.smallBase.mobile = 'http://cloud-3.steamusercontent.com/ugc/856096260992687154/37CCFB22293664504026A894695267EF85D44EB7/'
+RulerModule.meshes.smallBase.range = {}
+RulerModule.meshes.smallBase.range[1] = 'http://cloud-3.steamusercontent.com/ugc/856096260992685573/70C3A5276DCCAE87290B97C695FCED9D09780DC6/'
+RulerModule.meshes.smallBase.range[2] = 'http://cloud-3.steamusercontent.com/ugc/856096260992685960/485F895A4B71F611D656A3132E9D6189595CD10E/'
+RulerModule.meshes.smallBase.range[3] = 'http://cloud-3.steamusercontent.com/ugc/856096260992686270/2B3DE67C10C59C985D5D153A70046E355BA6C058/'
+RulerModule.meshes.smallBase.range[4] = 'http://cloud-3.steamusercontent.com/ugc/856096260992686557/6B2001736D0C1DFEFB3B543C58CA725D11A9735F/'
+RulerModule.meshes.largeBase = {}
+RulerModule.meshes.largeBase.scale = {0.623, 0.623, 0.623}
+RulerModule.meshes.largeBase.collider = 'http://pastebin.com/raw/zucpQryb'
+RulerModule.meshes.largeBase.all = 'http://cloud-3.steamusercontent.com/ugc/856096260994307914/2022E0748DDB4695583F4DD32D4514B9A71D8A7A/'
+RulerModule.meshes.largeBase.primary = 'http://cloud-3.steamusercontent.com/ugc/856096260994304623/DDEEE542CE2CCFD3E5B9C9F76C159028D5926833/'
+RulerModule.meshes.largeBase.side = 'http://cloud-3.steamusercontent.com/ugc/856096260994305380/E709140C72864CCC651E01F84DFC8789BF81C511/'
+RulerModule.meshes.largeBase.rear = 'http://cloud-3.steamusercontent.com/ugc/856096260994305005/06D006D4FFD6E300AD4DB5DB355C998557E4967E/'
+RulerModule.meshes.largeBase.turret = 'http://cloud-3.steamusercontent.com/ugc/856096260994305633/45D6DBE621E0BB261CB61DE2D003F6EF5F7A2DA5/'
+RulerModule.meshes.largeBase.mobile = 'http://cloud-3.steamusercontent.com/ugc/856096260994308150/EC076D46580BAE7249F51AEF266B9C068ED87949/'
+RulerModule.meshes.largeBase.range = {}
+RulerModule.meshes.largeBase.range[1] = 'http://cloud-3.steamusercontent.com/ugc/856096260994306246/BBAA29F3241362AD4EA6ABBFB75F9A20335FCD61/'
+RulerModule.meshes.largeBase.range[2] = 'http://cloud-3.steamusercontent.com/ugc/856096260994306498/814A249E87CB5AFEC2902B58C3F74D326DA4A036/'
+RulerModule.meshes.largeBase.range[3] = 'http://cloud-3.steamusercontent.com/ugc/856096260994306731/3574957E0E1E09E967F78119159F36A709AED2C5/'
+RulerModule.meshes.largeBase.range[4] = 'http://cloud-3.steamusercontent.com/ugc/856096260994307579/38AF04F20E7A7067E7385AAB44A95CAC7EBC4510/'
+
+
+-- Avaialble ruler codes:
+-- R            - 1-3 range rings
+-- R1/R2/R3     - 1/2/3 range rings
+-- A            - contextual arc
+-- AA           - full ruler
+-- AP           - primary arc
+-- AS           - side arc
+-- AR           - rear arc
+-- AT           - turret arc
+-- AM           - mobile arc
+XW_cmd.AddCommand('r[1-3]?', 'rulerHandle')     -- Range "rings"
+XW_cmd.AddCommand('a[apsrtm]?', 'rulerHandle')  -- Rulers with arc lines
+
+-- Translate ruler code to a mesh entry
+RulerModule.typeToKey = {}
+RulerModule.typeToKey['AA'] = 'all'
+RulerModule.typeToKey['AP'] = 'primary'
+RulerModule.typeToKey['AS'] = 'side'
+RulerModule.typeToKey['AR'] = 'rear'
+RulerModule.typeToKey['AT'] = 'turret'
+RulerModule.typeToKey['AM'] = 'mobile'
+RulerModule.typeToKey['R'] = 'range'
+
+-- Get ruler spawn tables for some ship and some ruler code
+-- Return table with "mesh", "collider" and "scale" keys
+--  (for appropriate ruler)
+RulerModule.GetRulerData = function(ship, rulerType)
+    local baseSize = DB_getBaseSize(ship)
+    if baseSize == 'Unknown' then
+        baseSize = 'small'
+    end
+    local out = {mesh = nil, collider = nil, scale = nil}
+    if rulerType:sub(1,1) == 'R' then
+        rKey = tonumber(rulerType:sub(2,2))
+        if rKey == nil then
+            rKey = 4
+        end
+        out.mesh = RulerModule.meshes[baseSize .. 'Base'].range[rKey]
+    else
+        local key = RulerModule.typeToKey[rulerType]
+        out.mesh = RulerModule.meshes[baseSize .. 'Base'][key]
+    end
+    out.scale = RulerModule.meshes[baseSize .. 'Base'].scale
+    out.collider = RulerModule.meshes[baseSize .. 'Base'].collider
+    return out
+end
+
+-- Get the default ship arc type code
+-- e.g. whip with just primary arc will return code for priamry arc spawn
+RulerModule.DefaultShipArc = function(ship)
+    local info = DB_getShipInfo(ship)
+    if info ~= nil then
+        return info.arcType
+    end
+    return 'A'
+end
+
+-- Create tables for spawning a ruler
+-- Return:  {
+--      params      <- table suitable for spawnObject(params) call
+--      custom      <- tabgle suitable for obj.setCustomObject(custom) call
+--          }
+RulerModule.CreateCustomTables = function(ship, rulerType)
+    if rulerType == 'A' then
+        rulerType = rulerType .. RulerModule.DefaultShipArc(ship)
+    end
+    local rulerData = RulerModule.GetRulerData(ship, rulerType)
+    local paramsTable = {}
+    paramsTable.type = 'Custom_Model'
+    paramsTable.position = ship.getPosition()
+    paramsTable.rotation = {0, ship.getRotation()[2], 0}
+    paramsTable.scale = rulerData.scale
+    local customTable = {}
+    customTable.mesh = rulerData.mesh
+    customTable.collider = rulerData.collider
+    return {params = paramsTable, custom = customTable}
+end
+
+-- Spawn a ruler for a ship
+-- Returns new ruler reference
+RulerModule.SpawnRuler = function(ship, rulerType)
+    local rulerData = RulerModule.CreateCustomTables(ship, rulerType)
+    local newRuler = spawnObject(rulerData.params)
+    newRuler.setCustomObject(rulerData.custom)
+    table.insert(RulerModule.spawnedRulers, {ship = ship, ruler = newRuler, type = rulerType})
+    newRuler.lock()
+    newRuler.setScale(rulerData.params.scale)
+    local button = {click_function = 'Ruler_SelfDestruct', label = 'DEL', position = {0, 0.5, 0}, rotation =  {0, 0, 0}, width = 900, height = 900, font_size = 250}
+    newRuler.createButton(button)
+    return newRuler
+end
+
+-- Delete existing ruler for a ship
+-- Return deleted ruler type or nil if there was none
+RulerModule.DeleteRuler = function(ship)
+    for k,rTable in pairs(RulerModule.spawnedRulers) do
+        if rTable.ship == ship then
+            rTable.ruler.destruct()
+            local destType = rTable.type
+            table.remove(RulerModule.spawnedRulers, k)
+            return destType
+        end
+    end
+    return nil
+end
+
+-- Toggle ruler for a ship
+-- If a ruler of queried type exists, just delete it and return nil
+-- If any other ruler exists, delete it (and spawn queried one), return new ruler ref
+RulerModule.ToggleRuler = function(ship, rulerType)
+    local destType = RulerModule.DeleteRuler(ship)
+    if destType ~= rulerType then
+        return RulerModule.SpawnRuler(ship, rulerType)
+    end
+end
+
+-- END RULERS MODULE
+--------
 
 --------
 -- DIRECT TTS EVENT HANDLING
@@ -3958,10 +4080,12 @@ end
 -- When something is destroyed, it is called as an argument here (with 1 more frame to live)
 function onObjectDestroyed(dying_object)
     for k, obj in pairs(watchedObj) do if dying_object == obj then table.remove(watchedObj, k) end end
-    -- Handle killing rulers and unassignment of dial sets
+    -- Handle unassignment of dial sets
     DialModule.onObjectDestroyed(dying_object)
     -- Handle history delete and emergency restore saving
     MoveModule.onObjectDestroyed(dying_object)
+    -- Handle killing rulers
+    RulerModule.onObjectDestroyed(dying_object)
 end
 
 -- When table is loaded up, this is called
@@ -4082,6 +4206,7 @@ end
 --      shipType        <- ship type name, exact as on pilot card
 --      largeBase       <- TRUE if ship is large base, FALSE otherwise
 --      faction         <- 'Rebel', 'Scum' or 'Imperial'
+--      arcType         <- 'P' primary, 'T' turret, 'S' side, 'M' mobile, 'R' rear
 --          }
 -- Return nil and warn if ship unrecognized
 function DB_getShipInfo(shipRef)
@@ -4100,7 +4225,7 @@ function DB_getShipInfo(shipRef)
                 ssl_switch_model = 'https' .. model:sub(5, -1)
             end
             if model == mesh or ssl_switch_model == mesh then
-                local info = {shipType = shipType, largeBase = typeTable.largeBase, faction = typeTable.faction}
+                local info = {shipType = shipType, largeBase = typeTable.largeBase, faction = typeTable.faction, arcType = typeTable.arcType}
                 shipRef.setTable('DB_shipInfo', info)
                 return info
             end
@@ -4159,54 +4284,56 @@ end
 -- Type <=> Model (mesh) database
 -- Entry: { <type name>, <is large base?>, <model1>, <model2>, ..., <modelN>}
 shipTypeDatabase = {
-    ['X-Wing'] = { faction = 'Rebel', largeBase = false, meshes = {'https://paste.ee/r/54FLC', 'https://paste.ee/r/eAdkb', 'https://paste.ee/r/hxWah', 'https://paste.ee/r/ZxcTT', 'https://paste.ee/r/FfWNK', 'http://cloud-3.steamusercontent.com/ugc/82591194029070509/ECA794EC4771A195A6EB641226DF1F986041EFFF/', 'http://cloud-3.steamusercontent.com/ugc/82591194029077829/B7E898109E3F3B115DF0D60BB0CA215A727E3F38/', 'http://cloud-3.steamusercontent.com/ugc/82591194029083210/BFF5BAE2A45EC9D647E14D9041140FFE114BF2D4/', 'http://cloud-3.steamusercontent.com/ugc/82591194029107313/95BAD08906334FBA628F6628E5DE2D0D30112A53/', 'http://cloud-3.steamusercontent.com/ugc/82591194029079708/B215C5ADC2F6D83F441BA9C7659C91E3100D3BDC/', 'http://cloud-3.steamusercontent.com/ugc/82591194029074494/80096860E52453F4F998632714F86DF49884720A/'}},
-    ['Y-Wing Rebel'] = { faction = 'Rebel', largeBase = false, meshes = {'https://paste.ee/r/MV6qP', 'http://cloud-3.steamusercontent.com/ugc/82591194029097150/75A486189FEDE8BEEBFBACC0D76DE926CB42E52A/'}},
-    ['YT-1300'] = { faction = 'Rebel', largeBase = true, meshes = {'https://paste.ee/r/kkPoB', 'http://pastebin.com/VdHhgdFr', 'http://cloud-3.steamusercontent.com/ugc/82591194029088151/213EF50E847F62BB943430BA93094F1E794E866B/', 'http://pastebin.com/VdHhgdFr'}},
-    ['YT-2400'] = { faction = 'Rebel', largeBase = true, meshes = {'https://paste.ee/r/Ff0vZ', 'http://cloud-3.steamusercontent.com/ugc/82591194029079241/206F408212849DCBB3E1934A623FD7A8844AAE47/'}},
-    ['A-Wing'] = { faction = 'Rebel', largeBase = false, meshes = {'https://paste.ee/r/tIdib', 'https://paste.ee/r/mow3U', 'https://paste.ee/r/ntg8n', 'http://cloud-3.steamusercontent.com/ugc/82591194029101910/5B04878FCA189712681D1CF6C92F8CD178668FD2/', 'http://cloud-3.steamusercontent.com/ugc/82591194029092256/19939432DC769A3B77BA19F2541C9EA11B72C73B/', 'http://cloud-3.steamusercontent.com/ugc/82591194029099778/264B65BA198B1A004192B898AD32F48FD3D400E3/'}},
-    ['B-Wing'] = { faction = 'Rebel', largeBase = false, meshes = {'https://paste.ee/r/8CtXr', 'http://cloud-3.steamusercontent.com/ugc/82591194029071704/78677576E07A2F091DEC4CE58129B42714E8A19E/'}},
-    ['HWK-290 Rebel'] = { faction = 'Rebel', largeBase = false, meshes = {'https://paste.ee/r/MySkn', 'http://cloud-3.steamusercontent.com/ugc/82591194029098250/4E8A65B9C156B7882A729BC9D93B2B434D549834/'}},
-    ['VCX-100'] = { faction = 'Rebel', largeBase = true, meshes = {'https://paste.ee/r/VmV6q', 'http://cloud-3.steamusercontent.com/ugc/82591194029104609/DDD1DE36F998F9175669CB459734B1A89AD3549B/'}},
-    ['Attack Shuttle'] = { faction = 'Rebel', largeBase = false, meshes = {'https://paste.ee/r/jrwRJ', 'http://cloud-3.steamusercontent.com/ugc/82591194029086137/2D8471654F7BA70A5B65BB3A5DC4EB6CBE8F7C1C/'}},
-    ['T-70 X-Wing'] = { faction = 'Rebel', largeBase = false, meshes = {'https://paste.ee/r/NH1KI', 'http://cloud-3.steamusercontent.com/ugc/82591194029099132/056C807B114DE0023C1B8ABD28F4D5E8F0B5D76E/'}},
-    ['E-Wing'] = { faction = 'Rebel', largeBase = false, meshes = {'https://paste.ee/r/A57A8', 'http://cloud-3.steamusercontent.com/ugc/82591194029072231/46CA6A77D12681CA1B1B4A9D97BD6917811D561C/'}},
-    ['K-Wing'] = { faction = 'Rebel', largeBase = false, meshes = {'https://paste.ee/r/2Airh', 'http://cloud-3.steamusercontent.com/ugc/82591194029069099/CDF24012FD0342ED8DE472CFA0C7C2748E3AF541/'}},
-    ['Z-95 Headhunter Rebel'] = { faction = 'Rebel', largeBase = false, meshes = {'https://paste.ee/r/d91Hu', 'http://cloud-3.steamusercontent.com/ugc/82591194029075380/02AE170F8A35A5619E57B3380F9F7FE0E127E567/'}},
-    ['TIE Fighter Rebel'] = { faction = 'Rebel', largeBase = false, meshes = {'https://paste.ee/r/aCJSv', 'http://cloud-3.steamusercontent.com/ugc/82591194029072635/C7C5DAD08935A68E342BED0A8583D23901D28753/', 'http://cloud-3.steamusercontent.com/ugc/200804981461390083/2E300B481E6474A8F71781FB38D1B0CD74BBC427/'}},
-    ['U-Wing'] = { faction = 'Rebel', largeBase = true, meshes = {'https://paste.ee/r/D4Jjb', 'http://cloud-3.steamusercontent.com/ugc/82591194029075014/E561AA8493F86562F48EE85AB0C02F9C4F54D1B3/', 'http://cloud-3.steamusercontent.com/ugc/89352927638740227/F17424FAEF4C4429CE544FEF03DAE0E7EA2A672E/'}},
-    ['ARC-170'] = { faction = 'Rebel', largeBase = false, meshes = {'http://cloud-3.steamusercontent.com/ugc/489018224649021380/CF0BE9820D8123314E976CF69F3EA0A2F52A19AA/'}},
-    ['Auzituck Gunship'] = {faction = 'Rebel', largeBase = false, meshes = {'http://cloud-3.steamusercontent.com/ugc/830199836523150434/792F09608618B0AC2FF114BAA88567BA214B4A62/'}},
+    ['X-Wing'] = { faction = 'Rebel', largeBase = false, arcType = 'P', meshes = {'https://paste.ee/r/54FLC', 'https://paste.ee/r/eAdkb', 'https://paste.ee/r/hxWah', 'https://paste.ee/r/ZxcTT', 'https://paste.ee/r/FfWNK', 'http://cloud-3.steamusercontent.com/ugc/82591194029070509/ECA794EC4771A195A6EB641226DF1F986041EFFF/', 'http://cloud-3.steamusercontent.com/ugc/82591194029077829/B7E898109E3F3B115DF0D60BB0CA215A727E3F38/', 'http://cloud-3.steamusercontent.com/ugc/82591194029083210/BFF5BAE2A45EC9D647E14D9041140FFE114BF2D4/', 'http://cloud-3.steamusercontent.com/ugc/82591194029107313/95BAD08906334FBA628F6628E5DE2D0D30112A53/', 'http://cloud-3.steamusercontent.com/ugc/82591194029079708/B215C5ADC2F6D83F441BA9C7659C91E3100D3BDC/', 'http://cloud-3.steamusercontent.com/ugc/82591194029074494/80096860E52453F4F998632714F86DF49884720A/'}},
+    ['Y-Wing Rebel'] = { faction = 'Rebel', largeBase = false, arcType = 'P', meshes = {'https://paste.ee/r/MV6qP', 'http://cloud-3.steamusercontent.com/ugc/82591194029097150/75A486189FEDE8BEEBFBACC0D76DE926CB42E52A/'}},
+    ['YT-1300'] = { faction = 'Rebel', largeBase = true, arcType = 'T', meshes = {'https://paste.ee/r/kkPoB', 'http://pastebin.com/VdHhgdFr', 'http://cloud-3.steamusercontent.com/ugc/82591194029088151/213EF50E847F62BB943430BA93094F1E794E866B/', 'http://pastebin.com/VdHhgdFr'}},
+    ['YT-2400'] = { faction = 'Rebel', largeBase = true, arcType = 'T', meshes = {'https://paste.ee/r/Ff0vZ', 'http://cloud-3.steamusercontent.com/ugc/82591194029079241/206F408212849DCBB3E1934A623FD7A8844AAE47/'}},
+    ['A-Wing'] = { faction = 'Rebel', largeBase = false, arcType = 'P', meshes = {'https://paste.ee/r/tIdib', 'https://paste.ee/r/mow3U', 'https://paste.ee/r/ntg8n', 'http://cloud-3.steamusercontent.com/ugc/82591194029101910/5B04878FCA189712681D1CF6C92F8CD178668FD2/', 'http://cloud-3.steamusercontent.com/ugc/82591194029092256/19939432DC769A3B77BA19F2541C9EA11B72C73B/', 'http://cloud-3.steamusercontent.com/ugc/82591194029099778/264B65BA198B1A004192B898AD32F48FD3D400E3/'}},
+    ['B-Wing'] = { faction = 'Rebel', largeBase = false, arcType = 'P', meshes = {'https://paste.ee/r/8CtXr', 'http://cloud-3.steamusercontent.com/ugc/82591194029071704/78677576E07A2F091DEC4CE58129B42714E8A19E/'}},
+    ['HWK-290 Rebel'] = { faction = 'Rebel', largeBase = false, arcType = 'P', meshes = {'https://paste.ee/r/MySkn', 'http://cloud-3.steamusercontent.com/ugc/82591194029098250/4E8A65B9C156B7882A729BC9D93B2B434D549834/'}},
+    ['VCX-100'] = { faction = 'Rebel', largeBase = true, arcType = 'R', meshes = {'https://paste.ee/r/VmV6q', 'http://cloud-3.steamusercontent.com/ugc/82591194029104609/DDD1DE36F998F9175669CB459734B1A89AD3549B/'}},
+    ['Attack Shuttle'] = { faction = 'Rebel', largeBase = false, arcType = 'P', meshes = {'https://paste.ee/r/jrwRJ', 'http://cloud-3.steamusercontent.com/ugc/82591194029086137/2D8471654F7BA70A5B65BB3A5DC4EB6CBE8F7C1C/'}},
+    ['T-70 X-Wing'] = { faction = 'Rebel', largeBase = false, arcType = 'P', meshes = {'https://paste.ee/r/NH1KI', 'http://cloud-3.steamusercontent.com/ugc/82591194029099132/056C807B114DE0023C1B8ABD28F4D5E8F0B5D76E/'}},
+    ['E-Wing'] = { faction = 'Rebel', largeBase = false, arcType = 'P', meshes = {'https://paste.ee/r/A57A8', 'http://cloud-3.steamusercontent.com/ugc/82591194029072231/46CA6A77D12681CA1B1B4A9D97BD6917811D561C/'}},
+    ['K-Wing'] = { faction = 'Rebel', largeBase = false, arcType = 'T', meshes = {'https://paste.ee/r/2Airh', 'http://cloud-3.steamusercontent.com/ugc/82591194029069099/CDF24012FD0342ED8DE472CFA0C7C2748E3AF541/'}},
+    ['Z-95 Headhunter Rebel'] = { faction = 'Rebel', largeBase = false, arcType = 'P', meshes = {'https://paste.ee/r/d91Hu', 'http://cloud-3.steamusercontent.com/ugc/82591194029075380/02AE170F8A35A5619E57B3380F9F7FE0E127E567/'}},
+    ['TIE Fighter Rebel'] = { faction = 'Rebel', largeBase = false, arcType = 'P', meshes = {'https://paste.ee/r/aCJSv', 'http://cloud-3.steamusercontent.com/ugc/82591194029072635/C7C5DAD08935A68E342BED0A8583D23901D28753/', 'http://cloud-3.steamusercontent.com/ugc/200804981461390083/2E300B481E6474A8F71781FB38D1B0CD74BBC427/'}},
+    ['U-Wing'] = { faction = 'Rebel', largeBase = true, arcType = 'P', meshes = {'https://paste.ee/r/D4Jjb', 'http://cloud-3.steamusercontent.com/ugc/82591194029075014/E561AA8493F86562F48EE85AB0C02F9C4F54D1B3/', 'http://cloud-3.steamusercontent.com/ugc/89352927638740227/F17424FAEF4C4429CE544FEF03DAE0E7EA2A672E/'}},
+    ['ARC-170'] = { faction = 'Rebel', largeBase = false, arcType = 'R', meshes = {'http://cloud-3.steamusercontent.com/ugc/489018224649021380/CF0BE9820D8123314E976CF69F3EA0A2F52A19AA/'}},
+    ['Auzituck Gunship'] = {faction = 'Rebel', largeBase = false, arcType = 'S', meshes = {'http://cloud-3.steamusercontent.com/ugc/830199836523150434/792F09608618B0AC2FF114BAA88567BA214B4A62/'}},
+    ['Scurrg H-6 Bomber Rebel'] = {faction = 'Rebel', largeBase = false, arcType = 'P', meshes = {'http://cloud-3.steamusercontent.com/ugc/856096098866548845/FA5948D17379237DF015D8EE177A7F61B2452595/'}},
 
-    ['Firespray-31 Scum'] = { faction = 'Scum', largeBase = true, meshes = {'https://paste.ee/r/3INxK', 'http://cloud-3.steamusercontent.com/ugc/82591194029069521/B5F857033DD0324E7508645821F17B572BC1AF6A/'}},
-    ['Z-95 Headhunter Scum'] = { faction = 'Scum', largeBase = false, meshes = {'https://paste.ee/r/OZrhd', 'http://cloud-3.steamusercontent.com/ugc/82591194029101027/02AE170F8A35A5619E57B3380F9F7FE0E127E567/'}},
-    ['Y-Wing Scum'] = { faction = 'Scum', largeBase = false, meshes = {'https://paste.ee/r/1T0ii', 'http://cloud-3.steamusercontent.com/ugc/82591194029068678/DD4A3DBC4B9ED3E108C39E736F9AA3DD816E1F6F/'}},
-    ['HWK-290 Scum'] = { faction = 'Scum', largeBase = false, meshes = {'https://paste.ee/r/tqTsw', 'http://cloud-3.steamusercontent.com/ugc/82591194029102663/71BDE5DC2D31FF4D365F210F037254E9DD62D6A7/'}},
-    ['M3-A Interceptor'] = { faction = 'Scum', largeBase = false, meshes = {'https://paste.ee/r/mUFjk', 'http://cloud-3.steamusercontent.com/ugc/82591194029096648/6773CD675FA734358137849555B2868AC513801B/'}},
-    ['StarViper'] = { faction = 'Scum', largeBase = false, meshes = {'https://paste.ee/r/jpEbC', 'http://cloud-3.steamusercontent.com/ugc/82591194029085780/6B4B13CE7C78700EF474D06F44CEB27A14731011/'}},
-    ['Aggressor'] = { faction = 'Scum', largeBase = true, meshes = {'https://paste.ee/r/0UFlm', 'http://cloud-3.steamusercontent.com/ugc/82591194029067417/A6D736A64063BC3BC26C10E5EED6848C1FCBADB7/'}},
-    ['YV-666'] = { faction = 'Scum', largeBase = true, meshes = {'https://paste.ee/r/lLZ8W', 'http://cloud-3.steamusercontent.com/ugc/82591194029090900/DD6BFD31E1C7254018CF6B03ABA1DA40C9BD0D2D/'}},
-    ['Kihraxz Fighter'] = { faction = 'Scum', largeBase = false, meshes = {'https://paste.ee/r/E8ZT0', 'http://cloud-3.steamusercontent.com/ugc/82591194029077425/6C88D57B03EF8B0CD7E4D91FED266EC15C614FA9/'}},
-    ['JumpMaster 5000'] = { faction = 'Scum', largeBase = true, meshes = {'https://paste.ee/r/1af5C', 'http://cloud-3.steamusercontent.com/ugc/82591194029067863/A8F7079195681ECD24028AE766C8216E6C27EE21/'}},
-    ['G-1A StarFighter'] = { faction = 'Scum', largeBase = false, meshes = {'https://paste.ee/r/aLVFD', 'http://cloud-3.steamusercontent.com/ugc/82591194029072952/254A466DCA5323546173CA6E3A93EFD37A584FE6/'}},
-    ['Lancer-Class Pursuit Craft'] = { faction = 'Scum', largeBase = true, meshes = {'https://paste.ee/r/Dp2Ge', 'http://cloud-3.steamusercontent.com/ugc/82591194029076583/E561AA8493F86562F48EE85AB0C02F9C4F54D1B3/', 'http://cloud-3.steamusercontent.com/ugc/89352769134140020/49113B3BA0A5C67FD7D40A3F61B6AFAFF02E0D1F/'}},
-    ['Quadjumper'] = { faction = 'Scum', largeBase = false, meshes = {'https://paste.ee/r/njJYd', 'http://cloud-3.steamusercontent.com/ugc/82591194029099470/6F4716CB145832CC47231B4A30F26153C90916AE/', 'http://cloud-3.steamusercontent.com/ugc/89352927637054865/CA43D9DEC1EF65DA30EC657EC6A9101E15905C78/'}},
-    ['Protectorate Starfighter'] = { faction = 'Scum', largeBase = false, meshes = {'https://paste.ee/r/GmKW8', 'http://cloud-3.steamusercontent.com/ugc/82591194029065993/9838180A02D9960D4DE949001BBFD05452DA90D2/', 'http://cloud-3.steamusercontent.com/ugc/89352769138031546/C70B323524602140897D8E195C19522DB450A7E0/'}},
+    ['Firespray-31 Scum'] = { faction = 'Scum', largeBase = true, arcType = 'R', meshes = {'https://paste.ee/r/3INxK', 'http://cloud-3.steamusercontent.com/ugc/82591194029069521/B5F857033DD0324E7508645821F17B572BC1AF6A/'}},
+    ['Z-95 Headhunter Scum'] = { faction = 'Scum', largeBase = false, arcType = 'P', meshes = {'https://paste.ee/r/OZrhd', 'http://cloud-3.steamusercontent.com/ugc/82591194029101027/02AE170F8A35A5619E57B3380F9F7FE0E127E567/'}},
+    ['Y-Wing Scum'] = { faction = 'Scum', largeBase = false, arcType = 'P', meshes = {'https://paste.ee/r/1T0ii', 'http://cloud-3.steamusercontent.com/ugc/82591194029068678/DD4A3DBC4B9ED3E108C39E736F9AA3DD816E1F6F/'}},
+    ['HWK-290 Scum'] = { faction = 'Scum', largeBase = false, arcType = 'P', meshes = {'https://paste.ee/r/tqTsw', 'http://cloud-3.steamusercontent.com/ugc/82591194029102663/71BDE5DC2D31FF4D365F210F037254E9DD62D6A7/'}},
+    ['M3-A Interceptor'] = { faction = 'Scum', largeBase = false, arcType = 'P', meshes = {'https://paste.ee/r/mUFjk', 'http://cloud-3.steamusercontent.com/ugc/82591194029096648/6773CD675FA734358137849555B2868AC513801B/'}},
+    ['StarViper'] = { faction = 'Scum', largeBase = false, arcType = 'P', meshes = {'https://paste.ee/r/jpEbC', 'http://cloud-3.steamusercontent.com/ugc/82591194029085780/6B4B13CE7C78700EF474D06F44CEB27A14731011/'}},
+    ['Aggressor'] = { faction = 'Scum', largeBase = true, arcType = 'P', meshes = {'https://paste.ee/r/0UFlm', 'http://cloud-3.steamusercontent.com/ugc/82591194029067417/A6D736A64063BC3BC26C10E5EED6848C1FCBADB7/'}},
+    ['YV-666'] = { faction = 'Scum', largeBase = true, arcType = 'S', meshes = {'https://paste.ee/r/lLZ8W', 'http://cloud-3.steamusercontent.com/ugc/82591194029090900/DD6BFD31E1C7254018CF6B03ABA1DA40C9BD0D2D/'}},
+    ['Kihraxz Fighter'] = { faction = 'Scum', largeBase = false, arcType = 'P', meshes = {'https://paste.ee/r/E8ZT0', 'http://cloud-3.steamusercontent.com/ugc/82591194029077425/6C88D57B03EF8B0CD7E4D91FED266EC15C614FA9/'}},
+    ['JumpMaster 5000'] = { faction = 'Scum', largeBase = true, arcType = 'T', meshes = {'https://paste.ee/r/1af5C', 'http://cloud-3.steamusercontent.com/ugc/82591194029067863/A8F7079195681ECD24028AE766C8216E6C27EE21/'}},
+    ['G-1A StarFighter'] = { faction = 'Scum', largeBase = false, arcType = 'P', meshes = {'https://paste.ee/r/aLVFD', 'http://cloud-3.steamusercontent.com/ugc/82591194029072952/254A466DCA5323546173CA6E3A93EFD37A584FE6/'}},
+    ['Lancer-Class Pursuit Craft'] = { faction = 'Scum', largeBase = true, arcType = 'M', meshes = {'https://paste.ee/r/Dp2Ge', 'http://cloud-3.steamusercontent.com/ugc/82591194029076583/E561AA8493F86562F48EE85AB0C02F9C4F54D1B3/', 'http://cloud-3.steamusercontent.com/ugc/89352769134140020/49113B3BA0A5C67FD7D40A3F61B6AFAFF02E0D1F/'}},
+    ['Quadjumper'] = { faction = 'Scum', largeBase = false, arcType = 'P', meshes = {'https://paste.ee/r/njJYd', 'http://cloud-3.steamusercontent.com/ugc/82591194029099470/6F4716CB145832CC47231B4A30F26153C90916AE/', 'http://cloud-3.steamusercontent.com/ugc/89352927637054865/CA43D9DEC1EF65DA30EC657EC6A9101E15905C78/'}},
+    ['Protectorate Starfighter'] = { faction = 'Scum', largeBase = false, arcType = 'P', meshes = {'https://paste.ee/r/GmKW8', 'http://cloud-3.steamusercontent.com/ugc/82591194029065993/9838180A02D9960D4DE949001BBFD05452DA90D2/', 'http://cloud-3.steamusercontent.com/ugc/89352769138031546/C70B323524602140897D8E195C19522DB450A7E0/'}},
+    ['Scurrg H-6 Bomber Scum'] = {faction = 'Scum', largeBase = false, arcType = 'P', meshes = {'http://cloud-3.steamusercontent.com/ugc/830199511120337844/FA5948D17379237DF015D8EE177A7F61B2452595/'}},
 
-    ['TIE Fighter'] = { faction = 'Imperial', largeBase = false, meshes = {'https://paste.ee/r/Yz0kt', 'http://cloud-3.steamusercontent.com/ugc/82591194029106682/C7C5DAD08935A68E342BED0A8583D23901D28753/'}},
-    ['TIE Interceptor'] = { faction = 'Imperial', largeBase = false, meshes = {'https://paste.ee/r/cedkZ', 'https://paste.ee/r/JxWNX', 'http://cloud-3.steamusercontent.com/ugc/82591194029074075/3AAF855C4A136C58E933F7409D0DB2C73E1958A9/', 'http://cloud-3.steamusercontent.com/ugc/82591194029086817/BD640718BFFAC3E4B5DF6C1B0220FB5A87E5B13C/'}},
-    ['Lambda-Class Shuttle'] = { faction = 'Imperial', largeBase = true, meshes = {'https://paste.ee/r/4uxZO', 'http://cloud-3.steamusercontent.com/ugc/82591194029069944/4B8CB031A438A8592F0B3EF8FA0473DBB6A5495A/'}},
-    ['Firespray-31 Imperial'] = { faction = 'Imperial', largeBase = true, meshes = {'https://paste.ee/r/p3iYR', 'http://cloud-3.steamusercontent.com/ugc/82591194029101385/B5F857033DD0324E7508645821F17B572BC1AF6A/'}},
-    ['TIE Bomber'] = { faction = 'Imperial', largeBase = false, meshes = {'https://paste.ee/r/5A0YG', 'http://cloud-3.steamusercontent.com/ugc/82591194029070985/D0AF97C6FB819220CF0E0E93137371E52B77E2DC/'}},
-    ['TIE Phantom'] = { faction = 'Imperial', largeBase = false, meshes = {'https://paste.ee/r/JN16g', 'http://cloud-3.steamusercontent.com/ugc/82591194029085339/CD9FEC659CF2EB67EE15B525007F784FB13D62B7/'}},
-    ['VT-49 Decimator'] = { faction = 'Imperial', largeBase = true, meshes = {'https://paste.ee/r/MJOFI', 'http://cloud-3.steamusercontent.com/ugc/82591194029091549/10F641F82963B26D42E062ED8366A4D38C717F73/'}},
-    ['TIE Advanced'] = { faction = 'Imperial', largeBase = false, meshes = {'https://paste.ee/r/NeptF', 'http://cloud-3.steamusercontent.com/ugc/82591194029098723/CAF618859C1894C381CA48101B2D2D05B14F83C0/', 'http://cloud-3.steamusercontent.com/ugc/82591194029104263/D0F4E672CBFA645B586FFC94A334A8364B30FD38/', 'http://cloud-3.steamusercontent.com/ugc/82591194029080088/D0F4E672CBFA645B586FFC94A334A8364B30FD38/'}},
-    ['TIE Punisher'] = { faction = 'Imperial', largeBase = false, meshes = {'https://paste.ee/r/aVGkQ', 'http://cloud-3.steamusercontent.com/ugc/82591194029073355/7A1507E4D88098D19C8EAFE4A763CC33A5EC35CB/'}},
-    ['TIE Defender'] = { faction = 'Imperial', largeBase = false, meshes = {'https://paste.ee/r/0QVhZ', 'http://cloud-3.steamusercontent.com/ugc/82591194029067091/F2165ABE4580BD5CCECF258CCE790CD9A942606F/'}},
-    ['TIE/fo Fighter'] = { faction = 'Imperial', largeBase = false, meshes = {'http://pastebin.com/jt2AzA8t'}},
-    ['TIE Adv. Prototype'] = { faction = 'Imperial', largeBase = false, meshes = {'https://paste.ee/r/l7cuZ', 'http://cloud-3.steamusercontent.com/ugc/82591194029089434/A4DA1AD96E4A6D65CC6AE4F745EDA966BA4EF85A/'}},
-    ['TIE Striker'] = { faction = 'Imperial', largeBase = false, meshes = {'http://cloud-3.steamusercontent.com/ugc/200804896212875955/D04F1FF5B688EAB946E514650239E7772F4DC64E/'}},
-    ['TIE/sf Fighter'] = { faction = 'Imperial', largeBase = false, meshes = {'http://pastebin.com/LezDjunY'}},
-    ['Upsilon Class Shuttle'] = { faction = 'Imperial', largeBase = true, meshes = {'http://pastebin.com/nsHXF9XV'}}
+    ['TIE Fighter'] = { faction = 'Imperial', largeBase = false, arcType = 'P', meshes = {'https://paste.ee/r/Yz0kt', 'http://cloud-3.steamusercontent.com/ugc/82591194029106682/C7C5DAD08935A68E342BED0A8583D23901D28753/'}},
+    ['TIE Interceptor'] = { faction = 'Imperial', largeBase = false, arcType = 'P', meshes = {'https://paste.ee/r/cedkZ', 'https://paste.ee/r/JxWNX', 'http://cloud-3.steamusercontent.com/ugc/82591194029074075/3AAF855C4A136C58E933F7409D0DB2C73E1958A9/', 'http://cloud-3.steamusercontent.com/ugc/82591194029086817/BD640718BFFAC3E4B5DF6C1B0220FB5A87E5B13C/'}},
+    ['Lambda-Class Shuttle'] = { faction = 'Imperial', largeBase = true, arcType = 'P', meshes = {'https://paste.ee/r/4uxZO', 'http://cloud-3.steamusercontent.com/ugc/82591194029069944/4B8CB031A438A8592F0B3EF8FA0473DBB6A5495A/'}},
+    ['Firespray-31 Imperial'] = { faction = 'Imperial', largeBase = true, arcType = 'R', meshes = {'https://paste.ee/r/p3iYR', 'http://cloud-3.steamusercontent.com/ugc/82591194029101385/B5F857033DD0324E7508645821F17B572BC1AF6A/'}},
+    ['TIE Bomber'] = { faction = 'Imperial', largeBase = false, arcType = 'P', meshes = {'https://paste.ee/r/5A0YG', 'http://cloud-3.steamusercontent.com/ugc/82591194029070985/D0AF97C6FB819220CF0E0E93137371E52B77E2DC/'}},
+    ['TIE Phantom'] = { faction = 'Imperial', largeBase = false, arcType = 'P', meshes = {'https://paste.ee/r/JN16g', 'http://cloud-3.steamusercontent.com/ugc/82591194029085339/CD9FEC659CF2EB67EE15B525007F784FB13D62B7/'}},
+    ['VT-49 Decimator'] = { faction = 'Imperial', largeBase = true, arcType = 'T', meshes = {'https://paste.ee/r/MJOFI', 'http://cloud-3.steamusercontent.com/ugc/82591194029091549/10F641F82963B26D42E062ED8366A4D38C717F73/'}},
+    ['TIE Advanced'] = { faction = 'Imperial', largeBase = false, arcType = 'P', meshes = {'https://paste.ee/r/NeptF', 'http://cloud-3.steamusercontent.com/ugc/82591194029098723/CAF618859C1894C381CA48101B2D2D05B14F83C0/', 'http://cloud-3.steamusercontent.com/ugc/82591194029104263/D0F4E672CBFA645B586FFC94A334A8364B30FD38/', 'http://cloud-3.steamusercontent.com/ugc/82591194029080088/D0F4E672CBFA645B586FFC94A334A8364B30FD38/'}},
+    ['TIE Punisher'] = { faction = 'Imperial', largeBase = false, arcType = 'P', meshes = {'https://paste.ee/r/aVGkQ', 'http://cloud-3.steamusercontent.com/ugc/82591194029073355/7A1507E4D88098D19C8EAFE4A763CC33A5EC35CB/'}},
+    ['TIE Defender'] = { faction = 'Imperial', largeBase = false, arcType = 'P', meshes = {'https://paste.ee/r/0QVhZ', 'http://cloud-3.steamusercontent.com/ugc/82591194029067091/F2165ABE4580BD5CCECF258CCE790CD9A942606F/'}},
+    ['TIE/fo Fighter'] = { faction = 'Imperial', largeBase = false, arcType = 'P', meshes = {'http://pastebin.com/jt2AzA8t'}},
+    ['TIE Adv. Prototype'] = { faction = 'Imperial', largeBase = false, arcType = 'P', meshes = {'https://paste.ee/r/l7cuZ', 'http://cloud-3.steamusercontent.com/ugc/82591194029089434/A4DA1AD96E4A6D65CC6AE4F745EDA966BA4EF85A/'}},
+    ['TIE Striker'] = { faction = 'Imperial', largeBase = false, arcType = 'P', meshes = {'http://cloud-3.steamusercontent.com/ugc/200804896212875955/D04F1FF5B688EAB946E514650239E7772F4DC64E/'}},
+    ['TIE/sf Fighter'] = { faction = 'Imperial', largeBase = false, arcType = 'R', meshes = {'http://pastebin.com/LezDjunY'}},
+    ['Upsilon Class Shuttle'] = { faction = 'Imperial', largeBase = true, arcType = 'P', meshes = {'http://pastebin.com/nsHXF9XV'}}
 
 }
 -- END SHIP DATABASE MODULE
