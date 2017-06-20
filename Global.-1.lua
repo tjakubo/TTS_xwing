@@ -417,14 +417,14 @@ function DialAPI_AssignSet(argTable)
     local validSet = {}
     for k,dial in pairs(argTable.set) do
         if validSet[dial.getDescription()] ~= nil then
-            MoveModule.Announce({type='error_DialModule', note='tried to assign few of same dials (API call)'}, 'all', argTable.ship)
+            AnnModule.Announce({type='error_DialModule', note='tried to assign few of same dials (API call)'}, 'all', argTable.ship)
         else
             if dial.getVar('assignedShip') == nil then
                 validSet[dial.getDescription()] = {dial=dial, originPos=dial.getPosition()}
                 dial.call('setShip', {argTable.ship})
                 dial.setName(argTable.ship.getName())
             else
-                MoveModule.Announce({type='error_DialModule', note='tried to assign dial that belong to other ship (API call)'}, 'all', argTable.ship)
+                AnnModule.Announce({type='error_DialModule', note='tried to assign dial that belong to other ship (API call)'}, 'all', argTable.ship)
             end
         end
     end
@@ -639,6 +639,7 @@ XW_cmd.Process = function(obj, cmd)
             DialModule.RemoveSet(obj)
         end
     elseif type == 'rulerHandle' then
+        AnnModule.NotifyOnce('RULER SPAWN COMMANDS HAVE CHANGED!\nNew commands are described on "New rulers" notebook page.', 'newRulersInfo', 'all')
         RulerModule.ToggleRuler(obj, string.upper(cmd))
     elseif type == 'action' then
         DialModule.PerformAction(obj, cmd)
@@ -1343,13 +1344,13 @@ MoveModule.SaveStateToHistory = function(ship, beQuiet)
     -- Don't add an entry if it's current position/rotation
     if MoveModule.IsAtSavedState(ship) then
         if beQuiet ~= true then
-            MoveModule.Announce({type='historyHandle', note='already has current position saved'}, 'all', ship)
+            AnnModule.Announce({type='historyHandle', note='already has current position saved'}, 'all', ship)
         end
     else
         local entry = {pos=ship.getPosition(), rot=ship.getRotation(), move='position save', part=nil, finType='special'}
         MoveModule.AddHistoryEntry(ship, entry)
         if beQuiet ~= true then
-            MoveModule.Announce({type='historyHandle', note='stored current position'}, 'all', ship)
+            AnnModule.Announce({type='historyHandle', note='stored current position'}, 'all', ship)
         end
     end
 end
@@ -1384,7 +1385,7 @@ MoveModule.UndoMove = function(ship)
             end
         end
     end
-    MoveModule.Announce(announceInfo, 'all', ship)
+    AnnModule.Announce(announceInfo, 'all', ship)
     return shipMoved
 end
 
@@ -1408,7 +1409,7 @@ MoveModule.RedoMove = function(ship)
             announceInfo.note = 'performed a redo of (' .. currEntry.move .. ')'
         end
     end
-    MoveModule.Announce(announceInfo, 'all', ship)
+    AnnModule.Announce(announceInfo, 'all', ship)
     return shipMoved
 end
 
@@ -1447,14 +1448,14 @@ XW_cmd.AddCommand('restore#[1-9][0-9]?', 'historyHandle')
 -- Try to restore some ship position to an entry with given key
 MoveModule.Restore = function(ship, key)
     if #MoveModule.emergencyRestore < key or key <= 0 then
-        MoveModule.Announce({type='historyHandle', note='Restore key (number after the #) invalid'}, 'all')
+        AnnModule.Announce({type='historyHandle', note='Restore key (number after the #) invalid'}, 'all')
         return false
     else
         local data = MoveModule.emergencyRestore[key]
         ship.setPosition(data.savedPos.pos)
         ship.setRotation(data.savedPos.rot)
         MoveModule.SaveStateToHistory(ship, true)
-        MoveModule.Announce({type='historyHandle', note='has been restored to position ' .. data.srcName .. ' was last seen at'}, 'all', ship)
+        AnnModule.Announce({type='historyHandle', note='has been restored to position ' .. data.srcName .. ' was last seen at'}, 'all', ship)
         return true
     end
 end
@@ -1465,7 +1466,7 @@ MoveModule.AddRestorePoint = function(entry)
     if newKey > MoveModule.restoreBufferSize then
         newKey = 1
     end
-    MoveModule.Announce({type='historyHandle', note=entry.srcName .. '\'s ship has been deleted - you can respawn the model and use \'restore#' .. newKey .. '\' command to restore its position'}, 'all')
+    AnnModule.Announce({type='historyHandle', note=entry.srcName .. '\'s ship has been deleted - you can respawn the model and use \'restore#' .. newKey .. '\' command to restore its position'}, 'all')
     MoveModule.emergencyRestore[newKey] = entry
     MoveModule.restoreBufferPointer = newKey
 end
@@ -1532,7 +1533,7 @@ MoveModule.RestoreSaveData = function(saveTable)
         annInfo.note = ' (' .. missCount .. ' ship model(s) missing)'
     end
     if count > 0 or missCount > 0 then
-        MoveModule.Announce(annInfo, 'all')
+        AnnModule.Announce(annInfo, 'all')
     end
 end
 
@@ -2050,7 +2051,7 @@ MoveModule.PerformMove = function(move_code, ship, ignoreCollisions)
             MoveModule.SpawnOverlapReminder(ship)
         end
     end
-    MoveModule.Announce(annInfo, 'all', ship)
+    AnnModule.Announce(annInfo, 'all', ship)
     return (finData.finType ~= 'overlap')
 end
 
@@ -2106,66 +2107,6 @@ MoveModule.GetTokenOwner = function(tokenPos)
         end
     end
     return {owner=nearest.ship, dist=nearest.dist, margin=(nextNearest.dist-nearest.dist)/2}
-end
-
--- COLOR CONFIGURATION FOR ANNOUNCEMENTS
-MoveModule.AnnounceColor = {}
-MoveModule.AnnounceColor.moveClear = {0.1, 1, 0.1}     -- Green
-MoveModule.AnnounceColor.moveCollision = {1, 0.5, 0.1} -- Orange
-MoveModule.AnnounceColor.action = {0.2, 0.2, 1}        -- Blue
-MoveModule.AnnounceColor.historyHandle = {0.1, 1, 1}   -- Cyan
-MoveModule.AnnounceColor.error = {1, 0.1, 0.1}         -- Red
-MoveModule.AnnounceColor.warn = {1, 0.25, 0.05}        -- Red - orange
-MoveModule.AnnounceColor.info = {0.6, 0.1, 0.6}        -- Purple
-
--- Notify color or all players of some event
--- Info: {ship=shipRef, info=announceInfo, target=targetStr}
--- announceInfo: {type=typeOfEvent, note=notificationString}
-MoveModule.Announce = function(info, target, shipPrefix)
-    local annString = ''
-    local annColor = {1, 1, 1}
-    local shipName = ''
-
-    if shipPrefix ~= nil then
-        if type(shipPrefix) == 'string' then
-            shipName = shipPrefix .. ' '
-        elseif type(shipPrefix) == 'userdata' then
-            shipName = shipPrefix.getName() .. ' '
-        end
-    end
-    if info.type == 'move' or info.type == 'slide' or info.type == 'stationary' then
-        if info.collidedShip == nil then
-            annString = shipName .. info.note .. ' (' .. info.code .. ')'
-            annColor = MoveModule.AnnounceColor.moveClear
-        else
-            annString = shipName .. info.note .. ' (' .. info.code .. ') but is now touching ' .. info.collidedShip.getName()
-            annColor = MoveModule.AnnounceColor.moveCollision
-        end
-    elseif info.type == 'overlap' then
-        annString = shipName .. info.note .. ' (' .. info.code .. ') but there was no space to complete the move'
-        annColor = MoveModule.AnnounceColor.moveCollision
-    elseif info.type == 'historyHandle' then
-        annString = shipName .. info.note
-        annColor = MoveModule.AnnounceColor.historyHandle
-    elseif info.type == 'action' then
-        annString = shipName .. info.note
-        annColor = MoveModule.AnnounceColor.action
-    elseif info.type:find('error') ~= nil then
-        annString = shipName .. info.note
-        annColor = MoveModule.AnnounceColor.error
-    elseif info.type:find('warn') ~= nil then
-        annString = shipName .. info.note
-        annColor = MoveModule.AnnounceColor.warn
-    elseif info.type:find('info') ~= nil then
-        annString = shipName .. info.note
-        annColor = MoveModule.AnnounceColor.info
-    end
-
-    if target == 'all' then
-        printToAll(annString, annColor)
-    else
-        printToColor(target, annString, annColor)
-    end
 end
 
 -- END MAIN MOVEMENT MODULE
@@ -2600,11 +2541,11 @@ DialModule.RemoveSet = function(ship)
                 dialData.dial.setName('')
             end
             table.remove(DialModule.ActiveSets, k)
-            MoveModule.Announce({type='info_DialModule', note='had all dials unassigned'}, 'all', ship)
+            AnnModule.Announce({type='info_DialModule', note='had all dials unassigned'}, 'all', ship)
             break
         end
     end
-    if hadDials == false then MoveModule.Announce({type='info_DialModule', note='had no assigned dials'}, 'all', ship) end
+    if hadDials == false then AnnModule.Announce({type='info_DialModule', note='had no assigned dials'}, 'all', ship) end
 end
 
 -- Return a set belonging to a ship or nil if there is none
@@ -2643,7 +2584,7 @@ DialModule.SaveNearby = function(ship)
     local nearbyDialsAll = XW_ObjWithinDist(ship.getPosition(), saveNearbyCircleDist, 'dial')
     -- Nothing nearby
     if nearbyDialsAll[1] == nil then
-        MoveModule.Announce({type='info_DialModule', note=('has no valid dials nearby')}, 'all', ship)
+        AnnModule.Announce({type='info_DialModule', note=('has no valid dials nearby')}, 'all', ship)
         return
     end
     -- Filter dials to only get ones of uniue description
@@ -2654,7 +2595,7 @@ DialModule.SaveNearby = function(ship)
         if math.abs(dial.getPosition()[3]) < 24 then positionWarning = true end
         -- Warn if dial command is invalid (changed most likely)
         if XW_cmd.CheckCommand(dial.getDescription()) ~= 'move' then
-            MoveModule.Announce({type='error_DialModule', note=('One of the dials near ' .. ship.getName() .. ' has an unsupported command in the description (\'' .. dial.getDescription() .. '\'), make sure you only select the ship when inserting \'sd\'/\'cd\'')}, 'all')
+            AnnModule.Announce({type='error_DialModule', note=('One of the dials near ' .. ship.getName() .. ' has an unsupported command in the description (\'' .. dial.getDescription() .. '\'), make sure you only select the ship when inserting \'sd\'/\'cd\'')}, 'all')
             return
         end
         if nearbyDialsUnique[dial.getDescription()] ~= nil then
@@ -2667,7 +2608,7 @@ DialModule.SaveNearby = function(ship)
     end
     -- Warn if some dials are outside hidden zones
     if positionWarning == true then
-        MoveModule.Announce({type='warn_DialModule', note=('Some dials ' .. ship.getName() .. ' is trying to save are placed outside the hidden zones!')}, 'all')
+        AnnModule.Announce({type='warn_DialModule', note=('Some dials ' .. ship.getName() .. ' is trying to save are placed outside the hidden zones!')}, 'all')
     end
     local refDial1 = nil -- reference dial with a straight, speed X move
     local refDial2 = nil -- reference dial with a straight, speed X+1 move
@@ -2685,14 +2626,14 @@ DialModule.SaveNearby = function(ship)
     end
     -- If tow reference dials were not found (there;s no straight and 1 speed faster straight nearby)
     if refDial2 == nil then
-        MoveModule.Announce({type='warn_DialModule', note=('needs to be moved closer to the dial layout center')}, 'all', ship)
+        AnnModule.Announce({type='warn_DialModule', note=('needs to be moved closer to the dial layout center')}, 'all', ship)
         return
     end
     -- Distance between any adjacent dials (assuming a regular grid)
     local dialSpacing = math.abs(refDial1.getPosition()[3] - refDial2.getPosition()[3])
     -- If distance between two dials appears to be huge
     if dialSpacing > Convert_mm_igu(120) then
-        MoveModule.Announce({type='error_DialModule', note=('Dial layout nearest to ' .. ship.getName() .. ' seems to be invalid or not laid out on a proper grid (check dials descriptions)')}, 'all')
+        AnnModule.Announce({type='error_DialModule', note=('Dial layout nearest to ' .. ship.getName() .. ' seems to be invalid or not laid out on a proper grid (check dials descriptions)')}, 'all')
         return
     end
     -- Determine center of the dial layout (between s2 and s3 dials)
@@ -2715,7 +2656,7 @@ DialModule.SaveNearby = function(ship)
         if layoutDialsUnique[dial.getDescription()] == nil then
             layoutDialsUnique[dial.getDescription()] = dial
         else
-            MoveModule.Announce({type='error_DialModule', note=('Dial layout nearest to ' .. ship.getName() .. ' seems to be invalid or overlapping another layout (check dials descriptions)')}, 'all')
+            AnnModule.Announce({type='error_DialModule', note=('Dial layout nearest to ' .. ship.getName() .. ' seems to be invalid or overlapping another layout (check dials descriptions)')}, 'all')
             return
         end
     end
@@ -2746,12 +2687,12 @@ DialModule.SaveNearby = function(ship)
         end
         dialsStr = dialsStr:sub(1, -3)
         dialsStr = dialsStr .. ') '
-        MoveModule.Announce({type='warn_DialModule', note=('assigned' .. dialsStr ..  'dial(s) that previously belonged to ' .. poorShip.getName())}, 'all', ship)
+        AnnModule.Announce({type='warn_DialModule', note=('assigned' .. dialsStr ..  'dial(s) that previously belonged to ' .. poorShip.getName())}, 'all', ship)
     end
 
     -- If there are no filtered (not this ship already) dials
     if nearbyDials[1] == nil then
-        MoveModule.Announce({type='info_DialModule', note=('already has all nearby dials assigned')}, 'all', ship)
+        AnnModule.Announce({type='info_DialModule', note=('already has all nearby dials assigned')}, 'all', ship)
         return
     end
     local dialSet = {}
@@ -2760,7 +2701,7 @@ DialModule.SaveNearby = function(ship)
     if actSet ~= nil then
         for k,dial in pairs(nearbyDials) do
             if actSet.dialSet[dial.getDescription()] ~= nil and actSet.dialSet[dial.getDescription()] ~= dial then
-                MoveModule.Announce({type='error_DialModule', note='tried to assign a second dial of same move (' .. dial.getDescription() .. ')'}, 'all', ship)
+                AnnModule.Announce({type='error_DialModule', note='tried to assign a second dial of same move (' .. dial.getDescription() .. ')'}, 'all', ship)
                 return
             end
         end
@@ -2786,7 +2727,7 @@ DialModule.SaveNearby = function(ship)
         if dialSet[dialOK.getDescription()] == nil then
             dialSet[dialOK.getDescription()] = {dial=dialOK, originPos=dialOK.getPosition()}
         else
-            MoveModule.Announce({type='error_DialModule', note='tried to assign few dials with same move (' .. dialOK.getDescription() .. ')'}, 'all', ship)
+            AnnModule.Announce({type='error_DialModule', note='tried to assign few dials with same move (' .. dialOK.getDescription() .. ')'}, 'all', ship)
             return
         end
         dialCount = dialCount + 1
@@ -2798,7 +2739,7 @@ DialModule.SaveNearby = function(ship)
         dialInfo.dial.highlightOn({0, 1, 0}, 5)
     end
     DialModule.AddSet(ship, dialSet)
-    MoveModule.Announce({type='info_dialModule', note='had ' .. dialCount .. ' dials assigned (' .. DialModule.DialCount(ship) .. ' total now)' }, 'all', ship)
+    AnnModule.Announce({type='info_dialModule', note='had ' .. dialCount .. ' dials assigned (' .. DialModule.DialCount(ship) .. ' total now)' }, 'all', ship)
 end
 
 
@@ -2924,7 +2865,7 @@ DialModule.RestoreSaveData = function(saveTable)
         annInfo.note = annInfo.note .. ')'
     end
     if count+missShipCount+missDialCount > 0 then
-        MoveModule.Announce(annInfo, 'all')
+        AnnModule.Announce(annInfo, 'all')
     end
 end
 
@@ -3004,7 +2945,7 @@ DialModule.PerformAction = function(ship, type, playerColor)
             end
         end
     end
-    MoveModule.Announce(announceInfo, 'all', ship)
+    AnnModule.Announce(announceInfo, 'all', ship)
 end
 
 -- Spawned tempaltes are kept there
@@ -3317,7 +3258,7 @@ DialModule.StartSlide = function(dial, playerColor)
             table.insert(DialModule.slideDataQueue, {dial=dial, ship=ship, pColor=playerColor, zeroPos=zeroPos, moveInfo=info})
             TokenModule.QueueShipTokensMove(ship)
             XW_cmd.SetBusy(ship)
-            MoveModule.Announce({type='move', note='manually adjusted base slide on the last move', code=lastMove.move}, 'all', ship)
+            AnnModule.Announce({type='move', note='manually adjusted base slide on the last move', code=lastMove.move}, 'all', ship)
             startLuaCoroutine(Global, 'SlideCoroutine')
             MoveModule.WaitForResting(ship)
             return true
@@ -4041,6 +3982,103 @@ end
 --------
 
 --------
+-- ANNOUNCEMENTS MODULE
+
+-- For writing out stuff in chat
+
+AnnModule = {}
+
+-- COLOR CONFIGURATION FOR ANNOUNCEMENTS
+AnnModule.announceColor = {}
+AnnModule.announceColor.moveClear = {0.1, 1, 0.1}     -- Green
+AnnModule.announceColor.moveCollision = {1, 0.5, 0.1} -- Orange
+AnnModule.announceColor.action = {0.2, 0.2, 1}        -- Blue
+AnnModule.announceColor.historyHandle = {0.1, 1, 1}   -- Cyan
+AnnModule.announceColor.error = {1, 0.1, 0.1}         -- Red
+AnnModule.announceColor.warn = {1, 0.25, 0.05}        -- Red - orange
+AnnModule.announceColor.info = {0.6, 0.1, 0.6}        -- Purple
+
+-- Notify color or all players of some event
+-- Info: {ship=shipRef, info=announceInfo, target=targetStr}
+-- announceInfo: {type=typeOfEvent, note=notificationString}
+AnnModule.Announce = function(info, target, shipPrefix)
+    local annString = ''
+    local annColor = {1, 1, 1}
+    local shipName = ''
+
+    if shipPrefix ~= nil then
+        if type(shipPrefix) == 'string' then
+            shipName = shipPrefix .. ' '
+        elseif type(shipPrefix) == 'userdata' then
+            shipName = shipPrefix.getName() .. ' '
+        end
+    end
+    if info.type == 'move' or info.type == 'slide' or info.type == 'stationary' then
+        if info.collidedShip == nil then
+            annString = shipName .. info.note .. ' (' .. info.code .. ')'
+            annColor = AnnModule.announceColor.moveClear
+        else
+            annString = shipName .. info.note .. ' (' .. info.code .. ') but is now touching ' .. info.collidedShip.getName()
+            annColor = AnnModule.announceColor.moveCollision
+        end
+    elseif info.type == 'overlap' then
+        annString = shipName .. info.note .. ' (' .. info.code .. ') but there was no space to complete the move'
+        annColor = AnnModule.announceColor.moveCollision
+    elseif info.type == 'historyHandle' then
+        annString = shipName .. info.note
+        annColor = AnnModule.announceColor.historyHandle
+    elseif info.type == 'action' then
+        annString = shipName .. info.note
+        annColor = AnnModule.announceColor.action
+    elseif info.type:find('error') ~= nil then
+        annString = shipName .. info.note
+        annColor = AnnModule.announceColor.error
+    elseif info.type:find('warn') ~= nil then
+        annString = shipName .. info.note
+        annColor = AnnModule.announceColor.warn
+    elseif info.type:find('info') ~= nil then
+        annString = shipName .. info.note
+        annColor = AnnModule.announceColor.info
+    end
+
+    if target == 'all' then
+        printToAll(annString, annColor)
+    else
+        printToColor(target, annString, annColor)
+    end
+end
+
+-- Record of players that already got note of some ID
+-- Key: playerSteamID
+-- Value: table of true's on keys of received noteIDs
+AnnModule.notifyRecord = {}
+
+-- Print note to playerColor
+-- Any further calls with same noteID will not notify same player
+-- Print to everyone if playerColor is 'all'
+AnnModule.NotifyOnce = function(note, noteID, playerColor)
+    if playerColor == 'all' then
+        local seatedPlayers = getSeatedPlayers()
+        for _,color in pairs(seatedPlayers) do
+            AnnModule.NotifyOnce(note, noteID, color)
+        end
+    else
+        local steamID = Player[playerColor].steam_id
+        if AnnModule.notifyRecord[steamID] == nil then
+            AnnModule.notifyRecord[steamID] = {}
+        end
+        if AnnModule.notifyRecord[steamID][noteID] ~= true then
+            broadcastToColor(note, playerColor, AnnModule.announceColor.info)
+            AnnModule.notifyRecord[steamID][noteID] = true
+        end
+    end
+end
+
+
+-- END ANNOUNCEMENTS MODULE
+--------
+
+--------
 -- DIRECT TTS EVENT HANDLING
 -- Watch for changed descriptions, handle destroyed objects, saving et cetera
 
@@ -4092,7 +4130,7 @@ end
 -- save_state contains everything separate modules saved before to restore table state
 function onLoad(save_state)
     if save_state ~= '' and save_state ~= nil and save_state ~= '[]' then
-        MoveModule.Announce({note='Attempting to restore state. If you are rewinding game, STOP! \nPlease read the \'Undoing things\' page from wiki (on side note).', type='info'}, 'all')
+        AnnModule.Announce({note='Attempting to restore state. If you are rewinding game, STOP! \nPlease read the \'Undoing things\' page from wiki (on side note).', type='info'}, 'all')
         local savedData = JSON.decode(save_state)
         DialModule.onLoad(savedData.DialModule)
         MoveModule.onLoad(savedData.MoveModule)
