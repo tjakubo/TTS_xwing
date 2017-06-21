@@ -3234,11 +3234,11 @@ DialModule.Buttons.rollRB = {label='Xb', click_function='DialClick_RollRB', heig
 DialModule.Buttons.rollL = {label='X', click_function='DialClick_RollL', height=500, width=365, position={-1.5, 0.5, 0}, font_size=250}
 DialModule.Buttons.rollLF = {label='Xf', click_function='DialClick_RollLF', height=500, width=365, position={-1.5, 0.5, -1}, font_size=250}
 DialModule.Buttons.rollLB = {label='Xb', click_function='DialClick_RollLB', height=500, width=365, position={-1.5, 0.5, 1}, font_size=250}
-DialModule.Buttons.rulerArc = {label='Arc', click_function='DialClick_RulerArc', height=500, width=600, position={-1.7, 0.5, 2}, font_size=250}
-DialModule.Buttons.rulerTurr = {label='RT', click_function='DialClick_RulerTurr', height=500, width=365, position={-2.7, 0.5, 2.5}, font_size=250}
-DialModule.Buttons.rulerR1 = {label='1', click_function='DialClick_RulerR1', height=500, width=200, position={-2.1, 0.5, 3}, font_size=250}
-DialModule.Buttons.rulerR2 = {label='2', click_function='DialClick_RulerR2', height=500, width=200, position={-1.7, 0.5, 3}, font_size=250}
-DialModule.Buttons.rulerR3 = {label='3', click_function='DialClick_RulerR3', height=500, width=200, position={-1.3, 0.5, 3}, font_size=250}
+DialModule.Buttons.rulerArc = {label='Arc', click_function='DialClick_RulerArc', height=500, width=400, position={-2.35, 0.5, 2}, font_size=220}
+DialModule.Buttons.rulerTurr = {label='Tur', click_function='DialClick_RulerTurr', height=500, width=400, position={-1.55, 0.5, 2}, font_size=220}
+DialModule.Buttons.rulerR1 = {label='1', click_function='DialClick_RulerR1', height=500, width=250, position={-2.45, 0.5, 3}, font_size=250}
+DialModule.Buttons.rulerR2 = {label='2', click_function='DialClick_RulerR2', height=500, width=250, position={-1.95, 0.5, 3}, font_size=250}
+DialModule.Buttons.rulerR3 = {label='3', click_function='DialClick_RulerR3', height=500, width=250, position={-1.45, 0.5, 3}, font_size=250}
 DialModule.Buttons.targetLock = {label='TL', click_function='DialClick_TargetLock', height=500, width=365, position={1.5, 0.5, 2}, font_size=250}
 DialModule.Buttons.slide = {label='Slide', click_function='DialClick_SlideStart', height=250, width=1600, position={2.5, 0.5, 0}, font_size=250, rotation={0, 90, 0}}
 
@@ -4014,7 +4014,7 @@ RulerModule.ToggleRuler = function(ship, rulerType, beQuiet)
     if destType ~= rulerType then
         if beQuiet ~= true then
             local annInfo = {type='action'}
-            annInfo.note = ' spawned a ' .. RulerModule.DescriptiveName(ship, rulerType) .. ' (' .. rulerType .. ')'
+            annInfo.note = 'spawned a ' .. RulerModule.DescriptiveName(ship, rulerType) .. ' (' .. rulerType .. ')'
             AnnModule.Announce(annInfo, 'all', ship)
         end
         return RulerModule.SpawnRuler(ship, rulerType, beQuiet)
