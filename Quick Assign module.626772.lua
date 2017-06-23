@@ -188,7 +188,7 @@ AssignModule.Assign = function(zoneColor, playerColor)
     shipData = AssignModule.SortShips(shipData)
     -- Dial bags desired position and its step
     local function bPosStep(pos)
-        return {pos[1], pos[2], pos[3] - 2*math.sgn(pos[3])}
+        return {pos[1], pos[2], pos[3] - 2.6*math.sgn(pos[3])}
     end
     local bPos = bPosStep(PosData[zoneColor](PosData.buttonCorner))
     bPos[2] = 1.5
@@ -205,13 +205,24 @@ AssignModule.Assign = function(zoneColor, playerColor)
     -- -57, 27
     -- S: 28, 54
     -- C: -71, 0
+
+    -- 47, 12
+    -- 53, 35
     playerStuff = TableConcat(playerStuff, XW_ObjWithinRect({-71, 0, 0}, 28, 54))
     for k,obj in pairs(playerStuff) do
         if obj.tag == 'Infinite' and obj.getName():find('Dials') ~= nil and tonumber(obj.getDescription()) ~= nil and tonumber(obj.getDescription()) >= 1.1 then
-            for type,data in pairs(bagData) do
-                if obj.getName() == (type .. ' Dials') then
-                    data.dialBag = obj
-                end
+            local type = obj.getName():sub(1, obj.getName():find(' Dials')-1)
+            if bagData[type] ~= nil and bagData[type].dialBag == nil then
+                bagData[type].dialBag = obj
+            end
+        end
+    end
+    local currentDials = XW_ObjWithinRect(PosData[zoneColor]({50, 0, 23.5}), 6, 23)
+    for k,obj in pairs(currentDials) do
+        if obj.tag == 'Infinite' and obj.getName():find('Dials') ~= nil and tonumber(obj.getDescription()) ~= nil and tonumber(obj.getDescription()) >= 1.1 then
+            local type = obj.getName():sub(1, obj.getName():find(' Dials')-1)
+            if bagData[type] == nil or ( bagData[type] ~= nil and bagData[type].dialBag ~= obj ) then
+                obj.destruct()
             end
         end
     end
