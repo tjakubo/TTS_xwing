@@ -543,7 +543,6 @@ XW_cmd.Diagnose = function(ship)
     -- Delete lingering buttons
     if ship.getButtons() ~= nil then
         ship.clearButtons()
-        ClearButtonsPatch(ship)
         printToAll(ship.getName() .. '\'s lingering buttons deleted', {0.1, 0.1, 1})
         issueFound = true
     end
@@ -2764,7 +2763,6 @@ DialModule.UnassignDial = function(dial)
             if dialInfo.dial == dial then
                 dialInfo.dial.setVar('assignedShip', nil)
                 dialInfo.dial.clearButtons()
-                ClearButtonsPatch(dialInfo.dial)
                 changed = true
             else
                 filteredSet[k2]=dialInfo
@@ -3052,13 +3050,11 @@ end
 -- DIAL BUTTON CLICK FUNCTIONS (self-explanatory)
 function DialClick_Delete(dial)
     dial.clearButtons()
-    ClearButtonsPatch(dial)
     DialModule.RestoreActive(dial.getVar('assignedShip'))
 end
 function DialClick_Flip(dial)
     dial.flip()
     dial.clearButtons()
-    ClearButtonsPatch(dial)
     DialModule.SpawnMainActiveButtons({dial=dial, ship=dial.getVar('assignedShip')})
 end
 function DialClick_Move(dial)
@@ -3574,7 +3570,6 @@ end
 -- Spawn first buttons on a dial (flip, indication, delete, name, action expand)
 DialModule.SpawnFirstActiveButtons = function(dialTable)
     dialTable.dial.clearButtons()
-    ClearButtonsPatch(dialTable.dial)
     dialTable.dial.createButton(DialModule.Buttons.deleteFacedown)
     dialTable.dial.createButton(DialModule.Buttons.flip)
     dialTable.dial.createButton(DialModule.Buttons.nameButton(dialTable.ship))
@@ -3584,7 +3579,6 @@ end
 -- Spawn main buttons on a dial (move, actions, undo, templade, return) when it is flipped over
 DialModule.SpawnMainActiveButtons = function (dialTable)
     dialTable.dial.clearButtons()
-    ClearButtonsPatch(dialTable.dial)
     dialTable.dial.createButton(DialModule.Buttons.deleteFaceup)
     dialTable.dial.createButton(DialModule.Buttons.move)
     dialTable.dial.createButton(DialModule.Buttons.moveTemplate)
@@ -3792,7 +3786,6 @@ DialModule.RestoreActive = function(ship)
     local actSet = DialModule.GetSet(ship)
     if actSet ~= nil and actSet.ship == ship and actSet.activeDial ~= nil then
         actSet.activeDial.dial.clearButtons()
-        ClearButtonsPatch(actSet.activeDial.dial)
         DialModule.DeleteTemplate(ship)
         actSet.activeDial.dial.setPosition(actSet.activeDial.originPos)
         actSet.activeDial.dial.setRotation(Dial_FaceupRot(actSet.activeDial.dial))
@@ -3808,7 +3801,6 @@ DialModule.RestoreDial = function(dial)
                 DialModule.RestoreActive(set.ship)
             else
                 dial.clearButtons()
-                ClearButtonsPatch(dial)
                 dial.setPosition(set.dialSet[dial.getDescription()].originPos)
                 dial.setRotation(Dial_FaceupRot(dial))
             end
