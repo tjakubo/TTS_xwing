@@ -449,6 +449,10 @@ end
 -- Queue tokens near a ship for movement
 -- To be called immediately before changing position of a ship
 function API_QueueShipTokensMove(argTable)
+    -- Set the ship busy if it's not to try prevent double ready later
+    if XW_cmd.isReady(argTable.ship) then
+        XW_cmd.SetBusy(argTable.ship)
+    end
     TokenModule.QueueShipTokensMove(argTable.ship)
     MoveModule.WaitForResting(argTable.ship)
 end
