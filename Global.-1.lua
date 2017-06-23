@@ -3601,7 +3601,7 @@ DialModule.GetInitialButtonsState = function(dial)
     local buttons = dial.getButtons()
     if buttons == nil then return -1 end
     for k,but in pairs(buttons) do
-        if but.label == 'R' then state = 1 end
+        if but.label == 'TL' then state = 1 end
     end
     return state
 end
@@ -3612,7 +3612,7 @@ end
 --           1      <- initial set + expanded actions
 DialModule.SetInitialButtonsState = function(dial, newState)
     local actShip = dial.getVar('assignedShip')
-    local extActionsMatch = ' Br B Bl Xf X Xb TL RT Arc 1 2 3 F S E Q Slide '  -- labels for buttons of EXTENDED set
+    local extActionsMatch = ' Br B Bl Xf X Xb TL Tur Arc 1 2 3 F S E Q Slide '  -- labels for buttons of EXTENDED set
     local nameButton = DialModule.Buttons.nameButton(actShip)
     local currentState = DialModule.GetInitialButtonsState(dial)
 
@@ -3682,7 +3682,7 @@ end
 --           2      <- above + boosts, rolls, R, TL
 DialModule.SetMainButtonsState = function(dial, newState)
     local standardActionsMatch = ' F S E Q -'           -- labels for buttons of STANDARD set
-    local extActionsMatch = ' Br B Bl Xf X Xb TL RT Arc 1 2 3 Slide '  -- labels for buttons of EXTENDED set
+    local extActionsMatch = ' Br B Bl Xf X Xb TL Tur Arc 1 2 3 Slide '  -- labels for buttons of EXTENDED set
 
     local currentState = DialModule.GetMainButtonsState(dial)
     if newState > currentState then
