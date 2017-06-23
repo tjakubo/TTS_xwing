@@ -151,8 +151,14 @@ AssignModule.Assign = function(zoneColor, playerColor)
         return
     end
     local shipsOnly = true
+    local tokenObjects = {}
+    local shipObjects = {}
     for k,obj in pairs(zoneObjects) do
-        if not XW_ObjMatchType(obj, 'ship') then
+        if XW_ObjMatchType(obj, 'token') then
+            table.insert(tokenObjects, obj)
+        elseif XW_ObjMatchType(obj, 'ship') then
+            table.insert(shipObjects, obj)
+        else
             shipsOnly = false
             break
         end
@@ -161,7 +167,7 @@ AssignModule.Assign = function(zoneColor, playerColor)
         broadcastToColor(AssignModule.msg.notShipsOnly, playerColor, {1, 0.2, 0})
         return
     end
-    if #zoneObjects > AssignModule.maxShipCount then
+    if #shipObjects > AssignModule.maxShipCount then
         broadcastToColor(AssignModule.msg.tooManyShips, playerColor, {1, 0.2, 0})
         return
     end
@@ -170,7 +176,7 @@ AssignModule.Assign = function(zoneColor, playerColor)
     local typesOK = true
     local shipData = {}
     local bagData = {}
-    for k,ship in pairs(zoneObjects) do
+    for k,ship in pairs(shipObjects) do
         local shipType = Global.call('DB_getShipTypeCallable', {ship})
         if shipType == 'Unknown' then
             typesOK = false
@@ -255,10 +261,10 @@ AssignModule.Assign = function(zoneColor, playerColor)
 
     local dialSize = 3.1                                            -- Physical dial size
     local scaleTable = {0.625, 0.625, 0.625, 0.625, 0.525, 0.45}    -- Dial scale for each ship count
-    local currScale = scaleTable[#zoneObjects]
+    local currScale = scaleTable[#shipObjects]
     local zoneSize = 45                                             -- Zone width
-    local extraSpace = 45 - (5*dialSize*currScale*(#zoneObjects))
-    local extraSpacing = extraSpace/(#zoneObjects+1)
+    local extraSpace = 45 - (5*dialSize*currScale*(#shipObjects))
+    local extraSpacing = extraSpace/(#shipObjects+1)
 
     -- Since dial expand right, blue and green zone must have inset starting position
     local blueGreenOffset = 0
@@ -283,6 +289,7 @@ AssignModule.Assign = function(zoneColor, playerColor)
         if math.sgn(stPos[3]) > 0 then
             rot = 0
         end
+        Global.call('API_QueueShipTokensMove', {ship = data.ref})
         data.ref.setRotationSmooth({0, rot, 0})
         data.ref.highlightOn({0, 1, 0}, 1)
         stPos = stPosStep(stPos)

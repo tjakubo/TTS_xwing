@@ -446,6 +446,13 @@ function API_StartSlide(argTable)
     return DialModule.StartSlide(argTable.obj, argTable.playerColor)
 end
 
+-- Queue tokens near a ship for movement
+-- To be called immediately before changing position of a ship
+function API_QueueShipTokensMove(argTable)
+    TokenModule.QueueShipTokensMove(argTable.ship)
+    MoveModule.WaitForResting(argTable.ship)
+end
+
 -- END API FUNCTIONS
 --------
 
