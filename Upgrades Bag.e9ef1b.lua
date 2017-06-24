@@ -953,6 +953,7 @@ Builder.Errata['Fire Control System'] = 'Fire-Control System'
 Builder.Errata['Burnout Slam'] = 'Burnout SLAM'
 Builder.Errata['StarViper Mk. II'] = 'StarViper Mk.II'
 Builder.Errata['Countermeasures'] = 'Counter-Measures'
+Builder.Errata['Slave-1'] = 'Slave I'
 
 -- Check if a name should be corrected
 -- Return correct version (same if no correction entry)

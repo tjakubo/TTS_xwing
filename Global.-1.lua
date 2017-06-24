@@ -3061,7 +3061,9 @@ function DialClick_Move(dial)
     local actShip = dial.getVar('assignedShip')
     if XW_cmd.Process(actShip, dial.getDescription()) == true then
         if DialModule.GetMainButtonsState(dial) == 0 then
-            DialModule.SetMainButtonsState(dial, 1)
+            -- Temporary
+            -- DialModule.SetMainButtonsState(dial, 1)
+            DialModule.SetMainButtonsState(dial, 2)
         end
         DialModule.SetMoveUndoButtonState(dial, 'undo')
     end
@@ -3247,7 +3249,7 @@ DialModule.Buttons.rulerR1 = {label='1', click_function='DialClick_RulerR1', hei
 DialModule.Buttons.rulerR2 = {label='2', click_function='DialClick_RulerR2', height=500, width=250, position={-1.95, 0.5, 3}, font_size=250}
 DialModule.Buttons.rulerR3 = {label='3', click_function='DialClick_RulerR3', height=500, width=250, position={-1.45, 0.5, 3}, font_size=250}
 DialModule.Buttons.targetLock = {label='TL', click_function='DialClick_TargetLock', height=500, width=365, position={1.5, 0.5, 2}, font_size=250}
-DialModule.Buttons.slide = {label='Slide', click_function='DialClick_SlideStart', height=250, width=1600, position={2.5, 0.5, 0}, font_size=250, rotation={0, 90, 0}}
+DialModule.Buttons.slide = {label='Slide', click_function='DialClick_SlideStart', height=250, width=2000, position={2.5, 0.5, 0}, font_size=250, rotation={0, 90, 0}}
 
 -- Get a button data if it was to be placen on the other side of a  card
 DialModule.Buttons.FlipVersion = function(buttonEntry)
