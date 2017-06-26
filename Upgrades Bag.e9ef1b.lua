@@ -232,7 +232,7 @@ end
 
 Builder = {}
 
--- Text set on the note if we need to parse through notebook
+-- Initial textfield note
 Builder.initialNote =
 [[\n\n\n\n\n\nRemove all of this text and paste your list snippet here.\nClick the T tool on left bar (F8 shorcut),\nthen click this field to edit it.\n\n\n\n\n\n]]
 
@@ -556,6 +556,14 @@ Builder.HasUpgrade = function(upgName, pilotIndex)
     end
 end
 
+-- Delete all pilots/upgrades records
+Builder.ClearList = function()
+    Builder.pilots = {}
+    Builder.pilotCount = {}
+    Builder.ships = {}
+    Builder.shipsCount = 0
+end
+
 -- Prints squad, judt for debugging
 Builder.PrintSquad = function()
     print('--- SQUAD ---')
@@ -629,7 +637,7 @@ Builder.generalButton = {
 -- Note object
 Builder.noteObj = nil
 
-Builder.errorNote = '[FF3333]Your list snippet appears to be in\n a wrong format, incomplete or including typos.\nAfter verifying, you can paste it here and click \'Spawn it!\' again.\n\nPlease make sure you are copying it *exactly*\n like instructed (not omitting any parts)\nReport at github.com/tjakubo2/TTS_xwing/issues if this persists.\n\n'
+Builder.errorNote = '[FF3333]Your list snippet appears to be in\n a wrong format, incomplete or including typos.\n[FFFF33]After verifying, you can paste it here and click \'Spawn it!\' again.\n\n[FF3333]Please make sure you are copying it *exactly*\n like instructed (not omitting any parts)\nReport at github.com/tjakubo2/TTS_xwing/issues if this persists.\n\n'
 
 -- Parse the text list and proceed if it passed the precheck
 Builder.ParseInput = function()
@@ -648,6 +656,7 @@ Builder.ParseInput = function()
             errorDetail = errorDetail .. '\nError: ' .. passState .. ' not found'
         end
         Builder.noteObj.setValue(Builder.errorNote .. errorDetail)
+        Builder.ClearList()
     end
 
 end
@@ -689,8 +698,6 @@ end
 
 -- Check list format, parse squad using an approriate function, advance spawn state
 Builder.ProcessInput = function(input)
-    self.clearButtons()
-    Builder.Log('Input parsed')
     local listFormat = Builder.CheckListFormat(input)
     if listFormat ~= '' then
         Builder.Log('Recognized ' .. listFormat .. ' format')
