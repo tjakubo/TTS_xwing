@@ -232,12 +232,17 @@ end
 
 Builder = {}
 
+-- Text set on the note if we need to parse through notebook
+Builder.initialNote =
+[[\n\n\n\n\n\nRemove all of this text and paste your list snippet here.\nClick the T tool on left bar (F8 shorcut),\nthen click this field to edit it.\n\n\n\n\n\n]]
 
 -- Initialize this bag in squadron builder mode
 function startAsBuilder()
     init()
     local rot = {self.getRotation()[1], self.getRotation()[2]+180, self.getRotation()[3]}
-    Builder.noteObj = Spawner.Spawn('Spawn Me', Builder.LocalPos({-15, 0.5, 2}), rot)
+    --Builder.noteObj = Spawner.Spawn('Spawn Me', Builder.LocalPos({-15, 0.5, 2}), rot)
+    Builder.noteObj = Builder.textToolTemplate.clone({position = Builder.LocalPos({-15, 0, 8}, self, 0.75)})
+    Builder.noteObj.setValue(Builder.initialNote)
 
     -- Change button to spawning function:
     self.clearButtons()
@@ -249,7 +254,6 @@ end
 
 -- Start the spawn routine
 function start()
-    self.clearButtons()
     Builder.ParseInput(note)
 end
 
@@ -491,7 +495,7 @@ end
 Builder.DisplayLog = function(color)
     if color == nil then color = {1, 0, 0} end
     if Builder.noteObj ~= nil then
-        Builder.noteObj.setDescription(Builder.log)
+        Builder.noteObj.setValue(Builder.log)
         Builder.noteObj.highlightOn(color, 6)
     end
 end
@@ -622,56 +626,28 @@ Builder.generalButton = {
     click_function='dummy'
 }
 
--- Click function for the "Parse notebook" button
-function Click_ParseNotebook()
-    Builder.ParseInput()
-end
-
--- Are we waiting for user to paste his list in the notebook?
-Builder.waitingForNotebook = false
-
 -- Note object
 Builder.noteObj = nil
 
--- Text set on the note if we need to parse through notebook
-Builder.waitForNotebookNote =
-[[The list you have pasted is too long to be parsed through notecard descripton.
-Please open the Notebook (button in top bar), select the "Spawn Me" tab, delete all the text there, paste your list (just as you did there) and click 'Parse Notebook' button.
+Builder.errorNote = '[FF3333]Your list snippet appears to be in\n a wrong format, incomplete or including typos.\nAfter verifying, you can paste it here and click \'Spawn it!\' again.\n\nPlease make sure you are copying it *exactly*\n like instructed (not omitting any parts)\nReport at github.com/tjakubo2/TTS_xwing/issues if this persists.\n\n'
 
-If that notebook tab is initially empty and/or you can't paste into it, switch to another notebook tab and back to it.]]
-
--- Parse the text list - first from the note, it it is too long, switch to notebook parsing
+-- Parse the text list and proceed if it passed the precheck
 Builder.ParseInput = function()
-    -- If we're parsing from the note
-    if Builder.waitingForNotebook == false then
-        local input = Builder.noteObj.getDescription()
-        -- If the note text is close to character limit, switch to notebook parsing
-        if input:len() > 360 then
-            Builder.noteObj.setDescription(Builder.waitForNotebookNote)
-            Builder.noteObj.highlightOn({0, 1, 0}, 6)
-            printToAll('Built list too long, follow instructions on the notecard you pasted to', {1, 1, 0})
-            Builder.waitingForNotebook = true
-            Builder.CreateNotebookTab()
-            Builder.generalButton.click_function = 'Click_ParseNotebook'
-            Builder.generalButton.label = 'Parse notebook'
-            Builder.generalButton.width = 5500
-            self.createButton(Builder.generalButton)
-        else
-        -- If text is reasonably short, proceed with processing
-            Builder.ProcessInput(input)
-        end
+
+    local input = Builder.noteObj.getValue()
+    local format = Builder.ProcessInput(input)
+
+    local passState = Builder.PrecheckPass()
+    if format ~= 'unknown' and passState == true then
+        self.clearButtons()
+        Builder.Log('Input parsed')
+        Builder.AdvanceState(Builder.states.ListParsed)
     else
-    -- If we're already parsing from the notebook
-        local input = Builder.ParseFromNotebookTab()
-        -- Prompt empty or unchanged tab or delete it and proceed with processing
-        if input == '' then
-            printToAll('Notebook \'Spawn Me\' tab unchanged or empty!', {1, 1, 0})
-            return
-        else
-            Builder.RemoveNotebookTab()
-            Builder.Log('Notebook parse succesful')
-            Builder.ProcessInput(input)
+        local errorDetail = 'Format: ' .. format
+        if passState ~= true then
+            errorDetail = errorDetail .. '\nError: ' .. passState .. ' not found'
         end
+        Builder.noteObj.setValue(Builder.errorNote .. errorDetail)
     end
 
 end
@@ -719,12 +695,12 @@ Builder.ProcessInput = function(input)
     if listFormat ~= '' then
         Builder.Log('Recognized ' .. listFormat .. ' format')
     else
-        Builder.Log('Unrecognized list format... Stop')
-        Builder.DisplayLog()
-        return
+        --Builder.Log('Unrecognized list format... Stop')
+        --Builder.DisplayLog()
+        return 'unknown'
     end
     Builder.ParseSquad[listFormat](input)
-    Builder.AdvanceState(Builder.states.ListParsed)
+    return listFormat
 end
 
 -- Table containing parse (decode list into table entries) for each supported format
@@ -874,6 +850,26 @@ Builder.LocalPos = function(pos, ref, hOff)
     end
     local posRot = {pos[3]*math.sin(refRot)-pos[1]*math.cos(refRot), pos[2], -1*pos[1]*math.sin(refRot) - pos[3]*math.cos(refRot)}
     return {posRot[1]+refOffset[1], refOffset[2]+hOff, posRot[3]+refOffset[3]}
+end
+
+-- Check if pilot, ship and upgrades names can be found in Spawner
+-- Return true if everything looks OK
+-- Return first not found element if there was any
+Builder.PrecheckPass = function()
+    for k, sInfo in pairs(Builder.pilots) do
+        if (not Spawner.Find('Ship: ' .. sInfo.name)) and (not Spawner.Find('Ship: ' .. sInfo.name .. ' v1')) then
+            return 'Ship:' .. sInfo.name
+        end
+        if (not Spawner.Find(sInfo.name)) and (not Spawner.Find(sInfo.name .. ' v1')) then
+            return sInfo.name
+        end
+        for k2, uInfo in pairs(sInfo.upgrades) do
+            if not Spawner.Find('Upgrade: ' .. uInfo.name) then
+                return uInfo.name
+            end
+        end
+    end
+    return true
 end
 
 -- Spawn core elements according to existing pilot/ship tables
@@ -1393,7 +1389,7 @@ Builder.Die = function(code, desc)
     objParams = {type='Notecard'}
     Builder.deathNote = spawnObject(objParams)
     local nPos = Builder.noteObj.getPosition()
-    local nRot = Builder.noteObj.getRotation()
+    local nRot = self.getRotation()
     Builder.deathNote.setPosition({nPos[1], nPos[2]+0.5, nPos[3]})
     Builder.deathNote.setRotation(nRot)
     Builder.deathNote.setName(title)
@@ -1458,10 +1454,10 @@ end
 
 -- Move note aside
 Builder.MoveNote = function()
-    Builder.noteObj.setPosition(Builder.LocalPos({9.5, 0, 2}))
+    Builder.noteObj.setPosition(Builder.LocalPos({9.5, 0, 6}, self, 0.75))
     local sRot = self.getRotation()
     local nScale = Builder.noteObj.getScale()
-    Builder.noteObj.setRotation({sRot[1], sRot[2]-90, sRot[3]})
+    Builder.noteObj.setRotation({90, -1*sRot[2], 0})
     Builder.noteObj.setScale({nScale[1]*0.8, nScale[2]*0.8, nScale[3]*0.8})
 end
 
@@ -1778,6 +1774,9 @@ function onDestroy()
     if Browser.noteObj ~= nil then
         Browser.noteObj.destruct()
     end
+    if Builder.noteObj ~= nil then
+        Builder.sbm.call('API_AddChild', {Builder.noteObj, 'Arbitrary'})
+    end
 end
 
 -- On load
@@ -1812,10 +1811,10 @@ function init()
     local minorBags = {}
     local hOff = -3
 
-    local sbm = nil
+    Builder.sbm = nil
     for k,obj in pairs(getAllObjects()) do
         if obj.getName() == 'Squad Builder module' then
-            sbm = obj
+            Builder.sbm = obj
         end
     end
 
@@ -1827,7 +1826,7 @@ function init()
             newObj.interactable = false
             newObj.tooltip = false
             newObj.setPosition(nPos)
-            sbm.call('builderAddChild', {newObj})
+            Builder.sbm.call('API_AddChild', {newObj, 'Upgrades Bag'})
             table.insert(minorBags, newObj)
         end
     end
@@ -1841,8 +1840,15 @@ function init()
     end
     Builder.Log('Source bags ready')
 
-    -- Get the note
+    -- Get the notes
     Spawner.Fill(self)
+
+    -- Get the text field template
+    for k,obj in pairs(getAllObjects()) do
+        if obj.TextTool ~= nil and obj.getValue() == 'TEMPLATE{Text Field}' then
+            Builder.textToolTemplate = obj
+        end
+    end
 end
 
 
@@ -1884,55 +1890,6 @@ StringLen.GetStringLength = function(str)
         end
     end
     return len
-end
-
--- INITIALIZE BAG
-function init()
-    -- Make sure all sources are ready
-    if Builder.SourcesReady() ~= true then
-        Builder.FillSources()
-        if Builder.SourcesReady() ~= true then
-            Builder.Log('Source bags not ready... Stop')
-            Builder.DisplayLog()
-            return
-        end
-    end
-
-    local sObj = self.getObjects()
-    local minorBags = {}
-    local hOff = -3
-
-    local sbm = nil
-    for k,obj in pairs(getAllObjects()) do
-        if obj.getName() == 'Squad Builder module' then
-            sbm = obj
-        end
-    end
-
-    for k, objInfo in pairs(sObj) do
-        if objInfo.name:find('Bag') ~= nil then
-            local nPos = Builder.LocalPos({0, 0, 0}, self, hOff)
-            local newObj = self.takeObject({guid=objInfo.guid, position=nPos})
-            newObj.lock()
-            newObj.interactable = false
-            newObj.tooltip = false
-            newObj.setPosition(nPos)
-            sbm.call('builderAddChild', {newObj})
-            table.insert(minorBags, newObj)
-        end
-    end
-
-    -- Pass the sources to the spawner
-    Spawner.Fill(Builder.sources['Ship Models Bag'], 'Ship: ')
-    Spawner.Fill(Builder.sources['Pilot Cards Bag'])
-    Spawner.Fill(Builder.sources['Accesories Bag'])
-    for k,bag in pairs(minorBags) do
-        Spawner.Fill(bag, 'Upgrade: ')
-    end
-    Builder.Log('Source bags ready')
-
-    -- Get the note
-    Spawner.Fill(self)
 end
 
 -- END COMMON FUNCTIONS

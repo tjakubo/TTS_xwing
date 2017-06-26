@@ -243,13 +243,14 @@ function SBM_clickBuilder()
     eNote.unlock()
 end
 
-function builderAddChild(objTable)
+function API_AddChild(objTable)
     local obj = objTable[1]
-    TempModule.AddChildren('Upgrades Bag', obj)
+    local temp = objTable[2]
+    TempModule.AddChildren(temp, obj)
 end
 
 function builderFinish()
-    TM.DeleteAllChildren()
+    TM.DeleteTempChildren('Upgrades Bag')
 end
 
 function SBM_clickItemBrowser()
