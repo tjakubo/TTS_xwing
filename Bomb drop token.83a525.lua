@@ -123,10 +123,16 @@ function DropBomb(code)
     SpawnFirstButtons()
 end
 
---
 function selfUnassign()
     assignedShip = nil
     self.clearButtons()
     self.setName(nameUnassigned)
+end
+function assignCallback(argTable)
+    local ship = argTable.ship
+    printToAll('Bomb drop token assigned to ' .. ship.getName(), {0.2, 0.2, 1})
+    SpawnFirstButtons()
+    assignedShip = ship
+    self.setName(assignedShip.getName() .. nameAssigned)
 end
 function dummy() return end

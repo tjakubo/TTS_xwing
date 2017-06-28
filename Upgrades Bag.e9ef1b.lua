@@ -1106,11 +1106,85 @@ Builder.SpawnMisc = function()
     Builder.SpawnConditionCards()
     Builder.SpawnArcIndicators()
     Builder.SpawnBoShekDials()
-    Builder.SpawnSVrollToken()
+    Builder.SpawnSVrollTokens()
+    Builder.SpawnBombTokens()
     Builder.AdvanceState(Builder.states.MiscSpawned)
 end
 
-Builder.SpawnSVrollToken = function()
+Builder.SpawnBombTokens = function()
+    -- Which upgrades trigger bomb token spawn
+    local bombList = {
+        'Proximity Mines',
+        'Seismic Charges',
+        'Proton Bombs',
+        'Cluster Mines',
+        'Conner Net',
+        'Ion Bombs',
+        'Thermal Detonators',
+        'Bomblet Generator',
+        'Rigged Cargo Chute'
+    }
+    -- Which upgrades expand bomb drop options
+    local extraDropUpgrades = {
+        ['Bombardier'] = {'s2'},
+    }
+    -- Which pilots expand bomb drop options
+    local extraDropPilots = {
+        ['Emon Azzameen'] = {'te3', 's3', 'tr3'},
+        ['Sol Sixxa'] = {'te1', 'tr1'}
+    }
+
+    for k,pTable in pairs(Builder.pilots) do
+        -- Deduct if we should spawn the token
+        local hasBombs = false
+        for k2,bombName in pairs(bombList) do
+            if Builder.HasUpgrade(bombName, k) then
+                hasBombs = true
+                break
+            end
+        end
+
+        if hasBombs then
+            -- Add extra options from upgrades
+            local extraList = {}
+            for uName, eList in pairs(extraDropUpgrades) do
+                if Builder.HasUpgrade(uName, k) then
+                    for k2,extraDrop in pairs(eList) do
+                        table.insert(extraList, extraDrop)
+                    end
+                end
+            end
+            -- Add extra options from pilots
+            if extraDropPilots[pTable.name] ~= nil then
+                for k2,extraDrop in pairs(extraDropPilots[pTable.name]) do
+                    table.insert(extraList, extraDrop)
+                end
+            end
+            -- Add front drops for Deathrain and Sol Sixxa
+            if pTable.name == '\"Deathrain\"' or pTable.name == 'Sol Sixxa' then
+                table.insert(extraList, 's1r')
+                for k2,extraDrop in pairs(extraList) do
+                    if extraDrop:sub(-1, -1) ~= 'r' then
+                        table.insert(extraList, extraDrop .. 'r')
+                    end
+                end
+            end
+
+            -- Spawn the token
+            local newBombToken = Spawner.Spawn('Bomb drop token', Builder.LocalPos({0, 0.1, -0.4}, pTable.sRef), {0, 0, 0})
+            local extraString = ''
+            for k2,extraDrop in pairs(extraList) do
+                extraString = extraString .. extraDrop .. ':'
+            end
+            --newBombToken.setVar('assignedShip', pTable.sRef)
+            newBombToken.setDescription(extraString)
+            table.insert(Builder.misc.tokens, {tRef=newBombToken, pRef=pTable.sRef})
+        end
+    end
+end
+
+-- Spawn StarViper Mk.ii roll token
+Builder.SpawnSVrollTokens = function()
     for k=1,#Builder.pilots,1 do
             local upgrades = Builder.GetUpgrades(k)
             local sRot = self.getRotation()
