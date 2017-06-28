@@ -4073,7 +4073,7 @@ end
 BombModule = {}
 
 -- Delete button for the spawned template
-BombModule.deleteButton = {click_function = 'BombDrop_SelfDestruct', label = 'OK', position = {0, 0.1, 0}, rotation =  {0, 0, 0}, width = 90, height = 90, font_size = 25}
+BombModule.deleteButton = {click_function = 'BombDrop_SelfDestruct', label = 'OK', position = {0, 0.1, 0}, rotation =  {0, 0, 0}, scale = {0.1, 0.1, 0.1}, width = 900, height = 900, font_size = 400}
 function BombDrop_SelfDestruct(temp)
     BombModule.DeleteDrop(temp)
 end
