@@ -121,12 +121,27 @@ end
 -- Multiply each element of a vector by a factor
 function Vect_Scale(vector, factor)
     if type(vector) ~= 'table' or type(factor) ~= 'number' then
-        print('Vect_Scale: arg not a table/numer pair!')
+        print('Vect_Scale: arg not a table/number pair!')
     end
     local out = {}
     local k = 1
     while vector[k] ~= nil do
         out[k] = vector[k]*factor
+        k = k+1
+    end
+    return out
+end
+
+-- Multiply each element of a vector by an element from factor vector
+-- (element-wise vector multiplication)
+function Vect_ScaleEach(vector, factorVec)
+    if type(vector) ~= 'table' or type(factorVec) ~= 'table' then
+        print('Vect_ScaleEach: arg not a table/table pair!')
+    end
+    local out = {}
+    local k = 1
+    while vector[k] ~= nil and factorVec[k] ~= nil do
+        out[k] = vector[k]*factorVec[k]
         k = k+1
     end
     return out
@@ -448,13 +463,22 @@ end
 
 -- Queue tokens near a ship for movement
 -- To be called immediately before changing position of a ship
+-- Argument: { ship = shipRef, finPos = { pos = finalPosition, rot = finalRotation} }
+-- finPos field may be nil (no position set after wait then)
 function API_QueueShipTokensMove(argTable)
     -- Set the ship busy if it's not to try prevent double ready later
     if XW_cmd.isReady(argTable.ship) then
         XW_cmd.SetBusy(argTable.ship)
     end
     TokenModule.QueueShipTokensMove(argTable.ship)
-    MoveModule.WaitForResting(argTable.ship)
+    MoveModule.WaitForResting(argTable.ship, argTable.finPos)
+end
+
+-- Indicate dropping of a bomb token from outside Global
+-- Argument: { token = droppedTokenRef }
+-- Return: true if token snapped, false otherwise
+function API_BombTokenDrop(argTable)
+    return BombModule.OnTokenDrop(argTable.token)
 end
 
 -- END API FUNCTIONS
@@ -653,6 +677,8 @@ XW_cmd.Process = function(obj, cmd)
         RulerModule.ToggleRuler(obj, string.upper(cmd))
     elseif type == 'action' then
         DialModule.PerformAction(obj, cmd)
+    elseif type == 'bombDrop' then
+        BombModule.ToggleDrop(obj, cmd)
     end
     obj.setDescription('')
     return true
@@ -1980,14 +2006,17 @@ MoveModule.restWaitQueue = {}
 MoveModule.tokenWaitQueue = {}
 
 -- Add ship to the queue so it fires once it completes the move
-MoveModule.WaitForResting = function(ship, finPos)
-    table.insert(MoveModule.restWaitQueue, {ship=ship, finPos=finPos})
+-- OPTIONAL: finPos     <- position to be set at the end of the wait
+-- OPTIONAL: finFun     <- function to be execeuted at the end of the wait (argument: waiting ship)
+MoveModule.WaitForResting = function(ship, finPos, finFun)
+    table.insert(MoveModule.restWaitQueue, {ship=ship, finPos=finPos, finFun=finFun})
     startLuaCoroutine(Global, 'restWaitCoroutine')
 end
 
 -- This completes when a ship is resting at a table level
 -- Does token movement and ship locking after
--- IF a final position wa provided in the data table, set it at the end
+-- IF a final position was provided in the data table, set it at the end
+-- IF a final function was provideed in the data table, execute it at the end
 function restWaitCoroutine()
     if MoveModule.restWaitQueue[1] == nil then
         return 1
@@ -1996,6 +2025,7 @@ function restWaitCoroutine()
     local waitData = MoveModule.restWaitQueue[#MoveModule.restWaitQueue]
     local actShip = waitData.ship
     local finPos = waitData.finPos
+    local finFun = waitData.finFun
     table.remove(MoveModule.restWaitQueue, #MoveModule.restWaitQueue)
     -- Wait
     repeat
@@ -2031,6 +2061,9 @@ function restWaitCoroutine()
     actShip.lock()
     actShip.highlightOn({0, 1, 0}, 0.1)
     XW_cmd.SetReady(actShip)
+    if finFun ~= nil then
+        finFun(actShip)
+    end
     return 1
 end
 
@@ -2963,11 +2996,11 @@ DialModule.SpawnedTemplates = {}
 -- (its quite rough by the numbers since their origin was not perfectly at the center)
 DialModule.TemplateData = {}
 DialModule.TemplateData.straight = {}
-DialModule.TemplateData.straight[1] = {0, 0, 20, 0}
-DialModule.TemplateData.straight[2] = {0, 0, 40, 0}
-DialModule.TemplateData.straight[3] = {0, 0, 60, 0}
-DialModule.TemplateData.straight[4] = {0, 0, 80, 0}
-DialModule.TemplateData.straight[5] = {0, 0, 100, 0}
+DialModule.TemplateData.straight[1] = {0, -2.5, 20, 0}
+DialModule.TemplateData.straight[2] = {0, -2.5, 40, 0}
+DialModule.TemplateData.straight[3] = {0, -2.5, 60, 0}
+DialModule.TemplateData.straight[4] = {0, -2.5, 80, 0}
+DialModule.TemplateData.straight[5] = {0, -2.5, 100, 0}
 DialModule.TemplateData.bank = {}
 DialModule.TemplateData.bank.leftRot = 45
 DialModule.TemplateData.bank.trim = { left = {{-2,0,-4,0}, {-5.5,0,-5.2,0}, {-9.3,0,-6.45,0}}, right={{4.2,0,1.2,0}, {7.8,0,-0.3,0}, {11.5,0,-1.4,0}} }
@@ -2985,11 +3018,13 @@ DialModule.TemplateData.baseOffset = {}
 DialModule.TemplateData.baseOffset.small = {0, 0, 20, 0}
 DialModule.TemplateData.baseOffset.large = {0, 0, 40, 0}
 
+
 -- Spawn a tempalte on given ship
 -- dialCode is move code PLUS identifier if ship arelready did it or not
 -- be3_A means "spawn a bank left 3 template behind me" (A as in after move)
 -- tr1_B means "spawn a turn right 1 tempalte in front of me" (B as in before move)
 -- Return template reference
+-- TODO toggletemplate?
 DialModule.SpawnTemplate = function(ship, dialCode)
     local moveCode = dialCode:sub(1, -3)
     local moveInfo = MoveData.DecodeInfo(moveCode, ship)
@@ -3002,7 +3037,8 @@ DialModule.SpawnTemplate = function(ship, dialCode)
     if dialCode:sub(-1,-1) == 'A' then
         ref = MoveModule.GetOldMove(ship, 1)
     end
-
+    --TODO LAST MOVE LOGIC OUT!!!
+    --TODO dont barf if no last move
     if moveInfo.dir == 'left' then
         tempEntry = MoveData.LeftVariant(tempEntry)
         tempEntry[4] = tempEntry[4] + 180 - DialModule.TemplateData[moveInfo.type].leftRot
@@ -3022,7 +3058,7 @@ DialModule.SpawnTemplate = function(ship, dialCode)
             elseif moveInfo.dir == 'left' then
                 moveInfo.dir = 'right'
             end
-            tempEntry = Vect_Sum(tempEntry, Vect_Scale(DialModule.TemplateData[moveInfo.type].trim[moveInfo.dir][moveInfo.speed], -1))
+            tempEntry = Vect_Sum(tempEntry, Vect_ScaleEach(DialModule.TemplateData[moveInfo.type].trim[moveInfo.dir][moveInfo.speed], {-1, 1, -1, -1}))
         end
     end
     local finPos = MoveModule.EntryToPos(tempEntry, ref)
@@ -4027,6 +4063,172 @@ RulerModule.ToggleRuler = function(ship, rulerType, beQuiet)
 end
 
 -- END RULERS MODULE
+--------
+
+--------
+-- BOMB MODULE
+
+-- Allows for creating "bomb drops" that snap bomb tokens to position
+
+BombModule = {}
+
+-- Delete button for the spawned template
+BombModule.deleteButton = {click_function = 'BombDrop_SelfDestruct', label = 'OK', position = {0, 0.1, 0}, rotation =  {0, 0, 0}, width = 90, height = 90, font_size = 25}
+function BombDrop_SelfDestruct(temp)
+    BombModule.DeleteDrop(temp)
+end
+
+BombModule.dropTable = {}
+
+XW_cmd.AddCommand('b:s[1-5][r]?', 'bombDrop')
+XW_cmd.AddCommand('b:b[rle][1-3][r]?', 'bombDrop')
+XW_cmd.AddCommand('b:t[rle][1-3][r]?', 'bombDrop')
+
+-- Spawn a bomb drop, delete old ones
+-- If that exact one existed, just delete
+BombModule.ToggleDrop = function(ship, dropCode)
+    if BombModule.DeleteDrop(ship) ~= dropCode then
+        BombModule.SpawnDrop(ship, dropCode)
+    end
+end
+
+-- Create a bomb drop with a template
+BombModule.SpawnDrop = function(ship, dropCode)
+    local scPos = dropCode:find(':')
+    local templateCode = dropCode:sub(scPos+1,-1)
+    DialModule.DeleteTemplate(ship)
+    local dropPos = nil
+    local temp = nil
+    if dropCode:sub(-1, -1) == 'r' then
+        -- FRONT drops
+        temp = DialModule.SpawnTemplate(ship, templateCode:sub(1, -2) .. '_B')
+        temp.createButton(BombModule.deleteButton)
+        dropPos = MoveModule.GetFinalPosData(templateCode:sub(1, -2), ship, true)
+        dropPos.finPos.rot[2] = dropPos.finPos.rot[2] - 180
+    else
+        -- BACK drops
+        temp = DialModule.SpawnTemplate(ship, templateCode .. 'r_B')
+        temp.createButton(BombModule.deleteButton)
+        dropPos = MoveModule.GetFinalPosData(templateCode .. 'r', ship, true)
+    end
+    if dropPos == nil or temp == nil then return end
+    table.insert(BombModule.dropTable, {ship=ship, temp=temp, code=dropCode, dest=dropPos.finPos})
+end
+
+-- Delete existing drop, return deleted code or nil if there was none
+BombModule.DeleteDrop = function(temp_ship)
+    local newTable = {}
+    local deleteCode = nil
+    for k,dTable in pairs(BombModule.dropTable) do
+        if dTable.ship == temp_ship or dTable.temp == temp_ship then
+            deleteCode = dTable.code
+            DialModule.DeleteTemplate(dTable.ship)
+        else
+            table.insert(newTable, dTable)
+        end
+    end
+    BombModule.dropTable = newTable
+    return deleteCode
+end
+
+-- Delete drops on ship/template delete
+BombModule.onObjectDestroyed = function(obj)
+    for k,dTable in pairs(BombModule.dropTable) do
+        if dTable.ship == obj or dTable.temp == ship then
+            table.remove(BombModule.dropTable, k)
+        end
+    end
+end
+
+-- Bomb type -> offset data
+BombModule.tokenOffset = {}
+BombModule.tokenOffset.standardAoE = {pos={0, Convert_mm_igu(-2), Convert_mm_igu(-4.5)}, rot={0, 90, 0}}
+BombModule.tokenOffset.prox = {pos={0, Convert_mm_igu(-2), Convert_mm_igu(15)}, rot={0, 90, 0}}
+BombModule.tokenOffset.cluster = {pos={0, Convert_mm_igu(-2), 0}, rot={0, 180, 0}}
+BombModule.tokenOffset.connor = {pos={0, Convert_mm_igu(-2), Convert_mm_igu(21)}, rot={0, 180, 0}}
+BombModule.tokenOffset.rgc = {pos={0, Convert_mm_igu(-1), Convert_mm_igu(9.5)}, rot={0, 0, 0}}
+
+-- Bomb name -> type data
+BombModule.snapTable = {}
+BombModule.snapTable['Ion Bomb'] = 'standardAoE'
+BombModule.snapTable['Proton Bomb'] = 'standardAoE'
+BombModule.snapTable['Seismic Charge'] = 'standardAoE'
+BombModule.snapTable['Thermal Detonator'] = 'standardAoE'
+BombModule.snapTable['Bomblet'] = 'standardAoE'
+BombModule.snapTable['Proximity Mine'] = 'prox'
+BombModule.snapTable['Cluster Mine (middle)'] = 'cluster'
+BombModule.snapTable['Connor Net'] = 'connor'
+BombModule.snapTable['Rigged Cargo Chute debris'] = 'rgc'
+
+-- Minimum distance to snap
+BombModule.snapDist = 1.5
+-- Snap on drop
+BombModule.OnTokenDrop = function(token)
+    -- Get the offset data
+    local offset = BombModule.tokenOffset[BombModule.snapTable[token.getName()]]
+    if offset == nil then print('nil') return end
+
+    -- Deduct closest bomb drop point within snap distance
+    local closest = {dist=BombModule.snapDist+1, pointKey=nil}
+    local tPos = token.getPosition()
+    for k,dTable in pairs(BombModule.dropTable) do
+        local newDist = Dist_Pos(tPos, dTable.dest.pos)
+        if newDist < closest.dist then
+            closest.dist = newDist
+            closest.pointKey = k
+        end
+    end
+
+    -- If there was one
+    if closest.pointKey ~= nil then
+        -- Move the token to the snap points
+        local drop = BombModule.dropTable[closest.pointKey]
+        local destPos = Vect_Sum(drop.dest.pos, Vect_RotateDeg(offset.pos, drop.dest.rot[2]))
+        if DB_isLargeBase(drop.ship) then
+            destPos = Vect_Sum(destPos, Vect_RotateDeg({0, 0, Convert_mm_igu(-20)}, drop.dest.rot[2]))
+        end
+        local destRot = Vect_Sum(drop.dest.rot, offset.rot)
+        destPos[2] = drop.ship.getPosition()[2] + offset.pos[2]
+        token.lock()
+        token.setPositionSmooth(destPos, false, true)
+        token.setRotationSmooth(destRot, false, true)
+        XW_cmd.SetBusy(token)
+        MoveModule.WaitForResting(token, {pos=destPos, rot=destRot})
+        -- Expand clusters
+        if token.getName() == 'Cluster Mine (middle)' then
+            BombModule.ExpandCluster({pos=destPos, rot=destRot})
+        end
+        AnnModule.Announce({type='action', note=drop.ship.getName() .. ' dropped a ' .. token.getName():gsub('%(middle%)', 'set')}, 'all')
+        return true
+    else
+        return false
+    end
+end
+
+-- Spawn side tokens for cluster mine
+BombModule.ExpandCluster = function(center)
+    local offset = {Convert_mm_igu(43.5), 0, Convert_mm_igu(-1.5)}
+    local tParams = {type='Custom_Token'}
+    local tCustom = {image='http://i.imgur.com/MqlYZzR.png', thickness=0.1, merge_distance=5}
+
+    local t1 = spawnObject(tParams)
+    t1.setCustomObject(tCustom)
+    t1.lock()
+    local destOffset1 = Vect_RotateDeg(offset, center.rot[2])
+    t1.setPosition(Vect_Sum(center.pos, destOffset1))
+    t1.setRotation(center.rot)
+    t1.setScale({0.4554, 0.4554, 0.4554})
+
+    local t2 = spawnObject(tParams)
+    t2.setCustomObject(tCustom)
+    t2.lock()
+    local destOffset2 = Vect_RotateDeg(Vect_ScaleEach(offset, {-1, 1, 1}), center.rot[2])
+    t2.setPosition(Vect_Sum(center.pos, destOffset2))
+    t2.setRotation(center.rot)
+    t2.setScale({0.4554, 0.4554, 0.4554})
+end
+
+-- END BOMB MODULE
 --------
 
 --------
