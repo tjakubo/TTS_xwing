@@ -192,6 +192,24 @@ AssignModule.Assign = function(zoneColor, playerColor)
     end
     self.setVar(zoneColor .. 'Busy', true)
     shipData = AssignModule.SortShips(shipData)
+    -- Replace colliders if needed
+    local collOK = {
+        small = 'http://cloud-3.steamusercontent.com/ugc/856097073971964332/9FA07C37B1615A416F306081D9152902A9BFE9EE/',
+        large = 'http://cloud-3.steamusercontent.com/ugc/856097073971964883/B11F61E5ED25B90F87C047EB6252D3B18EBB09F1/'
+    }
+    for k,data in pairs(shipData) do
+        local shipColl = data.ref.getCustomObject().collider
+        local baseSize = 'small'
+        if Global.call('DB_getShipInfoCallable', {data.ref}).largeBase then
+            baseSize = 'large'
+        end
+        if shipColl ~= collOK[baseSize] then
+            local custom = data.ref.getCustomObject()
+            custom.collider = collOK[baseSize]
+            data.ref.setCustomObject(custom)
+            data.ref = data.ref.reload()
+        end
+    end
     -- Dial bags desired position and its step
     local function bPosStep(pos)
         return {pos[1], pos[2], pos[3] - 2.6*math.sgn(pos[3])}
