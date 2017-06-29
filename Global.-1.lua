@@ -1573,10 +1573,162 @@ MoveModule.RestoreSaveData = function(saveTable)
     end
 end
 
+-- Join hit tables t1 .. t5 resulting from Physics.cast call
+-- Return a table of unique objects that pass selection function
+-- (apaprently cant use '...' arg type when a function is a table field)
+-- Arguments:
+--      exclObj     <- object excluded from return table (for casts over a ship)
+--      SelectFun   <- function taking an object and returning true/false (obj type selection)
+--      t1 .. t5    <- hit tables returned from Physics.cast, some can be nil or empty
+-- Return:
+--      Concatenated table of unique objects from hit tables that also passed selection function
+MoveModule.JoinHitTables = function(exclObj, SelectFun, t1, t2, t3, t4, t5)
+    local gTable = {[exclObj.getGUID()]=true}
+    local out = {}
+    local tbls = {a=t1, b=t2, c=t3, d=t4, e=t5}
+    for k,hTable in pairs(tbls) do
+        for k2,hit in pairs(hTable) do
+            if SelectFun(hit.hit_object) and gTable[hit.hit_object.getGUID()] == nil then
+                gTable[hit.hit_object.getGUID()] = true
+                table.insert(out, hit.hit_object)
+            end
+        end
+    end
+    return out
+end
+
+-- Selection function for MoveModule.JoinHitTables - ships only
+MoveModule.SelectShips = function(obj)
+    return (obj.tag == 'Figurine')
+end
+
+-- Selection function for MoveModule.JoinHitTables - obstacles only
+MoveModule.SelectObstacles = function(obj)
+    return (obj.getName():find('Asteroid') ~= nil or obj.getName():find('Debris') ~= nil)
+end
+
+-- Selection function for MoveModule.JoinHitTables - anything aside from global table object
+MoveModule.SelectAny = function(obj)
+    return obj.getGUID() ~= nil
+end
+
+-- Cast data for checking collisions over a ship type shape
+MoveModule.castData = {}
+MoveModule.castData.small = {}
+MoveModule.castData.small.base = {
+    direction={0, 1, 0},
+    type=3,
+    size={Convert_mm_igu(20), Convert_mm_igu(3), Convert_mm_igu(20)}
+    -- + Origin
+    -- + Orientation
+}
+MoveModule.castData.small.nubFR = {
+    localPos = {-1*Convert_mm_igu(11.38), Convert_mm_igu(-1.86), -1*Convert_mm_igu(20.858)},
+    direction = {0, 1, 0},
+    type=2,
+    size={Convert_mm_igu(1.8), Convert_mm_igu(4), Convert_mm_igu(1.8)}
+    -- + Origin
+}
+MoveModule.castData.small.nubFL = {
+    localPos = {Convert_mm_igu(11.38), Convert_mm_igu(-1.86), -1*Convert_mm_igu(20.858)},
+    direction = {0, 1, 0},
+    type=2,
+    size={Convert_mm_igu(1.8), Convert_mm_igu(4), Convert_mm_igu(1.8)}
+    -- + Origin
+}
+MoveModule.castData.small.nubBR = {
+    localPos = {-1*Convert_mm_igu(11.38), Convert_mm_igu(-1.86), Convert_mm_igu(20.858)},
+    direction = {0, 1, 0},
+    type=2,
+    size={Convert_mm_igu(1.8), Convert_mm_igu(4), Convert_mm_igu(1.8)}
+    -- + Origin
+}
+MoveModule.castData.small.nubBL = {
+    localPos = {Convert_mm_igu(11.38), Convert_mm_igu(-1.86), Convert_mm_igu(20.858)},
+    direction = {0, 1, 0},
+    type=2,
+    size={Convert_mm_igu(1.8), Convert_mm_igu(4), Convert_mm_igu(1.8)}
+    -- + Origin
+}
+MoveModule.castData.large = {}
+MoveModule.castData.large.base = {
+    direction={0, 1, 0},
+    type=3,
+    size={Convert_mm_igu(40), Convert_mm_igu(3), Convert_mm_igu(40)}
+    -- + Origin
+    -- + Orientation
+}
+MoveModule.castData.large.nubFR = {
+    localPos = {-1*Convert_mm_igu(11.38), Convert_mm_igu(-1.86), -1*Convert_mm_igu(40.858)},
+    direction = {0, 1, 0},
+    type=2,
+    size={Convert_mm_igu(1.8), Convert_mm_igu(4), Convert_mm_igu(1.8)}
+    -- + Origin
+}
+MoveModule.castData.large.nubFL = {
+    localPos = {Convert_mm_igu(11.38), Convert_mm_igu(-1.86), -1*Convert_mm_igu(40.858)},
+    direction = {0, 1, 0},
+    type=2,
+    size={Convert_mm_igu(1.8), Convert_mm_igu(4), Convert_mm_igu(1.8)}
+    -- + Origin
+}
+MoveModule.castData.large.nubBR = {
+    localPos = {-1*Convert_mm_igu(11.38), Convert_mm_igu(-1.86), Convert_mm_igu(40.858)},
+    direction = {0, 1, 0},
+    type=2,
+    size={Convert_mm_igu(1.8), Convert_mm_igu(4), Convert_mm_igu(1.8)}
+    -- + Origin
+}
+MoveModule.castData.large.nubBL = {
+    localPos = {Convert_mm_igu(11.38), Convert_mm_igu(-1.86), Convert_mm_igu(40.858)},
+    direction = {0, 1, 0},
+    type=2,
+    size={Convert_mm_igu(1.8), Convert_mm_igu(4), Convert_mm_igu(1.8)}
+    -- + Origin
+}
+
+-- Get cast data for particular ship situation
+-- Arguments:
+--      ship        <- ship ref (for base size)
+--      shipPosRot  <- table with ship check position and rotation ('pos' and 'rot' keys)
+--      castType    <- 'base' for base, 'nub[FB][RL]' for one of four nubs
+-- Return:
+--      Table ready to be fed to Physics.cast
+MoveModule.GetCast = function(ship, shipPosRot, castType)
+    local castTable = MoveModule.castData[DB_getBaseSize(ship)][castType]
+    if castType == 'base' then
+        castTable.origin = shipPosRot.pos
+        castTable.orientation = shipPosRot.rot
+        return castTable
+    else
+        castTable.origin = Vect_Sum(shipPosRot.pos, Vect_RotateDeg(castTable.localPos, shipPosRot.rot[2]))
+        return castTable
+    end
+end
+
+-- Return all objects that pass selection function and would overlap ship in some situation
+-- Arguments:
+--      ship        <- ship ref (for base size)
+--      shipPosRot  <- table with ship check position and rotation ('pos' and 'rot' keys)
+--      SelectFun   <- selection function that returns true/false for an object
+-- Return:
+--      Concatenated table of all objects that would overlap ship in this situation and pass select function
+MoveModule.FullCastCheck = function(ship, shipPosRot, SelectFun)
+    return MoveModule.JoinHitTables(
+    ship,
+    SelectFun,
+    Physics.cast(MoveModule.GetCast(ship, shipPosRot, 'base')),
+    Physics.cast(MoveModule.GetCast(ship, shipPosRot, 'nubFR')),
+    Physics.cast(MoveModule.GetCast(ship, shipPosRot, 'nubFL')),
+    Physics.cast(MoveModule.GetCast(ship, shipPosRot, 'nubBR')),
+    Physics.cast(MoveModule.GetCast(ship, shipPosRot, 'nubBL'))
+    )
+end
+
 -- Check if provided ship in a provided position/rotation would collide with anything from the provided table
 -- Return: {coll=collObject, minMargin=howFarCollisionIsStillCertain, numCheck=numCollideChecks}
 MoveModule.CheckCollisions = function(ship, shipPosRot, collShipTable)
-    local info = {coll=nil, minMargin=0, numCheck=0}
+    local info = {coll=nil, minMargin=0, numCheck=0, numCast=0}
     local shipInfo = {pos=shipPosRot.pos, rot=shipPosRot.rot, ship=ship}
     local shipSize = DB_getBaseSize(ship)
     local certShipReach = Convert_mm_igu(mm_baseSize[shipSize]/2)              -- distance at which other ships MUST bump it
@@ -1598,11 +1750,12 @@ MoveModule.CheckCollisions = function(ship, shipPosRot, collShipTable)
                 info.coll = collShip
                 info.numCheck = info.numCheck + 1
                 break
-            else
-                info.numCheck = info.numCheck + 1
             end
-        else
         end
+    end
+    if info.coll == nil then
+        local hTable = MoveModule.FullCastCheck(ship, shipPosRot,  MoveModule.SelectShips)
+        info.coll = hTable[1]
     end
     return info
 end
@@ -2072,6 +2225,7 @@ end
 -- Includes token handling so nothing obscurs the final position
 -- Starts the wait coroutine that handles stuff done when ship settles down
 MoveModule.PerformMove = function(move_code, ship, ignoreCollisions)
+    ship.lock()
     local info = MoveData.DecodeInfo(move_code, ship)
     local finData = MoveModule.GetFinalPosData(move_code, ship, ignoreCollisions)
     local annInfo = {type=finData.finType, note=info.note, code=info.code}
@@ -2095,6 +2249,7 @@ MoveModule.PerformMove = function(move_code, ship, ignoreCollisions)
         end
     end
     AnnModule.Announce(annInfo, 'all', ship)
+    MoveModule.CheckObstacleCollisions(ship, finData.finPos, true)
     return (finData.finType ~= 'overlap')
 end
 
@@ -2116,6 +2271,26 @@ MoveModule.RemoveOverlapReminder = function(ship)
     if buttons ~= nil then
         for k,but in pairs(buttons) do if but.label == 'BUMPED' then ship.removeButton(but.index) end end
     end
+end
+
+-- Check if a ship in some situation is overlapping any obstacles
+-- Highlight overlapped obstacles red
+-- If 'vocal' set to true, add a notification
+-- Return table of overlapped obstacles
+MoveModule.CheckObstacleCollisions = function(ship, targetPosRot, vocal)
+    local collList = MoveModule.FullCastCheck(ship, targetPosRot,  MoveModule.SelectObstacles)
+    if collList[1] ~= nil then
+        local obsList = '('
+        for k,obs in pairs(collList) do
+            obs.highlightOn({1, 0, 0}, 3)
+            obsList = obsList .. obs.getName() .. ', '
+        end
+        obsList = obsList:sub(1, -3) .. ')'
+        if vocal then
+            AnnModule.Announce({type='warn', note=ship.getName() .. ' appears to have overlapped an obstacle ' .. obsList}, 'all')
+        end
+    end
+    return collList
 end
 
 -- Remove the 'BUMPED' button from a ship (click function)
@@ -3372,6 +3547,11 @@ function SlideCoroutine()
     local pColor = DialModule.slideDataQueue[#DialModule.slideDataQueue].pColor
     local zeroPos = DialModule.slideDataQueue[#DialModule.slideDataQueue].zeroPos
     local info = DialModule.slideDataQueue[#DialModule.slideDataQueue].moveInfo
+    -- Obstacle collision detection data
+    local obsCollFrameNum = 10
+    local obsCollCounter = 0
+    local lastColl = nil
+
     table.remove(DialModule.slideDataQueue)
     ship.setVar('slideOngoing', true)
     broadcastToColor(ship.getName() .. '\'s slide adjust started!', pColor, {0.5, 1, 0.5})
@@ -3500,6 +3680,13 @@ function SlideCoroutine()
                 end
             end
         end
+        obsCollCounter = obsCollCounter + 1
+        if obsCollCounter > obsCollFrameNum then
+            local newColl = MoveModule.CheckObstacleCollisions(ship, targetPos, false)[1]
+            if lastColl ~= nil and lastColl ~= newColl then lastColl.highlightOff() end
+            lastColl = newColl
+            obsCollCounter = 0
+        end
         coroutine.yield(0)
 
         -- This ends if player switches color, ship or dial vanishes or button is clicked setting slide var to false
@@ -3516,7 +3703,7 @@ function SlideCoroutine()
     else
         MoveModule.AddHistoryEntry(ship, {pos=ship.getPosition(), rot=ship.getRotation(), move='manual slide', finType='special'})
     end
-
+    MoveModule.CheckObstacleCollisions(ship, targetPos, true)
     return 1
 end
 
@@ -4408,7 +4595,7 @@ end
 
 -- How many milimeters should we widen the base from each side
 -- With this at zero, sometimes ships overlap after a move
-addidionalCollisionMargin_mm = 0.4
+addidionalCollisionMargin_mm = -0.5
 -- ~~~~~~
 
 -- General idea here: http://www.gamedev.net/page/resources/_/technical/game-programming/2d-rotated-rectangle-collision-r2604
