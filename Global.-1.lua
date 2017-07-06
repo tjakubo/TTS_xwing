@@ -4807,7 +4807,8 @@ shipTypeDatabase = {
     ['TIE Adv. Prototype'] = { faction = 'Imperial', largeBase = false, arcType = 'P', meshes = {'https://paste.ee/r/l7cuZ', 'http://cloud-3.steamusercontent.com/ugc/82591194029089434/A4DA1AD96E4A6D65CC6AE4F745EDA966BA4EF85A/'}},
     ['TIE Striker'] = { faction = 'Imperial', largeBase = false, arcType = 'P', meshes = {'http://cloud-3.steamusercontent.com/ugc/200804896212875955/D04F1FF5B688EAB946E514650239E7772F4DC64E/'}},
     ['TIE/sf Fighter'] = { faction = 'Imperial', largeBase = false, arcType = 'R', meshes = {'http://pastebin.com/LezDjunY'}},
-    ['Upsilon Class Shuttle'] = { faction = 'Imperial', largeBase = true, arcType = 'P', meshes = {'http://pastebin.com/nsHXF9XV'}}
+    ['Upsilon Class Shuttle'] = { faction = 'Imperial', largeBase = true, arcType = 'P', meshes = {'http://pastebin.com/nsHXF9XV'}},
+    ['TIE Aggressor'] = { faction = 'Imperial', largeBase = false, arcType = 'P', meshes = {'http://cloud-3.steamusercontent.com/ugc/767149048511803270/CCF070748EEB6BE259A107E63685A03015510D37/'}}
 
 }
 -- END SHIP DATABASE MODULE
