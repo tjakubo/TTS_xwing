@@ -1607,6 +1607,11 @@ MoveModule.SelectObstacles = function(obj)
     return (obj.getName():find('Asteroid') ~= nil or obj.getName():find('Debris') ~= nil)
 end
 
+-- Selection function for MoveModule.JoinHitTables - mine tokens only
+MoveModule.SelectMineTokens = function(obj)
+    return (obj.getName():find('Mine') ~= nil or obj.getName():find('Connor') ~= nil or obj.getName():find('Chute debris') ~= nil)
+end
+
 -- Selection function for MoveModule.JoinHitTables - anything aside from global table object
 MoveModule.SelectAny = function(obj)
     return obj.getGUID() ~= nil
@@ -1998,6 +2003,7 @@ MoveModule.GetFinalPosData = function(move_code, ship, ignoreCollisions)
         end
         -- If nothing worked out, we have an all-overlap
         out.finType = 'overlap'
+        out.finPos = {pos=ship.getPosition(), rot=ship.getRotation()}
         return out
     end
 end
@@ -2250,6 +2256,7 @@ MoveModule.PerformMove = function(move_code, ship, ignoreCollisions)
     end
     AnnModule.Announce(annInfo, 'all', ship)
     MoveModule.CheckObstacleCollisions(ship, finData.finPos, true)
+    MoveModule.CheckMineCollisions(ship, finData.finPos, true)
     return (finData.finType ~= 'overlap')
 end
 
@@ -2288,6 +2295,27 @@ MoveModule.CheckObstacleCollisions = function(ship, targetPosRot, vocal)
         obsList = obsList:sub(1, -3) .. ')'
         if vocal then
             AnnModule.Announce({type='warn', note=ship.getName() .. ' appears to have overlapped an obstacle ' .. obsList}, 'all')
+        end
+    end
+    return collList
+end
+
+-- Check if a ship in some situation is overlapping any mine tokens
+-- Highlight overlapped tokens red
+-- If 'vocal' set to true, add a notification
+-- Return table of overlapped tokens
+--TODO maybe check mine colision after bomb drop?
+MoveModule.CheckMineCollisions = function(ship, targetPosRot, vocal)
+    local collList = MoveModule.FullCastCheck(ship, targetPosRot,  MoveModule.SelectMineTokens)
+    if collList[1] ~= nil then
+        local mineList = '('
+        for k,mine in pairs(collList) do
+            mine.highlightOn({1, 0, 0}, 3)
+            mineList = mineList .. mine.getName() .. ', '
+        end
+        mineList = mineList:sub(1, -3) .. ')'
+        if vocal then
+            AnnModule.Announce({type='warn', note=ship.getName() .. ' appears to have overlapped a mine token ' .. mineList}, 'all')
         end
     end
     return collList
@@ -3704,6 +3732,7 @@ function SlideCoroutine()
         MoveModule.AddHistoryEntry(ship, {pos=ship.getPosition(), rot=ship.getRotation(), move='manual slide', finType='special'})
     end
     MoveModule.CheckObstacleCollisions(ship, targetPos, true)
+    MoveModule.CheckMineCollisions(ship, targetPos, true)
     return 1
 end
 
@@ -4405,6 +4434,7 @@ BombModule.ExpandCluster = function(center)
     t1.setPosition(Vect_Sum(center.pos, destOffset1))
     t1.setRotation(center.rot)
     t1.setScale({0.4554, 0.4554, 0.4554})
+    t1.setName('Cluster Mine (side)')
 
     local t2 = spawnObject(tParams)
     t2.setCustomObject(tCustom)
@@ -4413,6 +4443,7 @@ BombModule.ExpandCluster = function(center)
     t2.setPosition(Vect_Sum(center.pos, destOffset2))
     t2.setRotation(center.rot)
     t2.setScale({0.4554, 0.4554, 0.4554})
+    t2.setName('Cluster Mine (side)')
 end
 
 -- END BOMB MODULE
