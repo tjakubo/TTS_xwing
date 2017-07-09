@@ -976,6 +976,7 @@ end
 
 
 -- Decode a move command into table with type, direction, speed etc info
+-- TODO make a lookup table?
 MoveData.DecodeInfo = function (move_code, ship)
     local info = {
                                         -- [option1] [option2] ... [optionN]  // [errorOption]
@@ -3040,7 +3041,11 @@ DialModule.onObjectDestroyed = function(obj)
         end
         -- Unassign deleted dial
     elseif obj.tag == 'Card' and obj.getDescription() ~= '' then
-        if DialModule.isAssigned(obj) then DialModule.UnassignDial(obj) end
+        if DialModule.isAssigned(obj) then
+            if not DialModule.PreventDelete(obj) then
+                DialModule.UnassignDial(obj)
+            end
+        end
     elseif obj.getName() == 'Target Lock' then
         for k,lockInfo in pairs(TokenModule.locksToBeSet) do
             if lockInfo.lock == obj then table.remove(TokenModule.locksToBeSet, k) break end
@@ -3054,6 +3059,59 @@ DialModule.onObjectDestroyed = function(obj)
     end
 end
 
+-- Table of dials that were restored to prevent accidentally breaking dial sets
+-- Key: Owner ship GUID
+-- Entry: { dial = restoredDialRef, keep = noMoreWasDeleted}
+DialModule.restoredDials = {}
+
+-- Prevent deletion of a single dial
+-- If it is the first deleted dial, restore it and set a timer
+-- If no other dials from the set were destroyed while timer ran, keep restored dial
+-- Otherwise delete restored dial when timer expires
+DialModule.PreventDelete = function(dial)
+    if dial.getVar('noRestore') then
+        return false
+    end
+    local ship = dial.getVar('assignedShip')
+    if ship ~= nil then
+        -- Restore dial, add entry, run timer
+        if DialModule.restoredDials[ship.getGUID()] == nil then
+            local set = DialModule.GetSet(ship)
+            local activeDial = (set.activeDial ~= nil and set.activeDial.dial == dial)
+            local newDial = dial.clone()
+            newDial.setVar('assignedShip', ship)
+            set.dialSet[dial.getDescription()].dial = newDial
+            DialModule.RestoreDial(newDial)
+            DialModule.restoredDials[ship.getGUID()] = { dial = newDial, keep = true }
+            Timer.create({ identifier = ship.getGUID(), function_name = 'DialModule_ResetRestored', parameters = { guid = ship.getGUID(), active = activeDial}, delay = 0.5 })
+            return true
+        else
+        -- Flag restored dial to be deleted later
+            DialModule.restoredDials[ship.getGUID()].keep = false
+            return false
+        end
+    end
+end
+
+-- Timer expiration function for dial restore
+-- If no other dials from set were deleted, notify about restoration
+-- Otherwise delete the restored dial as well (flag as non-erstorable cause it will pop up there next frame)
+function DialModule_ResetRestored(params)
+    local shipGUID = params.guid
+    if DialModule.restoredDials[shipGUID].keep then
+        local shipName = DialModule.restoredDials[shipGUID].dial.getVar('assignedShip').getName()
+        local dialDesc = DialModule.restoredDials[shipGUID].dial.getDescription()
+        local activeStatus = 'ACTIVE (drawn out) '
+        if not params.active then activeStatus = '' end
+        AnnModule.Announce({ type = 'info', note = shipName .. '\'s ' .. activeStatus .. 'dial (' .. dialDesc .. ') was just restored - do not delete single dials!'}, 'all')
+    else
+        if DialModule.restoredDials[shipGUID].dial ~= nil then
+            DialModule.restoredDials[shipGUID].dial.setVar('noRestore', true)
+            DialModule.restoredDials[shipGUID].dial.destruct()
+        end
+    end
+    DialModule.restoredDials[shipGUID] = nil
+end
 
 -- Update token sources on each load
 -- Restore sets if data is loaded
@@ -3286,13 +3344,21 @@ DialModule.DeleteTemplate = function(ship)
     return false
 end
 
+-- Is the dial faceup?
+DialModule.IsDialFaceup = function(dial)
+    local castData = Physics.cast({origin=dial.getPosition(), direction={0, 1, 0}, type=1})
+    return castData[1] == nil
+end
+
 -- DIAL BUTTON CLICK FUNCTIONS (self-explanatory)
-function DialClick_Delete(dial)
+function DialClick_Return(dial)
     dial.clearButtons()
     DialModule.RestoreActive(dial.getVar('assignedShip'))
 end
 function DialClick_Flip(dial)
-    dial.flip()
+    if not DialModule.IsDialFaceup(dial) then
+        dial.flip()
+    end
     dial.clearButtons()
     DialModule.SpawnMainActiveButtons({dial=dial, ship=dial.getVar('assignedShip')})
 end
@@ -3444,8 +3510,9 @@ end
 
 -- Dial buttons definitions (centralized so it;s easier to adjust)
 DialModule.Buttons = {}
-DialModule.Buttons.deleteFacedown = {label='Delete', click_function='DialClick_Delete', height = 400, width=1000, position={0, -0.5, 2}, rotation={180, 180, 0}, font_size=300}
-DialModule.Buttons.deleteFaceup = {label='Delete', click_function='DialClick_Delete', height = 400, width=1000, position={0, 0.5, 2}, font_size=300}
+DialModule.Buttons.deleteFacedown = {label='Return', click_function='DialClick_Return', height = 400, width=1000, position={0, -0.5, 2}, rotation={180, 180, 0}, font_size=300}
+DialModule.Buttons.flipNotify = {label='(flip to start)', click_function='dummy', height = 0, width = 0, position={0, 0.5, 0.2}, font_size=150, font_color={1,1,1}}
+DialModule.Buttons.deleteFaceup = {label='Return', click_function='DialClick_Return', height = 400, width=1000, position={0, 0.5, 2}, font_size=300}
 DialModule.Buttons.flip = {label='Flip', click_function='DialClick_Flip', height = 400, width=600, position={0, -0.5, 0.2}, rotation={180, 180, 0}, font_size=300}
 DialModule.Buttons.move = {label='Move', click_function='DialClick_Move', height = 500, width=750, position={-0.32, 0.5, 1}, font_size=300}
 DialModule.Buttons.undoMove = {label='Undo', click_function='DialClick_Undo', height = 500, width=750, position={-0.32, 0.5, 1}, font_size=300}
@@ -3828,6 +3895,7 @@ DialModule.SpawnFirstActiveButtons = function(dialTable)
     dialTable.dial.createButton(DialModule.Buttons.flip)
     dialTable.dial.createButton(DialModule.Buttons.nameButton(dialTable.ship))
     dialTable.dial.createButton(DialModule.Buttons.toggleInitialExpanded)
+    dialTable.dial.createButton(DialModule.Buttons.flipNotify)
 end
 
 -- Spawn main buttons on a dial (move, actions, undo, templade, return) when it is flipped over
