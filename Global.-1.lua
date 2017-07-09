@@ -4350,8 +4350,8 @@ end
 -- Delete drops on ship/template delete
 BombModule.onObjectDestroyed = function(obj)
     for k,dTable in pairs(BombModule.dropTable) do
-        if dTable.ship == obj or dTable.temp == ship then
-            table.remove(BombModule.dropTable, k)
+        if dTable.ship == obj or dTable.temp == obj then
+            BombModule.DeleteDrop(obj)
         end
     end
 end
@@ -4591,6 +4591,8 @@ function onObjectDestroyed(dying_object)
     MoveModule.onObjectDestroyed(dying_object)
     -- Handle killing rulers
     RulerModule.onObjectDestroyed(dying_object)
+    -- Handle killing bomb drop templates
+    BombModule.onObjectDestroyed(dying_object)
 end
 
 -- When table is loaded up, this is called
