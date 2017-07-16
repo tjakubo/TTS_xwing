@@ -470,8 +470,14 @@ function API_QueueShipTokensMove(argTable)
     if XW_cmd.isReady(argTable.ship) then
         XW_cmd.SetBusy(argTable.ship)
     end
+    local lockFun = nil
+    if argTable.noLock == true then
+        lockFun = function(ship)
+            ship.unlock()
+        end
+    end
     TokenModule.QueueShipTokensMove(argTable.ship)
-    MoveModule.WaitForResting(argTable.ship, argTable.finPos)
+    MoveModule.WaitForResting(argTable.ship, argTable.finPos, lockFun)
 end
 
 -- Indicate dropping of a bomb token from outside Global
@@ -2808,6 +2814,12 @@ end
 -- Add some dials to a ship set
 -- This does not unassign existing dials in a set so needs to be called carefully
 DialModule.AddSet = function(ship, set)
+    -- Force dial height so physics won't push it into the table (sometimes)
+    for k,setEntry in pairs(set) do
+        setEntry.originPos[2] = 1.05
+        setEntry.originPos.y = 1.05
+    end
+
     local actSet = DialModule.GetSet(ship)
     if actSet ~= nil then
         for k, newDialData in pairs(set) do

@@ -307,7 +307,7 @@ AssignModule.Assign = function(zoneColor, playerColor)
         if math.sgn(stPos[3]) > 0 then
             rot = 0
         end
-        Global.call('API_QueueShipTokensMove', {ship = data.ref})
+        Global.call('API_QueueShipTokensMove', {ship = data.ref, noLock = true})
         data.ref.setRotationSmooth({0, rot, 0})
         data.ref.highlightOn({0, 1, 0}, 1)
         stPos = stPosStep(stPos)
