@@ -1628,74 +1628,84 @@ end
 MoveModule.castData = {}
 MoveModule.castData.small = {}
 MoveModule.castData.small.base = {
-    direction={0, 1, 0},
+    debug=false,
+    direction = {0, 0.001, 0},
     type=3,
-    size={Convert_mm_igu(20), Convert_mm_igu(3), Convert_mm_igu(20)}
+    size={Convert_mm_igu(40), Convert_mm_igu(6), Convert_mm_igu(40)}
     -- + Origin
     -- + Orientation
 }
 MoveModule.castData.small.nubFR = {
+    debug=false,
     localPos = {-1*Convert_mm_igu(11.38), Convert_mm_igu(-1.86), -1*Convert_mm_igu(20.858)},
-    direction = {0, 1, 0},
+    direction = {0, 0.001, 0},
     type=2,
-    size={Convert_mm_igu(1.8), Convert_mm_igu(4), Convert_mm_igu(1.8)}
+    size={Convert_mm_igu(3.6), Convert_mm_igu(8), Convert_mm_igu(3.6)}
     -- + Origin
 }
 MoveModule.castData.small.nubFL = {
+    debug=false,
     localPos = {Convert_mm_igu(11.38), Convert_mm_igu(-1.86), -1*Convert_mm_igu(20.858)},
-    direction = {0, 1, 0},
+    direction = {0, 0.001, 0},
     type=2,
-    size={Convert_mm_igu(1.8), Convert_mm_igu(4), Convert_mm_igu(1.8)}
+    size={Convert_mm_igu(3.6), Convert_mm_igu(8), Convert_mm_igu(3.6)}
     -- + Origin
 }
 MoveModule.castData.small.nubBR = {
+    debug=false,
     localPos = {-1*Convert_mm_igu(11.38), Convert_mm_igu(-1.86), Convert_mm_igu(20.858)},
-    direction = {0, 1, 0},
+    direction = {0, 0.001, 0},
     type=2,
-    size={Convert_mm_igu(1.8), Convert_mm_igu(4), Convert_mm_igu(1.8)}
+    size={Convert_mm_igu(3.6), Convert_mm_igu(8), Convert_mm_igu(3.6)}
     -- + Origin
 }
 MoveModule.castData.small.nubBL = {
+    debug=false,
     localPos = {Convert_mm_igu(11.38), Convert_mm_igu(-1.86), Convert_mm_igu(20.858)},
-    direction = {0, 1, 0},
+    direction = {0, 0.001, 0},
     type=2,
-    size={Convert_mm_igu(1.8), Convert_mm_igu(4), Convert_mm_igu(1.8)}
+    size={Convert_mm_igu(3.6), Convert_mm_igu(8), Convert_mm_igu(3.6)}
     -- + Origin
 }
 MoveModule.castData.large = {}
 MoveModule.castData.large.base = {
-    direction={0, 1, 0},
+    debug=false,
+    direction = {0, 0.001, 0},
     type=3,
-    size={Convert_mm_igu(40), Convert_mm_igu(3), Convert_mm_igu(40)}
+    size={Convert_mm_igu(80), Convert_mm_igu(6), Convert_mm_igu(80)}
     -- + Origin
     -- + Orientation
 }
 MoveModule.castData.large.nubFR = {
+    debug=false,
     localPos = {-1*Convert_mm_igu(11.38), Convert_mm_igu(-1.86), -1*Convert_mm_igu(40.858)},
-    direction = {0, 1, 0},
+    direction = {0, 0.001, 0},
     type=2,
-    size={Convert_mm_igu(1.8), Convert_mm_igu(4), Convert_mm_igu(1.8)}
+    size={Convert_mm_igu(3.6), Convert_mm_igu(8), Convert_mm_igu(3.6)}
     -- + Origin
 }
 MoveModule.castData.large.nubFL = {
+    debug=false,
     localPos = {Convert_mm_igu(11.38), Convert_mm_igu(-1.86), -1*Convert_mm_igu(40.858)},
-    direction = {0, 1, 0},
+    direction = {0, 0.001, 0},
     type=2,
-    size={Convert_mm_igu(1.8), Convert_mm_igu(4), Convert_mm_igu(1.8)}
+    size={Convert_mm_igu(3.6), Convert_mm_igu(8), Convert_mm_igu(3.6)}
     -- + Origin
 }
 MoveModule.castData.large.nubBR = {
+    debug=false,
     localPos = {-1*Convert_mm_igu(11.38), Convert_mm_igu(-1.86), Convert_mm_igu(40.858)},
-    direction = {0, 1, 0},
+    direction = {0, 0.001, 0},
     type=2,
-    size={Convert_mm_igu(1.8), Convert_mm_igu(4), Convert_mm_igu(1.8)}
+    size={Convert_mm_igu(3.6), Convert_mm_igu(8), Convert_mm_igu(3.6)}
     -- + Origin
 }
 MoveModule.castData.large.nubBL = {
+    debug=false,
     localPos = {Convert_mm_igu(11.38), Convert_mm_igu(-1.86), Convert_mm_igu(40.858)},
-    direction = {0, 1, 0},
+    direction = {0, 0.001, 0},
     type=2,
-    size={Convert_mm_igu(1.8), Convert_mm_igu(4), Convert_mm_igu(1.8)}
+    size={Convert_mm_igu(3.6), Convert_mm_igu(8), Convert_mm_igu(3.6)}
     -- + Origin
 }
 
