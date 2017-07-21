@@ -4549,12 +4549,12 @@ AnnModule = {}
 -- COLOR CONFIGURATION FOR ANNOUNCEMENTS
 AnnModule.announceColor = {}
 AnnModule.announceColor.moveClear = {0.1, 1, 0.1}     -- Green
-AnnModule.announceColor.moveCollision = {1, 0.5, 0.1} -- Orange
-AnnModule.announceColor.action = {0.2, 0.2, 1}        -- Blue
+AnnModule.announceColor.moveCollision = {1, 0.7, 0.1} -- Orange
+AnnModule.announceColor.action = {0.3, 0.3, 1}        -- Blue
 AnnModule.announceColor.historyHandle = {0.1, 1, 1}   -- Cyan
-AnnModule.announceColor.error = {1, 0.1, 0.1}         -- Red
-AnnModule.announceColor.warn = {1, 0.25, 0.05}        -- Red - orange
-AnnModule.announceColor.info = {0.6, 0.1, 0.6}        -- Purple
+AnnModule.announceColor.error = {1, 0.15, 0.15}       -- Red
+AnnModule.announceColor.warn = {1, 0.4, 0}            -- Red - orange
+AnnModule.announceColor.info = {0.8, 0.1, 0.8}        -- Purple
 
 -- Notify color or all players of some event
 -- announceInfo: {type=typeOfEvent, note=notificationString}
