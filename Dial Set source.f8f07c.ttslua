@@ -161,8 +161,8 @@ function init(arg)
 end
 
 function onLoad()
-    if self.getName() == 'Dial Set Layout Source' then
-        self.setPosition({0, -3, 7.5})
+    if self.getName() == 'Dial Set source' then
+        self.setPosition({0, -3, -7.5})
         self.setRotation({0, 0, 0})
         self.lock()
         self.tooltip = false

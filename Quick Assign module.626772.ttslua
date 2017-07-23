@@ -687,7 +687,7 @@ function onLoad(save_state)
 
     -- Get the dial set stack script
     for k,obj in pairs(getAllObjects()) do
-        if obj.getName() == 'Dial Set Layout Source' then
+        if obj.getName() == 'Dial Set source' then
             scriptSource = obj
         end
     end
