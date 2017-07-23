@@ -4472,7 +4472,6 @@ BombModule.snapDist = 1.5
 BombModule.OnTokenDrop = function(token)
     -- Get the offset data
     local offset = BombModule.tokenOffset[BombModule.snapTable[token.getName()]]
-    if offset == nil then print('nil') return end
 
     -- Deduct closest bomb drop point within snap distance
     local closest = {dist=BombModule.snapDist+1, pointKey=nil}
@@ -4482,6 +4481,7 @@ BombModule.OnTokenDrop = function(token)
         if newDist < closest.dist then
             closest.dist = newDist
             closest.pointKey = k
+            closest.temp = dTable.temp
         end
     end
 
@@ -4505,6 +4505,7 @@ BombModule.OnTokenDrop = function(token)
             BombModule.ExpandCluster({pos=destPos, rot=destRot})
         end
         AnnModule.Announce({type='action', note=drop.ship.getName() .. ' dropped a ' .. token.getName():gsub('%(middle%)', 'set')}, 'all')
+        closest.temp.destruct()
         return true
     else
         return false
