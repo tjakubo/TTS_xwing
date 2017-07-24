@@ -720,7 +720,7 @@ end
 
 -- Possible commands supported by this module
 XW_cmd.AddCommand('[sk][012345][r]?', 'move')   -- Straights/Koiograns + stationary moves
-XW_cmd.AddCommand('b[rle][123][sr]?', 'move')   -- Banks + segnor and reverse versions
+XW_cmd.AddCommand('b[rle][123][str]?', 'move')   -- Banks + segnor and reverse versions
 XW_cmd.AddCommand('t[rle][123][str]?', 'move')  -- Turns + segnor, talon and reverse versions
 
 XW_cmd.AddCommand('x[rle][fb]?', 'actionMove')  -- Barrel rolls
@@ -802,6 +802,7 @@ MoveData.slideMatchTable = {    'x[rle]',
                                 'x[rle][fb]?',
                                 'c[rle][fb]?',
                                 't[rle][123]t',
+                                'b[rle][123]t',
                                 'ch[rle][fb]',
                                 'chadj',
                                 'vr[rle][fb]',
@@ -838,7 +839,7 @@ MoveData.SlideLength = function(moveInfo)
         baseSize = mm_baseSize[moveInfo.size]
         if moveInfo.type == 'roll' then
             return baseSize
-        elseif (moveInfo.type == 'turn' and moveInfo.extra == 'talon') or moveInfo.type == 'echo' or moveInfo.type == 'viper' then
+        elseif moveInfo.extra == 'talon' or moveInfo.type == 'echo' or moveInfo.type == 'viper' then
             return baseSize/2
         end
     end
@@ -888,6 +889,15 @@ MoveData.SlideMoveOrigin = function(moveInfo)
         -- (forward cause this is initial position relative and talons do a 180)
         data = MoveData.LUT.ConstructData(moveInfo)
         data[3] = data[3] + MoveData.SlideLength(moveInfo)/2
+        if moveInfo.dir == 'left' then
+            data = MoveData.LeftVariant(data)
+        end
+        data = MoveData.TurnInwardVariant(data)
+    elseif moveInfo.type == 'bank' and moveInfo.extra == 'talon' then
+        -- Bank talon rolls go half slide length at 45 deg
+        data = MoveData.LUT.ConstructData(moveInfo)
+        local off = Vect_RotateDeg({0, 0, MoveData.SlideLength(moveInfo)/2}, -45)
+        data = Vect_Sum(data, {off[1], off[2], off[3], 0})
         if moveInfo.dir == 'left' then
             data = MoveData.LeftVariant(data)
         end
@@ -972,7 +982,7 @@ end
 -- Apply move modifiers that only happen if move is performed fully
 MoveData.ApplyFinalModifiers = function(entry, info)
     local out = Lua_ShallowCopy(entry)
-    if info.dir == 'talon' then
+    if info.extra == 'talon' then
         out = MoveData.TurnInwardVariant(out)
     elseif info.extra == 'koiogran' or info.extra == 'segnor' then
         out = MoveData.TurnAroundVariant(out)
@@ -1057,6 +1067,10 @@ MoveData.DecodeInfo = function (move_code, ship)
             info.extra = 'segnor'
             info.note = 'segnor looped ' .. info.dir .. ' ' .. info.speed
             info.collNote = 'tried to segnor loop ' .. info.dir .. ' ' .. info.speed
+        elseif move_code:sub(-1,-1) == 't' then
+            info.extra = 'talon'
+            info.note = 'talon rolled (bank template) ' .. info.dir .. ' ' .. info.speed
+            info.collNote = 'tried to talon roll (bank template) ' .. info.dir .. ' ' .. info.speed
         elseif move_code:sub(-1,-1) == 'r' then
             info.extra = 'reverse'
             info.note = 'flew reverse bank ' .. info.dir .. ' ' .. info.speed
