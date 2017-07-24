@@ -326,13 +326,17 @@ end
 
 -- Initial upgrade card position for given pilot cad position
 Builder.UpgForPilotInit = function(pilotPos, upgCount)
-    if upgCount > 3 then upgCount = 3 end
+    if upgCount > BC.upgRowCount then upgCount = BC.upgRowCount end
     return {pilotPos[1]-(BC.upgSpacing_x/2)*(upgCount-1), pilotPos[2], pilotPos[3]+BC.upgOffset_y}
 end
 -- Step upgrade card position
-Builder.UpgStep = function(currPos, upgNumber)
-    if upgNumber%BC.upgRowCount == 0 then
-        return {currPos[1]-(2*BC.upgSpacing_x), currPos[2], currPos[3]+BC.upgSpacing_y}
+Builder.UpgStep = function(currPos, currUpgNumber, upgCount)
+    upgCount = upgCount or 100 -- Yeah, this
+    if currUpgNumber%BC.upgRowCount == 0 then
+        local insetCount = upgCount - currUpgNumber
+        if insetCount > BC.upgRowCount then insetCount = BC.upgRowCount end
+        insetCount = insetCount + 0.5*(BC.upgRowCount - insetCount)
+        return {currPos[1]-((insetCount-1)*BC.upgSpacing_x), currPos[2], currPos[3]+BC.upgSpacing_y}
     else
         return {currPos[1]+BC.upgSpacing_x, currPos[2], currPos[3]}
     end
@@ -354,6 +358,22 @@ Builder.ShieldInPilotFrameStep = function(currPos, shieldNumber)
     else
         return {currPos[1], currPos[2], currPos[3]+BC.shieldSpacing_y}
     end
+end
+
+-- Adjust config for low amount of ships
+Builder.config.SparseAdjust = function()
+    local shipNum = #Builder.pilots
+
+    if shipNum == 2 then
+        BC.shipSpacing_x = 2*BC.shipSpacing_x
+        BC.pilotSpacing_x = 2*BC.pilotSpacing_x
+        BC.upgRowCount = 5
+    elseif shipNum == 3 then
+        BC.shipSpacing_x = 1.5*BC.shipSpacing_x
+        BC.pilotSpacing_x = 1.5*BC.pilotSpacing_x
+        BC.upgRowCount = 4
+    end
+
 end
 
 -- Main pilots table
@@ -923,7 +943,7 @@ Builder.SpawnCore = function()
                 Builder.DisplayLog()
                 return false
             end
-            upgPos = Builder.UpgStep(upgPos, k2)
+            upgPos = Builder.UpgStep(upgPos, k2, #sInfo.upgrades)
         end
         shipPos = Builder.ShipStep(shipPos)
     end
@@ -1242,6 +1262,13 @@ Builder.SpawnConditionCards = function()
             local condToken = Spawner.Spawn('I\'ll Show You The Dark Side condition token', Builder.LocalPos({0, 0.1, 0}, newCond), cRot)
             table.insert(Builder.misc.tokens, {tRef=condToken, pRef=newCond})
             condToken.setName(condToken.getName():sub(1,-7))
+        elseif pTable.name == 'Thweek' then
+            local newCond1 = Spawner.Spawn('Mimicked condition', Builder.LocalPos(cOff, pTable.pRef), cRot)
+            cOff[2] = cOff[2] + 0.1
+            local newCond2 = Spawner.Spawn('Shadowed condition', Builder.LocalPos(cOff, pTable.pRef), cRot)
+            cOff[2] = cOff[2] + 0.1
+            table.insert(Builder.misc.other, {ref=newCond1, com='Condition'})
+            table.insert(Builder.misc.other, {ref=newCond2, com='Condition'})
         end
         if Builder.HasUpgrade('A Score to Settle', k) then
             local newCond = Spawner.Spawn('A Debt To Pay condition', Builder.LocalPos(cOff, pTable.pRef), cRot)
@@ -1420,6 +1447,7 @@ BS = Builder.states
 -- Main state-action flow
 Builder.SpawnList = function()
     if Builder.SpawnState == BS.ListParsed then
+        Builder.config.SparseAdjust()
         Builder.MoveNote()
         Builder.SpawnCore()
     elseif Builder.SpawnState == BS.CoreSpawned then
