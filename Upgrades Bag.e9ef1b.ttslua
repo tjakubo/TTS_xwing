@@ -1181,7 +1181,7 @@ Builder.SpawnBombTokens = function()
                 end
             end
             -- Add front drops for Deathrain and Sol Sixxa
-            if pTable.name == '\"Deathrain\"' or pTable.name == 'Sol Sixxa' then
+            if pTable.name == '\"Deathrain\"' or pTable.name == 'Constable Zuvio' then
                 table.insert(extraList, 's1r')
                 for k2,extraDrop in pairs(extraList) do
                     if extraDrop:sub(-1, -1) ~= 'r' then

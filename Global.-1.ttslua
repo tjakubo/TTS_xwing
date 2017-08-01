@@ -61,35 +61,18 @@ function Convert_igu_mm(in_game_units)
     return in_game_units/mm_igu_ratio
 end
 
--- Distance between two positions
-function Dist_Pos(pos1, pos2)
-    if type(pos1) ~= 'table' or type(pos2) ~= 'table' then
-        print('Dist_Pos: arg not a table!')
-    end
-    return math.sqrt( math.pow(pos1[1]-pos2[1], 2) + math.pow(pos1[3]-pos2[3], 2) )
-end
-
--- Distance between two objects
-function Dist_Obj(obj1, obj2)
-    if type(pos1) ~= 'userdata' or type(pos2) ~= 'userdata' then
-        print('Dist_Obj: arg not an object!')
-    end
-    local pos1 = obj1.getPosition()
-    local pos2 = obj2.getPosition()
-    return Dist_Pos(pos1, pos2)
-end
-
 -- END MEASUREMENT RELATED FUNCTIONS
 --------
 
 --------
 -- VECTOR RELATED FUNCTIONS
 
+Vect = {}
+
 -- Sum of two vectors (of any size)
-function Vect_Sum(vec1, vec2)
-    if type(vec1) ~= 'table' or type(vec2) ~= 'table' then
-        print('Vect_Sum: arg not a table!')
-    end
+Vect.Sum = function(vec1, vec2)
+    assert(type(vec1) == 'table', 'Vect.Sum: arg#1 not a table!')
+    assert(type(vec1) == 'table', 'Vect.Sum: arg#2 not a table!')
     local out = {}
     local k = 1
     while vec1[k] ~= nil and vec2[k] ~= nil do
@@ -99,30 +82,22 @@ function Vect_Sum(vec1, vec2)
     return out
 end
 
--- Sebtract vector from another
-function Vect_Sub(vec1, vec2)
-    return Vect_Sum(vec1, Vect_Scale(vec2, -1))
-end
-
--- Inverse each element of a vector
-function Vect_Inverse(vector)
-    if type(vector) ~= 'table' then
-        print('Vect_Inverse: arg not a table!')
-    end
+-- Inverse of a vector
+Vect.Inverse = function(vector)
+    assert(type(vector) == 'table', 'Vect.Inverse: arg#1 not a table!')
     local out = {}
     local k = 1
     while vector[k] ~= nil do
-        out[k] = -1*vector[k]
+        out[k] = 1/vector[k]
         k = k+1
     end
     return out
 end
 
 -- Multiply each element of a vector by a factor
-function Vect_Scale(vector, factor)
-    if type(vector) ~= 'table' or type(factor) ~= 'number' then
-        print('Vect_Scale: arg not a table/number pair!')
-    end
+Vect.Scale = function(vector, factor)
+    assert(type(vector) == 'table', 'Vect.Scale: arg#1 not a table!')
+    assert(type(factor) == 'number', 'Vect.Scale: arg#2 not a number!')
     local out = {}
     local k = 1
     while vector[k] ~= nil do
@@ -134,10 +109,9 @@ end
 
 -- Multiply each element of a vector by an element from factor vector
 -- (element-wise vector multiplication)
-function Vect_ScaleEach(vector, factorVec)
-    if type(vector) ~= 'table' or type(factorVec) ~= 'table' then
-        print('Vect_ScaleEach: arg not a table/table pair!')
-    end
+Vect.ScaleEach = function(vector, factorVec)
+    assert(type(vector) == 'table', 'Vect.ScaleEach: arg#1 not a table!')
+    assert(type(factorVec) == 'table', 'Vect.ScaleEach: arg#2 not a table!')
     local out = {}
     local k = 1
     while vector[k] ~= nil and factorVec[k] ~= nil do
@@ -147,36 +121,27 @@ function Vect_ScaleEach(vector, factorVec)
     return out
 end
 
--- Length (euclidean norm) of a vector
-function Vect_Length(vector)
-    if type(vector) ~= 'table' then
-        print('Vect_Length: arg not a table!')
+-- Euclidean norm of a vector
+Vect.Norm = function(vector)
+    assert(type(vector) == 'table', 'Vect.Norm: arg#1 not a table!')
+    local sum = 0
+    for k,v in ipairs(vector) do
+        sum = sum + v*v
     end
+    return math.sqrt(sum)
+end
+
+-- Length of  vector on X-Z plane (ignoring height)
+Vect.Length = function(vector)
+    assert(type(vector) == 'table', 'Vect.Length: arg#1 not a table!')
     return math.sqrt(vector[1]*vector[1] + vector[3]*vector[3])
-end
-
--- Scale the vector to have set length
--- Negative "length" - opposite of set length
-function Vect_SetLength(vector, len)
-    if type(vector) ~= 'table' or type(len) ~= 'number' then
-        print('Vect_SetLength: arg not a table/number pair!')
-    end
-    return Vect_Scale(vector, len/Vect_Length(vector))
-end
-
--- Rotation of a 3D vector over its second element axis, arg in degrees
--- Elements past 3rd are copied
-function Vect_RotateDeg(vector, degRotation)
-    local radRotation = math.rad(degRotation)
-    return Vect_RotateRad(vector, radRotation)
 end
 
 -- Rotation of a 3D vector over its second element axis, arg in radians
 -- Elements past 3rd are copied
-function Vect_RotateRad(vector, radRotation)
-    if type(vector) ~= 'table' or type(radRotation) ~= 'number' then
-        print('Vect_RotateRad: arg not a table/number pair!')
-    end
+Vect.RotateRad = function(vector, radRotation)
+    assert(type(vector) == 'table', 'Vect.RotateRad: arg#1 not a table!')
+    assert(type(radRotation) == 'number', 'Vect.RotateRad: arg#2 not a number!')
     local newX = math.cos(radRotation) * vector[1] + math.sin(radRotation) * vector[3]
     local newZ = math.sin(radRotation) * vector[1] * -1 + math.cos(radRotation) * vector[3]
     local out = {newX, vector[2], newZ}
@@ -188,27 +153,63 @@ function Vect_RotateRad(vector, radRotation)
     return out
 end
 
--- Vector pointing from one position to another
-function Vect_Between(fromVec, toVec)
-    if type(fromVec) ~= 'table' or type(toVec) ~= 'table' then
-        print('Vect_Between: arg not a table!')
+-- Distance between two points
+-- Points as vectors or objects (their positions)
+
+Vect.Distance = function(pos1, pos2)
+    assert(type(pos1) == 'table' or type(pos1) == 'userdata', 'Vect.Distance: arg#1 not a table/object!')
+    assert(type(pos2) == 'table' or type(pos2) == 'userdata', 'Vect.Distance: arg#2 not a table/object!')
+    if type(pos1) == 'userdata' then
+        pos1 = pos1.getPosition()
     end
-    return Vect_Sum(toVec, Vect_Scale(fromVec, -1))
+    if type(pos2) == 'userdata' then
+        pos2 = pos1.getPosition()
+    end
+    return Vect.Length(Vect.Between(pos1, pos2))
 end
 
 -- Print vector elements
-function Vect_Print(vec, name)
-    local out = ''
-    if name ~= nil then
-        out = name .. ': [ '
+Vect.Print = function(vec, name)
+    assert(type(vec) == 'table', 'Vect.Print: arg#1 not a table!')
+    local out = '['
+    if name then
+        out = name .. ' => ' .. out
     end
     local k = 1
     while vec[k] ~= nil do
-        out = out .. vec[k] .. ' : '
+        out = out .. math.round(vec[k], 3) .. ' : '
         k = k+1
     end
     out = out:sub(1,-3) .. ']'
     print(out)
+end
+
+-- Vector pointing from one position to another
+Vect.Between = function(fromVec, toVec)
+    return Vect.Sum(toVec, Vect.Scale(fromVec, -1))
+end
+
+-- Sebtract vector from another
+Vect.Sub = function(vec1, vec2)
+    return Vect.Sum(vec1, Vect.Scale(vec2, -1))
+end
+
+-- Opposite of a vector
+Vect.Opposite = function(vector)
+    return Vect.Scale(vector, -1)
+end
+
+-- Rotation of a 3D vector over its second element axis, arg in degrees
+-- Elements past 3rd are copied
+Vect.RotateDeg = function(vector, degRotation)
+    local radRotation = math.rad(degRotation)
+    return Vect.RotateRad(vector, radRotation)
+end
+
+-- Scale the vector to have set length
+-- Negative "length" - opposite of set length
+Vect.SetLength = function(vector, len)
+    return Vect.Scale(vector, len/Vect.Length(vector))
 end
 
 -- END VECTOR RELATED FUNCTIONS
@@ -248,7 +249,7 @@ end
 function math.round(arg, decPlaces)
     if decPlaces == nil then decPlaces = 0 end
 
-    if dec == 0 then
+    if decPlaces == 0 then
         frac = arg - math.floor(arg)
         if frac >= 0.5 then
             return math.ceil(arg)
@@ -256,8 +257,8 @@ function math.round(arg, decPlaces)
             return math.floor(arg)
         end
     else
-        local mult = 10^(dec or 0)
-        return math.floor(num * mult + 0.5) / mult
+        local mult = 10^(decPlaces or 0)
+        return math.floor(arg * mult + 0.5) / mult
     end
 end
 
@@ -308,7 +309,7 @@ function XW_ClosestWithinDist(centralPosObj, maxDist, objType)
     local minDist = maxDist+1
     for k,obj in pairs(getAllObjects()) do
         if XW_ObjMatchType(obj, objType) == true and obj ~= centralObj then
-            local dist = Dist_Pos(centralObj.getPosition(), obj.getPosition())
+            local dist = Vect.Distance(centralObj.getPosition(), obj.getPosition())
             if dist < maxDist and dist < minDist then
                 minDist = dist
                 closest = obj
@@ -344,7 +345,7 @@ function XW_ObjWithinDist(centralPosObj, maxDist, objType, exclList)
                     end
                 end
             end
-            if (not excluded) and Dist_Pos(centralPos, obj.getPosition()) < maxDist then
+            if (not excluded) and Vect.Distance(centralPos, obj.getPosition()) < maxDist then
                 table.insert(ships, obj)
             end
         end
@@ -777,7 +778,7 @@ MoveData.LUT.ConstructData = function(moveInfo, part)
     -- Interpolation between two nearest indexes
     local aProp = LUTindex - math.floor(LUTindex)
     local bProp = 1 - aProp
-    local outPos = Vect_Sum(Vect_Scale(LUTtable.posXZ[math.floor(LUTindex)], bProp), Vect_Scale(LUTtable.posXZ[math.ceil(LUTindex)], aProp))
+    local outPos = Vect.Sum(Vect.Scale(LUTtable.posXZ[math.floor(LUTindex)], bProp), Vect.Scale(LUTtable.posXZ[math.ceil(LUTindex)], aProp))
     local outRot = (LUTtable.rotY[math.floor(LUTindex)] * bProp) + (LUTtable.rotY[math.ceil(LUTindex)] * aProp)
 
     local outData = {outPos[1], 0, outPos[2], outRot}
@@ -896,8 +897,8 @@ MoveData.SlideMoveOrigin = function(moveInfo)
     elseif moveInfo.type == 'bank' and moveInfo.extra == 'talon' then
         -- Bank talon rolls go half slide length at 45 deg
         data = MoveData.LUT.ConstructData(moveInfo)
-        local off = Vect_RotateDeg({0, 0, MoveData.SlideLength(moveInfo)/2}, -45)
-        data = Vect_Sum(data, {off[1], off[2], off[3], 0})
+        local off = Vect.RotateDeg({0, 0, MoveData.SlideLength(moveInfo)/2}, -45)
+        data = Vect.Sum(data, {off[1], off[2], off[3], 0})
         if moveInfo.dir == 'left' then
             data = MoveData.LeftVariant(data)
         end
@@ -923,8 +924,8 @@ MoveData.SlidePartOffset = function(moveInfo, part)
             if (moveInfo.dir == 'left' and moveInfo.extra == 'backward') or (moveInfo.dir == 'right' and moveInfo.extra == 'forward') then
                 dirVec[1] = -1*dirVec[1]
             end
-            dirVec = Vect_SetLength(dirVec, MoveData.SlideLength(moveInfo))
-            return Vect_Scale(dirVec, part/MoveData.partMax)
+            dirVec = Vect.SetLength(dirVec, MoveData.SlideLength(moveInfo))
+            return Vect.Scale(dirVec, part/MoveData.partMax)
         end
     else
         -- Normal rolls/talons are simply slid forward
@@ -963,7 +964,7 @@ end
 -- Rotate an entry by given degrees
 -- Helps define rolls as straights rotated 90deg sideways etc
 MoveData.RotateEntry = function(entry, angDeg)
-    local rotEntry = Vect_RotateDeg(entry, angDeg)
+    local rotEntry = Vect.RotateDeg(entry, angDeg)
     return {rotEntry[1], rotEntry[2], rotEntry[3], entry[4]+angDeg}
 end
 
@@ -1241,8 +1242,8 @@ end
 MoveData.DecodePartSlide = function(move_code, ship, part)
     local info = MoveData.DecodeInfo(move_code, ship)
     local slideOrigin = MoveData.SlideMoveOrigin(info)
-    local offset = Vect_RotateDeg(MoveData.SlidePartOffset(info, part), slideOrigin[4])
-    return Vect_Sum(slideOrigin, offset)
+    local offset = Vect.RotateDeg(MoveData.SlidePartOffset(info, part), slideOrigin[4])
+    return Vect.Sum(slideOrigin, offset)
 end
 
 -- END MOVEMENT DATA MODULE
@@ -1276,8 +1277,8 @@ MoveModule.EntryToPos = function(entry, shipPos)
     end
     local finalPos = MoveData.ConvertDataToIGU(entry)
     local finalRot = entry[4] + baseRot[2]
-    finalPos = Vect_RotateDeg(finalPos, baseRot[2]+180)
-    finalPos = Vect_Sum(basePos, finalPos)
+    finalPos = Vect.RotateDeg(finalPos, baseRot[2]+180)
+    finalPos = Vect.Sum(basePos, finalPos)
     return {pos=finalPos, rot={0, finalRot, 0}}
 end
 
@@ -1384,7 +1385,7 @@ MoveModule.IsAtSavedState = function(ship)
     local histData = MoveModule.GetHistory(ship)
     if histData.actKey > 0 then
         local currEntry = histData.history[histData.actKey]
-        local dist = Dist_Pos(ship.getPosition(), currEntry.pos)
+        local dist = Vect.Distance(ship.getPosition(), currEntry.pos)
         local angDiff = math.abs(ship.getRotation()[2] - currEntry.rot[2])
         if math.abs(angDiff) > 180 then
             angDiff = math.abs(angDiff - math.sgn(angDiff)*360)
@@ -1737,7 +1738,7 @@ MoveModule.GetCast = function(ship, shipPosRot, castType)
         castTable.orientation = shipPosRot.rot
         return castTable
     else
-        castTable.origin = Vect_Sum(shipPosRot.pos, Vect_RotateDeg(castTable.localPos, shipPosRot.rot[2]))
+        castTable.origin = Vect.Sum(shipPosRot.pos, Vect.RotateDeg(castTable.localPos, shipPosRot.rot[2]))
         return castTable
     end
 end
@@ -1775,7 +1776,7 @@ MoveModule.CheckCollisions = function(ship, shipPosRot, collShipTable)
         local certBumpDist = certShipReach + Convert_mm_igu(mm_baseSize[collShipSize]/2)            -- distance at which these two particular ships ships MUST bump
         local maxBumpDist = maxShipReach + Convert_mm_igu(mm_baseSize[collShipSize]*math.sqrt(2)/2) -- distance at which these two particular ships ships CAN bump
 
-        local dist = Dist_Pos(shipPosRot.pos, collShip.getPosition())
+        local dist = Vect.Distance(shipPosRot.pos, collShip.getPosition())
         if dist < maxBumpDist then
             if dist < certBumpDist then
                 info.coll = collShip
@@ -1808,8 +1809,8 @@ MoveModule.MoveProbe = {}
 MoveModule.MoveProbe.GetShipsNearPart = function(info, ship, partFun, partRange)
     local middlePart = (partRange.to - partRange.from)/2
     local maxShipReach = Convert_mm_igu(mm_baseSize[info.size]*math.sqrt(2))/2
-    local moveReach = math.max( Dist_Pos(partFun(info.code, ship, middlePart).pos, partFun(info.code, ship, partRange.to).pos),
-                                Dist_Pos(partFun(info.code, ship, middlePart).pos, partFun(info.code, ship, partRange.from).pos) )
+    local moveReach = math.max( Vect.Distance(partFun(info.code, ship, middlePart).pos, partFun(info.code, ship, partRange.to).pos),
+                                Vect.Distance(partFun(info.code, ship, middlePart).pos, partFun(info.code, ship, partRange.from).pos) )
     local collShipRange = moveReach + maxShipReach + Convert_mm_igu(mm_largeBase*math.sqrt(2))/2 + Convert_mm_igu(10)
     return XW_ObjWithinDist(partFun(info.code, ship, MoveData.partMax/2).pos, collShipRange, 'ship', {ship})
 end
@@ -2232,8 +2233,8 @@ function restWaitCoroutine()
         -- Move and pop waiting tokens
         if tokenSetInfo.ship == actShip then
             for k2,tokenData in pairs(tokenSetInfo.tokens) do
-                local offset = Vect_RotateDeg(tokenData.relPos, actShip.getRotation()[2])
-                local dest = Vect_Sum(offset, actShip.getPosition())
+                local offset = Vect.RotateDeg(tokenData.relPos, actShip.getRotation()[2])
+                local dest = Vect.Sum(offset, actShip.getPosition())
                 dest[2] = dest[2]+0.5
                 dest = TokenModule.VisiblePosition(tokenData.ref, tokenSetInfo.ship, dest)
                 tokenData.ref.setPositionSmooth(dest)
@@ -2369,7 +2370,7 @@ MoveModule.GetTokenOwner = function(tokenPos)
     local baseDist = {}
     -- Take the base size into account for distances
     for k,ship in pairs(nearShips) do
-        local realDist = Dist_Pos(tokenPos, ship.getPosition())
+        local realDist = Vect.Distance(tokenPos, ship.getPosition())
         if DB_isLargeBase(ship) == true then realDist = realDist-Convert_mm_igu(10) end
         table.insert(baseDist, {ship=ship, dist=realDist})
     end
@@ -2475,7 +2476,7 @@ TokenModule.TokenPos = function(tokenName, ship, posTable)
         end
     end
     local tsPos = {Convert_mm_igu(entry[1]), 0.5, Convert_mm_igu(entry[2])}
-    return Vect_Sum(ship.getPosition(), Vect_RotateDeg(tsPos, ship.getRotation()[2]+180))
+    return Vect.Sum(ship.getPosition(), Vect.RotateDeg(tsPos, ship.getRotation()[2]+180))
 end
 
 -- Return position for a given token that is on the base of given ship
@@ -2523,7 +2524,7 @@ TokenModule.VisiblePosition = function(tokenName, ship, preferredPos)
         end
     end
     if currStack.obj ~= nil then
-        return Vect_Sum(currStack.obj.getPosition(), {0, 0.7, 0})
+        return Vect.Sum(currStack.obj.getPosition(), {0, 0.7, 0})
     end
     -- Check for near near base position or return base position
     local nearPos = TokenModule.NearPosition(tokenName, ship)
@@ -2562,7 +2563,7 @@ TokenModule.QueueShipTokensMove = function(ship)
     local waitTable = {tokens = {}, ship=ship}
     -- Save relative position/rotation
     for k,token in pairs(selfTokens) do
-        local relPos = Vect_RotateDeg(Vect_Between(ship.getPosition(), token.getPosition()), -1*ship.getRotation()[2])
+        local relPos = Vect.RotateDeg(Vect.Between(ship.getPosition(), token.getPosition()), -1*ship.getRotation()[2])
         local relRot = token.getRotation()[2] - ship.getRotation()[2]
         table.insert(waitTable.tokens, {ref=token, relPos=relPos, relRot=relRot})
     end
@@ -2622,7 +2623,7 @@ TokenModule.TokenOwnerInfo = function(tokenPos)
     local baseDist = {}
     -- Take the base size into account for distances
     for k,ship in pairs(nearShips) do
-        local realDist = Dist_Pos(pos, ship.getPosition())
+        local realDist = Vect.Distance(pos, ship.getPosition())
         if DB_isLargeBase(ship) == true then realDist = realDist-Convert_mm_igu(10) end
         table.insert(baseDist, {ship=ship, dist=realDist})
     end
@@ -2701,18 +2702,18 @@ TokenModule.ClearPosition = function(pos, dist, ignoreShip)
         if tokenInfo.token.getButtons() == nil then
             if tokenInfo.owner ~= nil and tokenInfo.owner ~= ignoreShip then
                 local visPos = TokenModule.VisiblePosition(tokenInfo.token.getName(), tokenInfo.owner)
-                if Dist_Pos(visPos, pos) <= clearDist then
+                if Vect.Distance(visPos, pos) <= clearDist then
                     local basePos = TokenModule.BasePosition(tokenInfo.token.getName(), tokenInfo.owner)
                     tokenInfo.token.setPositionSmooth(basePos)
                 else
                     tokenInfo.token.setPositionSmooth(visPos)
                 end
             else
-                local ptVect = Vect_Between(pos, tokenInfo.token.getPosition())
+                local ptVect = Vect.Between(pos, tokenInfo.token.getPosition())
                 ptVect[2] = 0
-                local actDist = Dist_Pos(tokenInfo.token.getPosition(), pos)
+                local actDist = Vect.Distance(tokenInfo.token.getPosition(), pos)
                 local distToMove = 2*clearDist - actDist
-                local targetPos = Vect_Sum(tokenInfo.token.getPosition(), Vect_SetLength(ptVect, distToMove))
+                local targetPos = Vect.Sum(tokenInfo.token.getPosition(), Vect.SetLength(ptVect, distToMove))
                 targetPos[2] = targetPos[2] + 0.5
                 tokenInfo.token.setPositionSmooth(targetPos)
             end
@@ -2882,7 +2883,7 @@ DialModule.SaveNearby = function(ship)
             return
         end
         if nearbyDialsUnique[dial.getDescription()] ~= nil then
-            if Dist_Obj(ship, dial) < Dist_Obj(ship, nearbyDialsUnique[dial.getDescription()]) then
+            if Vect.Distance(ship, dial) < Vect.Distance(ship, nearbyDialsUnique[dial.getDescription()]) then
                 nearbyDialsUnique[dial.getDescription()] = dial
             end
         else
@@ -2928,7 +2929,7 @@ DialModule.SaveNearby = function(ship)
     -- Place the ship in the center and spawn assignment guides
     local straightRot = 180
     if z_half > 0 then straightRot = 0 end
-    ship.setPositionSmooth(Vect_Sum(centerPos, {0, 1, 0}), false, true)
+    ship.setPositionSmooth(Vect.Sum(centerPos, {0, 1, 0}), false, true)
     ship.setRotationSmooth({0, straightRot, 0}, false, true)
     local zoneWidth = 5*dialSpacing
     local zoneHeight = 6*dialSpacing
@@ -3265,7 +3266,7 @@ DialModule.PerformAction = function(ship, type, playerColor)
                 stressInfo.token = stressInfo.token.takeObject({})
             end
             stressInfo.token.highlightOn({0, 0.7, 0}, 3)
-            stressInfo.token.setPositionSmooth(Vect_Sum(TokenModule.tokenSources.Stress.src.getPosition(), {0, 2, 0}))
+            stressInfo.token.setPositionSmooth(Vect.Sum(TokenModule.tokenSources.Stress.src.getPosition(), {0, 2, 0}))
         end
     elseif tokenActions:find(' ' .. type .. ' ') ~= nil then
         local dest = TokenModule.VisiblePosition(type, ship)
@@ -3329,7 +3330,7 @@ DialModule.SpawnTemplate = function(ship, dialCode)
         return nil
     end
     local tempEntry = DialModule.TemplateData[moveInfo.type][moveInfo.speed]
-    tempEntry = Vect_Sum(tempEntry, DialModule.TemplateData.baseOffset[DB_getBaseSize(ship)])
+    tempEntry = Vect.Sum(tempEntry, DialModule.TemplateData.baseOffset[DB_getBaseSize(ship)])
     local ref = ship
     if dialCode:sub(-1,-1) == 'A' then
         ref = MoveModule.GetOldMove(ship, 1)
@@ -3348,14 +3349,14 @@ DialModule.SpawnTemplate = function(ship, dialCode)
     end
     if moveInfo.dir ~= nil then
         if moveInfo.extra ~= 'reverse' then
-            tempEntry = Vect_Sum(tempEntry, DialModule.TemplateData[moveInfo.type].trim[moveInfo.dir][moveInfo.speed])
+            tempEntry = Vect.Sum(tempEntry, DialModule.TemplateData[moveInfo.type].trim[moveInfo.dir][moveInfo.speed])
         else
             if moveInfo.dir == 'right' then
                 moveInfo.dir = 'left'
             elseif moveInfo.dir == 'left' then
                 moveInfo.dir = 'right'
             end
-            tempEntry = Vect_Sum(tempEntry, Vect_ScaleEach(DialModule.TemplateData[moveInfo.type].trim[moveInfo.dir][moveInfo.speed], {-1, 1, -1, -1}))
+            tempEntry = Vect.Sum(tempEntry, Vect.ScaleEach(DialModule.TemplateData[moveInfo.type].trim[moveInfo.dir][moveInfo.speed], {-1, 1, -1, -1}))
         end
     end
     local finPos = MoveModule.EntryToPos(tempEntry, ref)
@@ -3639,7 +3640,7 @@ end
 -- Get the part-zero-position for a ship given his state, last move and part it is at currently
 DialModule.SlideZeroPos = function(ship, info, currPart)
     local currData = MoveData.SlidePartOffset(info, currPart)
-    local zeroPos = MoveModule.EntryToPos(Vect_Scale(currData, -1), ship)
+    local zeroPos = MoveModule.EntryToPos(Vect.Scale(currData, -1), ship)
     return zeroPos
 end
 
@@ -3720,8 +3721,8 @@ function SlideCoroutine()
     local function getPointerOffset(dial, pColor)
         local pPos = Player[pColor].getPointerPosition()
         local syRot = dial.getRotation()[2]
-        local dtp = Vect_Between(dial.getPosition(), pPos)
-        local rdtp = Vect_RotateDeg(dtp, -1*syRot-180)
+        local dtp = Vect.Between(dial.getPosition(), pPos)
+        local rdtp = Vect.RotateDeg(dtp, -1*syRot-180)
         local dScale = dial.getScale()[1]
         return {shift=rdtp[3]/dScale, sideslip=(rdtp[1]/dScale - 3.566)}
     end
@@ -3730,7 +3731,7 @@ function SlideCoroutine()
     -- Also add it if slide is not even forward/backward
     local initShift = getPointerOffset(dial,pColor).shift
     local fullSlideLen = Convert_mm_igu(MoveData.SlideLength(info))
-    local lenToTravel = fullSlideLen - Dist_Pos(ship.getPosition(), zeroPos.pos)
+    local lenToTravel = fullSlideLen - Vect.Distance(ship.getPosition(), zeroPos.pos)
     initShift = initShift + (lenToTravel/(fullSlideLen))*3 - 1.5
     local lastShift = initShift
 
@@ -4491,7 +4492,7 @@ BombModule.OnTokenDrop = function(token)
     local closest = {dist=BombModule.snapDist+1, pointKey=nil}
     local tPos = token.getPosition()
     for k,dTable in pairs(BombModule.dropTable) do
-        local newDist = Dist_Pos(tPos, dTable.dest.pos)
+        local newDist = Vect.Distance(tPos, dTable.dest.pos)
         if newDist < closest.dist then
             closest.dist = newDist
             closest.pointKey = k
@@ -4503,11 +4504,11 @@ BombModule.OnTokenDrop = function(token)
     if closest.pointKey ~= nil then
         -- Move the token to the snap points
         local drop = BombModule.dropTable[closest.pointKey]
-        local destPos = Vect_Sum(drop.dest.pos, Vect_RotateDeg(offset.pos, drop.dest.rot[2]))
+        local destPos = Vect.Sum(drop.dest.pos, Vect.RotateDeg(offset.pos, drop.dest.rot[2]))
         if DB_isLargeBase(drop.ship) then
-            destPos = Vect_Sum(destPos, Vect_RotateDeg({0, 0, Convert_mm_igu(-20)}, drop.dest.rot[2]))
+            destPos = Vect.Sum(destPos, Vect.RotateDeg({0, 0, Convert_mm_igu(-20)}, drop.dest.rot[2]))
         end
-        local destRot = Vect_Sum(drop.dest.rot, offset.rot)
+        local destRot = Vect.Sum(drop.dest.rot, offset.rot)
         destPos[2] = drop.ship.getPosition()[2] + offset.pos[2]
         token.lock()
         token.setPositionSmooth(destPos, false, true)
@@ -4535,8 +4536,8 @@ BombModule.ExpandCluster = function(center)
     local t1 = spawnObject(tParams)
     t1.setCustomObject(tCustom)
     t1.lock()
-    local destOffset1 = Vect_RotateDeg(offset, center.rot[2])
-    t1.setPosition(Vect_Sum(center.pos, destOffset1))
+    local destOffset1 = Vect.RotateDeg(offset, center.rot[2])
+    t1.setPosition(Vect.Sum(center.pos, destOffset1))
     t1.setRotation(center.rot)
     t1.setScale({0.4554, 0.4554, 0.4554})
     t1.setName('Cluster Mine (side)')
@@ -4544,8 +4545,8 @@ BombModule.ExpandCluster = function(center)
     local t2 = spawnObject(tParams)
     t2.setCustomObject(tCustom)
     t2.lock()
-    local destOffset2 = Vect_RotateDeg(Vect_ScaleEach(offset, {-1, 1, 1}), center.rot[2])
-    t2.setPosition(Vect_Sum(center.pos, destOffset2))
+    local destOffset2 = Vect.RotateDeg(Vect.ScaleEach(offset, {-1, 1, 1}), center.rot[2])
+    t2.setPosition(Vect.Sum(center.pos, destOffset2))
     t2.setRotation(center.rot)
     t2.setScale({0.4554, 0.4554, 0.4554})
     t2.setName('Cluster Mine (side)')
