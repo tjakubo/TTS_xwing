@@ -975,6 +975,7 @@ Builder.Errata['IG88-D'] = 'IG-88D'
 Builder.Errata['Fire Control System'] = 'Fire-Control System'
 Builder.Errata['Burnout Slam'] = 'Burnout SLAM'
 Builder.Errata['StarViper Mk. II'] = 'StarViper Mk.II'
+Builder.Errata['Starviper Mk.II'] = 'StarViper Mk.II'
 Builder.Errata['Countermeasures'] = 'Counter-Measures'
 Builder.Errata['Slave-1'] = 'Slave I'
 
@@ -1291,6 +1292,14 @@ Builder.SpawnConditionCards = function()
             cOff[2] = cOff[2] + 0.1
             table.insert(Builder.misc.other, {ref=newCond, com='Condition'})
             local condToken = Spawner.Spawn('Fanatical Devotion condition token', Builder.LocalPos({0, 0.1, 0}, newCond), cRot)
+            table.insert(Builder.misc.tokens, {tRef=condToken, pRef=newCond})
+            condToken.setName(condToken.getName():sub(1,-7))
+        end
+        if Builder.HasUpgrade('Harpoon Missiles', k) then
+            local newCond = Spawner.Spawn('Harpooned! condition', Builder.LocalPos(cOff, pTable.pRef), cRot)
+            cOff[2] = cOff[2] + 0.1
+            table.insert(Builder.misc.other, {ref=newCond, com='Condition'})
+            local condToken = Spawner.Spawn('Harpooned! condition token', Builder.LocalPos({0, 0.1, 0}, newCond), cRot)
             table.insert(Builder.misc.tokens, {tRef=condToken, pRef=newCond})
             condToken.setName(condToken.getName():sub(1,-7))
         end
