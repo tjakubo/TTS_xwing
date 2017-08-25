@@ -3,6 +3,8 @@
 -- Issues, history at: https://github.com/tjakubo2/TTS_xwing
 -- ~~~~~~
 
+-- TODO Use zone.getValue/setValue
+
 Zone = {}
 
 Zone.colors = {}
@@ -91,7 +93,7 @@ Zone.StoreSetting = function(zone)
         oldPos = zone.getPosition(),
         oldScale = zone.getScale()
     }
-    zone.setValue('extendData', extData)
+    zone.setTable('extendData', extData)
     return true
 end
 
@@ -101,7 +103,7 @@ Zone.RestoreSetting = function(zone)
     if not zone.getTable('extendData') then
         return false
     end
-    local extData = zone.getVar('extendData')
+    local extData = zone.getTable('extendData')
     zone.setPosition(extData.oldPos)
     zone.setScale(extData.oldScale)
     zone.setVar('extendData', nil)
