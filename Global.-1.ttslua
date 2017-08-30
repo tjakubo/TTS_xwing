@@ -22,245 +22,17 @@ function print(arg)
     end
 end
 
--- Patch for clearing buttons since TTS broke obj.clearButtons()
-function ClearButtonsPatch(obj)
-    local buttons = obj.getButtons()
-    if buttons ~= nil then
-        for k,but in pairs(buttons) do
-            obj.removeButton(but.index)
-        end
-    end
-end
+-- Vector manipulation
+#include TTS_lib/Vector/Vector
 
---------
--- MEASUREMENT RELATED FUNCTIONS
+-- Standard libraries extentions
+#include TTS_lib/Util/Util
 
--- 40mm = 1.445igu
--- (s1 length / small base size)
-
--- 1mm = 0.036125igu
-mm_igu_ratio = 0.036125
-
--- Milimeter dimensions of ship bases
-mm_smallBase = 40
-mm_largeBase = 80
-
-mm_baseSize = {}
-mm_baseSize.small = 40
-mm_baseSize.smallBase = 40
-mm_baseSize.large = 80
-mm_baseSize.largeBase = 80
-
--- Convert argument from MILIMETERS to IN-GAME UNITS
-function Convert_mm_igu(milimeters)
-    return milimeters*mm_igu_ratio
-end
-
--- Convert argument from IN-GAME UNITS to MILIMETERS
-function Convert_igu_mm(in_game_units)
-    return in_game_units/mm_igu_ratio
-end
-
--- END MEASUREMENT RELATED FUNCTIONS
---------
-
---------
--- VECTOR RELATED FUNCTIONS
-
-Vect = {}
-
--- Sum of two vectors (of any size)
-Vect.Sum = function(vec1, vec2)
-    assert(type(vec1) == 'table', 'Vect.Sum: arg#1 not a table!')
-    assert(type(vec1) == 'table', 'Vect.Sum: arg#2 not a table!')
-    local out = {}
-    local k = 1
-    while vec1[k] ~= nil and vec2[k] ~= nil do
-        out[k] = vec1[k]+vec2[k]
-        k = k+1
-    end
-    return out
-end
-
--- Inverse of a vector
-Vect.Inverse = function(vector)
-    assert(type(vector) == 'table', 'Vect.Inverse: arg#1 not a table!')
-    local out = {}
-    local k = 1
-    while vector[k] ~= nil do
-        out[k] = 1/vector[k]
-        k = k+1
-    end
-    return out
-end
-
--- Multiply each element of a vector by a factor
-Vect.Scale = function(vector, factor)
-    assert(type(vector) == 'table', 'Vect.Scale: arg#1 not a table!')
-    assert(type(factor) == 'number', 'Vect.Scale: arg#2 not a number!')
-    local out = {}
-    local k = 1
-    while vector[k] ~= nil do
-        out[k] = vector[k]*factor
-        k = k+1
-    end
-    return out
-end
-
--- Multiply each element of a vector by an element from factor vector
--- (element-wise vector multiplication)
-Vect.ScaleEach = function(vector, factorVec)
-    assert(type(vector) == 'table', 'Vect.ScaleEach: arg#1 not a table!')
-    assert(type(factorVec) == 'table', 'Vect.ScaleEach: arg#2 not a table!')
-    local out = {}
-    local k = 1
-    while vector[k] ~= nil and factorVec[k] ~= nil do
-        out[k] = vector[k]*factorVec[k]
-        k = k+1
-    end
-    return out
-end
-
--- Euclidean norm of a vector
-Vect.Norm = function(vector)
-    assert(type(vector) == 'table', 'Vect.Norm: arg#1 not a table!')
-    local sum = 0
-    for k,v in ipairs(vector) do
-        sum = sum + v*v
-    end
-    return math.sqrt(sum)
-end
-
--- Length of  vector on X-Z plane (ignoring height)
-Vect.Length = function(vector)
-    assert(type(vector) == 'table', 'Vect.Length: arg#1 not a table!')
-    return math.sqrt(vector[1]*vector[1] + vector[3]*vector[3])
-end
-
--- Rotation of a 3D vector over its second element axis, arg in radians
--- Elements past 3rd are copied
-Vect.RotateRad = function(vector, radRotation)
-    assert(type(vector) == 'table', 'Vect.RotateRad: arg#1 not a table!')
-    assert(type(radRotation) == 'number', 'Vect.RotateRad: arg#2 not a number!')
-    local newX = math.cos(radRotation) * vector[1] + math.sin(radRotation) * vector[3]
-    local newZ = math.sin(radRotation) * vector[1] * -1 + math.cos(radRotation) * vector[3]
-    local out = {newX, vector[2], newZ}
-    local k=4
-    while vector[k] ~= nil do
-        table.insert(out, vector[k])
-        k = k+1
-    end
-    return out
-end
-
--- Distance between two points
--- Points as vectors or objects (their positions)
-
-Vect.Distance = function(pos1, pos2)
-    assert(type(pos1) == 'table' or type(pos1) == 'userdata', 'Vect.Distance: arg#1 not a table/object!')
-    assert(type(pos2) == 'table' or type(pos2) == 'userdata', 'Vect.Distance: arg#2 not a table/object!')
-    if type(pos1) == 'userdata' then
-        pos1 = pos1.getPosition()
-    end
-    if type(pos2) == 'userdata' then
-        pos2 = pos1.getPosition()
-    end
-    return Vect.Length(Vect.Between(pos1, pos2))
-end
-
--- Print vector elements
-Vect.Print = function(vec, name)
-    assert(type(vec) == 'table', 'Vect.Print: arg#1 not a table!')
-    local out = '['
-    if name then
-        out = name .. ' => ' .. out
-    end
-    local k = 1
-    while vec[k] ~= nil do
-        out = out .. math.round(vec[k], 3) .. ' : '
-        k = k+1
-    end
-    out = out:sub(1,-3) .. ']'
-    print(out)
-end
-
--- Vector pointing from one position to another
-Vect.Between = function(fromVec, toVec)
-    return Vect.Sum(toVec, Vect.Scale(fromVec, -1))
-end
-
--- Sebtract vector from another
-Vect.Sub = function(vec1, vec2)
-    return Vect.Sum(vec1, Vect.Scale(vec2, -1))
-end
-
--- Opposite of a vector
-Vect.Opposite = function(vector)
-    return Vect.Scale(vector, -1)
-end
-
--- Rotation of a 3D vector over its second element axis, arg in degrees
--- Elements past 3rd are copied
-Vect.RotateDeg = function(vector, degRotation)
-    local radRotation = math.rad(degRotation)
-    return Vect.RotateRad(vector, radRotation)
-end
-
--- Scale the vector to have set length
--- Negative "length" - opposite of set length
-Vect.SetLength = function(vector, len)
-    return Vect.Scale(vector, len/Vect.Length(vector))
-end
-
--- END VECTOR RELATED FUNCTIONS
---------
+-- Component sizes, unit conversion methods
+#include TTS_xwing/src/Dimensions
 
 --------
 -- MISC FUNCTIONS
-
--- Return value limited by mina nd max bounds
-function Var_Clamp(var, min, max)
-    if min ~= nil and var < min then
-        return min
-    elseif max ~= nil and var > max then
-        return max
-    else
-        return var
-    end
-end
-
--- Check if table is empty
-function table.empty(tab)
-    return (next(tab) == nil)
-end
-
--- Sign function, zero for zero
-function math.sgn(arg)
-    if arg < 0 then
-        return -1
-    elseif arg > 0 then
-        return 1
-    end
-    return 0
-end
-
--- Round to decPlaces decimal places
--- if decPlaces nil round to nearest integer
-function math.round(arg, decPlaces)
-    if decPlaces == nil then decPlaces = 0 end
-
-    if decPlaces == 0 then
-        frac = arg - math.floor(arg)
-        if frac >= 0.5 then
-            return math.ceil(arg)
-        else
-            return math.floor(arg)
-        end
-    else
-        local mult = 10^(decPlaces or 0)
-        return math.floor(arg * mult + 0.5) / mult
-    end
-end
 
 -- Dumbest TTS issue ever workaround
 function TTS_Serialize(pos)
@@ -771,7 +543,7 @@ MoveData.LUT.ConstructData = function(moveInfo, part)
     if moveInfo.speed == 0 then
         return {0, 0, 0, 0}
     end
-    part = Var_Clamp(part, 0, MoveData.partMax)
+    part = math.clamp(part, 0, MoveData.partMax)
     local LUTtable = MoveData.LUT.Data[moveInfo.size .. 'Base'][moveInfo.type][moveInfo.speed]
     local LUTindex = (part/MoveData.partMax)*LUTtable.dataNum
     if LUTindex < 1 then LUTindex = 1 end
@@ -1227,7 +999,7 @@ end
 MoveData.DecodePartMove = function(move_code, ship, part)
     local data = {}
     local info = MoveData.DecodeInfo(move_code, ship)
-    part = Var_Clamp(part, 0, MoveData.partMax)
+    part = math.clamp(part, 0, MoveData.partMax)
     if info.type == 'invalid' then
         print('MoveData.DecodePartMove: invalid move type')
         return {0, 0, 0, 0}
@@ -3766,7 +3538,7 @@ function SlideCoroutine()
         end
 
         -- Normalize the shift to [0-3] range
-        adjMeas = Var_Clamp(adjMeas, -1.5, 1.5)
+        adjMeas = math.clamp(adjMeas, -1.5, 1.5)
         adjMeas = adjMeas + 1.5
 
         -- Check for collisions on requested slide position

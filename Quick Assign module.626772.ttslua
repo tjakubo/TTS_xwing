@@ -5,6 +5,8 @@
 
 -- TODO Use zone.getValue/setValue
 
+#include TTS_lib/Vector/Vector
+
 Zone = {}
 
 Zone.colors = {}
@@ -663,30 +665,6 @@ end
 
 function onLoad(save_state)
 
-    --[[local libs = Global.getTable('libs')
-    for k,libName in pairs(libs) do
-        local libMeta = {
-            __index = function(t, k)
-                return function(...)
-                    local argList = {...}
-                    argList.target = libName .. '.' .. k
-                    return unpack(Global.call('DispatchCall', argList))
-                end
-            end
-        }
-        _G[libName] = {}
-        setmetatable(_G[libName], libMeta)
-        print('import ' .. libName)
-    end
-
-    print('call')
-    local r1, r2 = Test.TestFun(13, 46)
-    print(type(r1) .. ' : ' .. type(r2))
-    --print(r1[1])
-
-    self.lock()
-    --]]
-
     -- Get the dial set stack script
     for k,obj in pairs(getAllObjects()) do
         if obj.getName() == 'Dial Set source' then
@@ -702,138 +680,3 @@ function onLoad(save_state)
     Zone.UpdateDialZones()
     AssignModule.UpdateButtons()
 end
-
-
---------
--- VECTOR RELATED FUNCTIONS
-
-Vect = {}
-
--- Sum of two vectors (of any size)
-Vect.Sum = function(vec1, vec2)
-    if type(vec1) ~= 'table' or type(vec2) ~= 'table' then
-        print('Vect.Sum: arg not a table!')
-    end
-    local out = {}
-    local k = 1
-    while vec1[k] ~= nil and vec2[k] ~= nil do
-        out[k] = vec1[k]+vec2[k]
-        k = k+1
-    end
-    return out
-end
-
--- Sebtract vector from another
-Vect.Sub = function(vec1, vec2)
-    return Vect.Sum(vec1, Vect.Scale(vec2, -1))
-end
-
--- Inverse each element of a vector
-Vect.Inverse = function(vector)
-    if type(vector) ~= 'table' then
-        print('Vect.Inverse: arg not a table!')
-    end
-    local out = {}
-    local k = 1
-    while vector[k] ~= nil do
-        out[k] = 1/vector[k]
-        k = k+1
-    end
-    return out
-end
-
--- Multiply each element of a vector by a factor
-Vect.Scale = function(vector, factor)
-    if type(vector) ~= 'table' or type(factor) ~= 'number' then
-        print('Vect.Scale: arg not a table/number pair!')
-    end
-    local out = {}
-    local k = 1
-    while vector[k] ~= nil do
-        out[k] = vector[k]*factor
-        k = k+1
-    end
-    return out
-end
-
--- Multiply each element of a vector by an element from factor vector
--- (element-wise vector multiplication)
-Vect.ScaleEach = function(vector, factorVec)
-    if type(vector) ~= 'table' or type(factorVec) ~= 'table' then
-        print('Vect.ScaleEach: arg not a table/table pair!')
-    end
-    local out = {}
-    local k = 1
-    while vector[k] ~= nil and factorVec[k] ~= nil do
-        out[k] = vector[k]*factorVec[k]
-        k = k+1
-    end
-    return out
-end
-
--- Length (euclidean norm) of a vector
-Vect.Length = function(vector)
-    if type(vector) ~= 'table' then
-        print('Vect.Length: arg not a table!')
-    end
-    return math.sqrt(vector[1]*vector[1] + vector[3]*vector[3])
-end
-
--- Scale the vector to have set length
--- Negative "length" - opposite of set length
-Vect.SetLength = function(vector, len)
-    if type(vector) ~= 'table' or type(len) ~= 'number' then
-        print('Vect.SetLength: arg not a table/number pair!')
-    end
-    return Vect.Scale(vector, len/Vect.Length(vector))
-end
-
--- Rotation of a 3D vector over its second element axis, arg in degrees
--- Elements past 3rd are copied
-Vect.RotateDeg = function(vector, degRotation)
-    local radRotation = math.rad(degRotation)
-    return Vect.RotateRad(vector, radRotation)
-end
-
--- Rotation of a 3D vector over its second element axis, arg in radians
--- Elements past 3rd are copied
-Vect.RotateRad = function(vector, radRotation)
-    if type(vector) ~= 'table' or type(radRotation) ~= 'number' then
-        print('Vect.RotateRad: arg not a table/number pair!')
-    end
-    local newX = math.cos(radRotation) * vector[1] + math.sin(radRotation) * vector[3]
-    local newZ = math.sin(radRotation) * vector[1] * -1 + math.cos(radRotation) * vector[3]
-    local out = {newX, vector[2], newZ}
-    local k=4
-    while vector[k] ~= nil do
-        table.insert(out, vector[k])
-        k = k+1
-    end
-    return out
-end
-
--- Vector pointing from one position to another
-Vect.Between = function(fromVec, toVec)
-    if type(fromVec) ~= 'table' or type(toVec) ~= 'table' then
-        print('Vect.Between: arg not a table!')
-    end
-    return Vect.Sum(toVec, Vect.Scale(fromVec, -1))
-end
-
--- Print vector elements
-Vect.Print = function(vec, name)
-    local out = ''
-    if name ~= nil then
-        out = name .. ': [ '
-    end
-    local k = 1
-    while vec[k] ~= nil do
-        out = out .. vec[k] .. ' : '
-        k = k+1
-    end
-    out = out:sub(1,-3) .. ']'
-    print(out)
-end
-
--- END VECTOR RELATED FUNCTIONS
---------
