@@ -6,16 +6,13 @@ snap = true
 function onCollisionEnter(collision_info)
     local body = collision_info.collision_object
     if (not loaded) or (not snap) or (not body) or body.tag ~= 'Figurine' then return end
-    local type = Global.call('DB_getShipTypeCallable', {body})
-    if type == 'Lancer-Class Pursuit Craft' then
-        local relRot = self.getRotation()[2] - body.getRotation()[2]
-        local tRot = math.round(relRot/90)*90 + body.getRotation()[2]
-        local tPos = body.getPosition()
-        self.setPositionSmooth({tPos[1], tPos[2]+0.3, tPos[3]}, false, true)
-        self.setRotationSmooth({0, tRot, 0}, false, true)
-        snap = false
-        startLuaCoroutine(self, 'waitForResting')
-    end
+    local relRot = self.getRotation()[2] - body.getRotation()[2]
+    local tRot = math.round(relRot/90)*90 + body.getRotation()[2]
+    local tPos = body.getPosition()
+    self.setPositionSmooth({tPos[1], tPos[2]+0.3, tPos[3]}, false, true)
+    self.setRotationSmooth({0, tRot, 0}, false, true)
+    snap = false
+    startLuaCoroutine(self, 'waitForResting')
 end
 
 function onLoad(save_state)
