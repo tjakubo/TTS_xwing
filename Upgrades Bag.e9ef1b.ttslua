@@ -995,8 +995,8 @@ end
 -- DEPENDENCY ON THE MAIN TABLE DATABASE!!!
 Builder.FillTypes = function()
     for k,pTable in pairs(Builder.pilots) do
-        local shipType = Global.call('DB_getShipTypeCallable', {pTable.sRef})
-        if shipType == 'Unknown' then
+        local shipType = Global.call('API_ModelDB_GetData', {pTable.sRef}).type
+        if not shipType then
             Builder.Die('B12', 'Unknown \'' .. pTable.name .. '\' model ship type')
         else
             if Builder.ships[shipType] == nil then
@@ -1837,7 +1837,8 @@ Browser.ShipSpawn = function(shipKey, prettyName)
     Browser.ResetUpgPos()
     Browser.MoveSpawnedAside()
     table.insert(Browser.spawnedStuff, Spawner.SpawnReturn(shipKey, Builder.LocalPos(Browser.mainShipPos), self.getRotation()))
-    local shipType = Global.call('DB_getShipTypeCallable', {Browser.spawnedStuff[#Browser.spawnedStuff]})
+    local shipType = Global.call('API_ModelDB_GetData', {Browser.spawnedStuff[#Browser.spawnedStuff]}).type
+    -- handle no type?
     if Spawner.Find(shipType .. ' Refcard') then
         Browser.MiscSpawn(shipType .. ' Refcard')
     end

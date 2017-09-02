@@ -348,8 +348,8 @@ AssignModule.Assign = function(zone, playerColor)
     local bagData = {}
     -- bagData => Key: shipType, Entry: { bagRef = bagRef }
     for k,ship in pairs(shipObjects) do
-        local shipType = Global.call('DB_getShipTypeCallable', {ship})
-        if shipType == 'Unknown' then
+        local shipType = Global.call('API_ModelDB_GetData', {ship}).type
+        if not shipType then
             typesOK = false
             break
         elseif bagData[shipType] == nil then
@@ -373,10 +373,7 @@ AssignModule.Assign = function(zone, playerColor)
     }
     for k,data in pairs(shipData) do
         local shipColl = data.shipRef.getCustomObject().collider
-        local baseSize = 'small'
-        if Global.call('DB_getShipInfoCallable', {data.shipRef}).largeBase then
-            baseSize = 'large'
-        end
+        local baseSize = Global.call('API_ModelDB_GetData', {data.shipRef}).baseSize or 'small'
         if shipColl ~= collOK[baseSize] then
             local custom = data.shipRef.getCustomObject()
             custom.collider = collOK[baseSize]
