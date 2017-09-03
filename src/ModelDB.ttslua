@@ -37,7 +37,7 @@ end
 --      arcType     <- 'P' (primary only) / 'T' (primary turret) / 'R' (aux rear) / 'S' (aux side) / 'M' (mobile)
 --      type        <- ship type name (e.g. 'TIE Phantom'), for faction-variant ships faction name is added (e.g. 'Y-Wing Scum')
 --      faction     <- 'Rebel' / 'Scum' / 'Imperial'
---      baseSize    <- 'large' / 'small1'
+--      baseSize    <- 'large' / 'small'
 --          }
 -- Return empty table when ship unrecognized
 -- After finding the data once it is saved on the object to speed up future calls
