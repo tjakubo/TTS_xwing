@@ -598,7 +598,8 @@ end
 
 -- Trim a string of whitespaces
 Builder.TrimWord = function(word)
-    return word:match("^%s*(.-)%s*$")
+    -- return word:match("^%s*(.-)%s*$")
+    return (word:gsub("^%s+", ""):gsub("%s+$", ""))
 end
 
 -- Create notebook "Spawn Me" tab for parsing long lists
