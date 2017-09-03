@@ -16,9 +16,9 @@
 print_debug = true
 
 TTS_print = print
-function print(arg)
+function print(...)
     if print_debug == true then
-        TTS_print(arg)
+        TTS_print(table.unpack({...}))
     end
 end
 
@@ -27,6 +27,12 @@ end
 
 -- Standard libraries extentions
 #include TTS_lib/Util/Util
+
+-- Standard event handling
+#include TTS_lib/EventSub/EventSub
+
+-- Save/load management
+#include TTS_lib/SaveManager/SaveManager
 
 -- Component sizes, unit conversion methods
 #include TTS_xwing/src/Dimensions
@@ -521,6 +527,7 @@ MoveData.onLoad = function()
         end
     end
 end
+EventSub.Register('onLoad', MoveData.onLoad)
 MoveData.LUT.Parse = function(object)
     MoveData.LUT.Data = object.call('ParseLUT', {})
 end
@@ -1029,12 +1036,6 @@ end
 
 MoveModule = {}
 
--- Called when game is saved
--- Returns table for encoding
-MoveModule.onSave = function()
-    return MoveModule.GetSaveData()
-end
-
 -- Convert a typical entry from MoveData functions
 -- (this: {xPos_offset, yPos_offset, zPos_offset, yRot_offset} )
 -- to a real ship position in world
@@ -1336,18 +1337,12 @@ MoveModule.GetSaveData = function()
     return currHistory end
 end
 
--- On load, restore data
-MoveModule.onLoad = function(saveTable)
-    MoveModule.RestoreSaveData(saveTable)
-end
 
 -- Restore provided table and notify of the results
 MoveModule.RestoreSaveData = function(saveTable)
     if saveTable == nil then
         return
     end
-    local annInfo = {}
-    annInfo.type = 'info'
     local count = 0
     local missCount = 0
     for k,hist in pairs(saveTable) do
@@ -1359,14 +1354,16 @@ MoveModule.RestoreSaveData = function(saveTable)
             table.insert(MoveModule.moveHistory, hist)
         end
     end
-    annInfo.note = 'LOAD: Restored last position save for ' .. count .. ' ship(s)'
+    local info = ' - Restored last position save for ' .. count .. ' ship(s)'
     if missCount > 0 then
-        annInfo.note = ' (' .. missCount .. ' ship model(s) missing)'
+        info = info .. ' (' .. missCount .. ' ship model(s) missing)'
     end
     if count > 0 or missCount > 0 then
-        AnnModule.Announce(annInfo, 'all')
+        return info
     end
 end
+
+SaveManager.Register('MoveModule', MoveModule.GetSaveData, MoveModule.RestoreSaveData)
 
 -- Join hit tables t1 .. t5 resulting from Physics.cast call
 -- Return a table of unique objects that pass selection function
@@ -2193,6 +2190,7 @@ TokenModule.onLoad = function()
         end
     end
 end
+EventSub.Register('onLoad', TokenModule.onLoad)
 
 -- How far can tokens be to be considered owned bya  ship
 TokenModule.tokenReachDistance = Convert_mm_igu(100)
@@ -2925,13 +2923,6 @@ function DialModule_ResetRestored(params)
     DialModule.restoredDials[shipGUID] = nil
 end
 
--- Update token sources on each load
--- Restore sets if data is loaded
-DialModule.onLoad = function(saveTable)
-    -- Restore dial sets
-    DialModule.RestoreSaveData(saveTable)
-end
-
 -- Restore active sets from provided table (already decoded)
 -- Table should come from DialModule.GetSaveData
 DialModule.RestoreSaveData = function(saveTable)
@@ -2939,8 +2930,6 @@ DialModule.RestoreSaveData = function(saveTable)
     for k,set in pairs(DialModule.ActiveSets) do
         DialModule.RemoveSet(set.ship)
     end
-    local annInfo = {}
-    annInfo.type = 'info'
     local count = 0
     local missShipCount = 0
     local missDialCount = 0
@@ -2965,22 +2954,22 @@ DialModule.RestoreSaveData = function(saveTable)
             count = count + 1
         end
     end
-    annInfo.note = 'LOAD: Restored ' .. count .. ' saved dial set(s)'
+    local info = ' - Restored ' .. count .. ' saved dial set(s)'
     if missShipCount+missDialCount > 0 then
-        annInfo.note = annInfo.note .. ' ('
+        info = info .. ' ('
         if missShipCount > 0 then
-            annInfo.note = annInfo.note .. missShipCount .. ' ship model(s) missing'
+            info = info .. missShipCount .. ' ship model(s) missing'
         end
         if missDialCount > 0 then
             if missShipCount > 0 then
-                annInfo.note = annInfo.note .. ', '
+                info = info .. ', '
             end
-            annInfo.note = annInfo.note .. missDialCount .. ' dial card(s) missing'
+            info = info .. missDialCount .. ' dial card(s) missing'
         end
-        annInfo.note = annInfo.note .. ')'
+        info = info .. ')'
     end
     if count+missShipCount+missDialCount > 0 then
-        AnnModule.Announce(annInfo, 'all')
+        return info
     end
 end
 
@@ -2998,10 +2987,8 @@ DialModule.GetSaveData = function()
     else return saveTable end
 end
 
--- Return table to be saved
-DialModule.onSave = function()
-    return DialModule.GetSaveData()
-end
+SaveManager.Register('DialModule', DialModule.GetSaveData, DialModule.RestoreSaveData)
+
 
 -- Perform an automated action
 -- Can be called externally for stuff like range ruler spawning
@@ -4469,26 +4456,6 @@ function onObjectDestroyed(dying_object)
     RulerModule.onObjectDestroyed(dying_object)
     -- Handle killing bomb drop templates
     BombModule.onObjectDestroyed(dying_object)
-end
-
--- When table is loaded up, this is called
--- save_state contains everything separate modules saved before to restore table state
-function onLoad(save_state)
-    if save_state ~= '' and save_state ~= nil and save_state ~= '[]' then
-        AnnModule.Announce({note='Attempting to restore state. If you are rewinding game, STOP! \nPlease read the \'Undoing things\' page from wiki (on side note).', type='info'}, 'all')
-        local savedData = JSON.decode(save_state)
-        DialModule.onLoad(savedData.DialModule)
-        MoveModule.onLoad(savedData.MoveModule)
-    end
-    MoveData.onLoad()
-    TokenModule.onLoad()
-end
-
-function onSave()
-    local tableToSave = {}
-    tableToSave.DialModule = DialModule.onSave()
-    tableToSave.MoveModule = MoveModule.onSave()
-    return JSON.encode_pretty(tableToSave)
 end
 
 -- END DIRECT TTS EVENT HANDLING
