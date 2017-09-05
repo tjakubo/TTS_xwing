@@ -2140,7 +2140,7 @@ TokenModule.locksToBeSet = {}
 -- Callback to set ALL the locks in wueue
 function TokenModule_SetLocks()
     for k,info in pairs(TokenModule.locksToBeSet) do
-        info.lock.call('manualSet', {info.color, info.name})
+        info.lock.call('manualSet', {color=info.color, name=info.name})
         info.lock.highlightOn({0,0,0}, 0.01)
     end
     TokenModule.locksToBeSet = {}
