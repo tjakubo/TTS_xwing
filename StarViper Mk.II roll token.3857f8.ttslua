@@ -1,11 +1,17 @@
 -- ~~~~~~
 -- Script by dzikakulka
--- Issues, history at: https://github.com/tjakubo2/TTS_xwing
+-- Issues, history at: http://github.com/tjakubo2/TTS_xwing
 --
+-- Token for easy barrel rolls with StarViper Mk.II title
 -- ~~~~~~
 
-assignedShip = nil      -- Ref to assigned ship if there is one
-idle = true             -- Is the token not being used?
+-- Scripted token properties
+__XW_Token = true
+__XW_TokenIdle = true
+__XW_TokenType = 'helper:viperRoll'
+
+-- Ref to assigned ship if there is one
+assignedShip = nil
 
 -- Save self state
 function onSave()
@@ -28,9 +34,9 @@ function onLoad(save_state)
     end
 end
 
--- Spawn initial decloak/delete buttons
+-- Spawn initial roll/unassign buttons
 function SpawnFirstButtons()
-    idle = true
+    __XW_TokenIdle = true
     self.clearButtons()
     local decloakButton = {['function_owner'] = self, ['click_function'] = 'SpawnRollButtons', ['label'] = 'Roll', ['position'] = {0, 0.25, -1.5}, ['rotation'] =  {0, 0, 0}, ['width'] = 1000, ['height'] = 500, ['font_size'] = 250}
     self.createButton(decloakButton)
@@ -64,7 +70,7 @@ function onDropped()
     end
 end
 
--- Spawn undo/delete/slide buttons (after a move)
+-- Spawn undo/OK/slide buttons (after a roll)
 function SpawnFinalButtons()
     undoToBackCount = 1
     self.clearButtons()
@@ -76,9 +82,9 @@ function SpawnFinalButtons()
     self.createButton(slideButton)
 end
 
--- Spawn back/delete/moves buttons (regular or Echo)
+-- Spawn roll buttons
 function SpawnRollButtons()
-    idle = false
+    __XW_TokenIdle = false
     self.clearButtons()
     local rollLF_Button = {['function_owner'] = self,['click_function'] = 'rollLF', ['label'] = 'XF', ['position'] = {-1.5, 0.25, -0.6}, ['rotation'] =  {0, 0, 0}, ['width'] = 365, ['height'] = 520, ['font_size'] = 250}
     self.createButton(rollLF_Button)
@@ -117,10 +123,10 @@ end
 -- END DECLOAK MOVES
 --------
 
--- Destroy self
+-- Unassign ship
 function selfUnassign()
     assignedShip = nil
-    idle = false
+    __XW_TokenIdle = false
     self.clearButtons()
     self.setName('StarViper Mk.II roll token')
 end
@@ -128,7 +134,7 @@ end
 function resetToFirst()
     SpawnFirstButtons()
 end
--- Undo move, if undid all back to decloak buttons
+-- Undo move, if undid all back to roll buttons
 function performUndo()
     assignedShip.setDescription('q')
     undoToBackCount = undoToBackCount - 1

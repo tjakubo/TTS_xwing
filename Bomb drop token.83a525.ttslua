@@ -1,10 +1,17 @@
 -- ~~~~~~
 -- Script by dzikakulka
--- Issues, history at: https://github.com/tjakubo2/TTS_xwing
+-- Issues, history at: http://github.com/tjakubo2/TTS_xwing
+--
+-- Bomb drop gizmo token
 -- ~~~~~~
 
-assignedShip = nil      -- Ref to assigned ship if there is one
-idle = false
+-- Scripted token properties
+__XW_Token = true
+__XW_TokenIdle = false
+__XW_TokenType = 'helper:bombDrop'
+
+-- Ref to assigned ship if there is one
+assignedShip = nil
 
 nameUnassigned = 'Bomb drop token (unassigned)'
 nameAssigned = '\'s bomb drop token'
@@ -64,7 +71,9 @@ function onDropped()
     end
 end
 
+-- Button spacing
 local sp = 0.7
+-- Base drop buttons positions
 local butPos = {}
 butPos['s1'] = {0, 1*sp}
 butPos['s2'] = {0, 2*sp}
@@ -78,6 +87,7 @@ butPos['tr1'] = {2*sp, 1*sp}
 butPos['tr2'] = {2*sp, 2*sp}
 butPos['tr3'] = {2*sp, 3*sp}
 
+-- Get a drop buttons position (left/front variant included)
 function ButtonPos(butCode)
     local rev = false
     local left = false
@@ -97,7 +107,8 @@ function ButtonPos(butCode)
     if left then pos[1] = -1*pos[1] end
     return pos
 end
---
+
+-- Spawn drop buttons based on self description
 function SpawnDropButtons()
     self.clearButtons()
     local drops = {{code='s1', pos=ButtonPos('s1')}}
@@ -118,21 +129,17 @@ function SpawnDropButtons()
     end
 end
 
+-- Start a bomb drop on a ship
 function DropBomb(code)
     assignedShip.setDescription('b:' .. code)
     SpawnFirstButtons()
 end
 
+-- Unassign the ship
 function selfUnassign()
     assignedShip = nil
     self.clearButtons()
     self.setName(nameUnassigned)
 end
-function assignCallback(argTable)
-    local ship = argTable.ship
-    printToAll('Bomb drop token assigned to ' .. ship.getName(), {0.2, 0.2, 1})
-    SpawnFirstButtons()
-    assignedShip = ship
-    self.setName(assignedShip.getName() .. nameAssigned)
-end
+
 function dummy() return end

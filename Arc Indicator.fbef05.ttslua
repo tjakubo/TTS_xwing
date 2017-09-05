@@ -1,7 +1,19 @@
+-- ~~~~~~
+-- Script by dzikakulka
+-- Issues, history at: http://github.com/tjakubo2/TTS_xwing
+--
+-- Arc indicator snap script
+-- ~~~~~~
+
+-- Scripted token properties
+__XW_Token = true
+__XW_TokenIdle = true
+__XW_TokenType = 'arcIndicator'
+
+-- Should it snap on the next collision
 snap = true
 
--- When colliding with a Lancer-Class Pursuit craft, set position to its center
---  and rotation to nearest 90 deg point
+-- When colliding with a ship, set position to its center and rotation to nearest 90deg point
 -- Wait until resting after every snap
 function onCollisionEnter(collision_info)
     local body = collision_info.collision_object

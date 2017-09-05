@@ -1,9 +1,17 @@
 -- ~~~~~~
 -- Script by dzikakulka
--- Issues, history at: https://github.com/tjakubo2/TTS_xwing
+-- Issues, history at: http://github.com/tjakubo2/TTS_xwing
+--
+-- Target lock color and name script
 -- ~~~~~~
 
-set = false     -- Was this lock tinted and named already?
+-- Scripted token properties
+__XW_Token = true
+__XW_TokenIdle = true
+__XW_TokenType = 'targetLock'
+
+-- Was this lock tinted and named already?
+set = false
 
 -- Colors for tinting on pickup
 colorTable = {}
@@ -17,7 +25,7 @@ colorTable['Teal']= {0.2, 1, 0.8}
 colorTable['Green']= {0, 1, 0}
 colorTable['Yellow']= {1, 1, 0}
 colorTable['Orange']= {1, 0.4, 0}
-colorTable['Black']= {0, 0, 0}
+colorTable['Black']= {0.2, 0.2, 0.2}
 
 -- Save self state
 function onSave()
@@ -35,10 +43,10 @@ function onLoad(save_state)
 end
 
 -- Set function for external calls
-function manualSet(color_name)
+function manualSet(arg)
     set = true
-    self.setColorTint(colorTable[color_name[1]])
-    self.setName(color_name[2])
+    self.setColorTint(colorTable[arg.color])
+    self.setName(arg.name)
 end
 
 -- Tint on pick up
@@ -54,7 +62,7 @@ function onDropped()
         local spos = self.getPosition()
         local spos = self.getPosition()
         local nearest = nil
-        local minDist = 5
+        local minDist = 3.6125 -- 100 mm
         for k,ship in pairs(getAllObjects()) do
             if ship.tag == 'Figurine' and ship.name ~= '' then
                 local pos = ship.getPosition()
