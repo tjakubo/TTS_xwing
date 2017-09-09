@@ -9,7 +9,6 @@ state = {
 }
 
 function Enable()
-    print('enable')
     state.active = true
     if not state.deck then
         function DelayedDrawCoroutine()
@@ -24,7 +23,6 @@ function Enable()
 end
 
 function Disable()
-    print('disable')
     state.active = false
     if state.deck then
         state.deck.destruct()
@@ -55,20 +53,16 @@ end
 
 function onObjectDestroyed(obj)
     if (not state.active) or (not state.deck) then return end
-    print('destroy int')
     if state.deck == obj then
-        print('clear')
         state.deck = nil
     end
 end
 
 function onObjectDropped(_, obj)
     if (not state.active) or state.deck then return end
-    print('drop int')
     if obj.tag ~= 'Deck' then return end
     local dx, dy = self.getPosition()[1] - obj.getPosition()[1], self.getPosition()[3] - obj.getPosition()[3]
     if math.abs(dx) < 1 and math.abs(dy) < 1 then
-        print('snap')
         SnapDeck(obj)
     end
 end
