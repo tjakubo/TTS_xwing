@@ -57,6 +57,15 @@ ModelDB.GetData = function(model)
                         out.type = type
                         out.faction = faction
                         out.baseSize = baseSize
+                        local collData = ModelDB.colliders[baseSize]
+                        local collLink = ModelDB.RectifyLink(model.getCustomObject().collider)
+                        for collType, collSet in pairs(collData) do
+                            if table.find(collSet, collLink) then
+                                out.collider = collType
+                                break
+                            end
+                        end
+                        out.collider = out.collider or 'unknown'
                         ModelDB.SaveData(out, model)
                         return out
                     end
@@ -75,6 +84,42 @@ function API_ModelDB_GetData(arg)
     end
     return ModelDB.GetData(model)
 end
+
+ModelDB.SetCollider = function(model, type)
+    local data = ModelDB.GetData(model)
+    if not data.baseSize or (data.collider == type) then
+        return
+    end
+
+    local custom = model.getCustomObject()
+    custom.collider = ModelDB.colliders[data.baseSize][type][1]
+    model.setCustomObject(custom)
+    return model.reload()
+end
+function API_ModelDB_SetCollider(args)
+    return ModelDB.SetCollider(table.unpack(args))
+end
+
+ModelDB.colliders = {
+    ['small'] = {
+        ['full'] = {'http://cloud-3.steamusercontent.com/ugc/856097073971964332/9FA07C37B1615A416F306081D9152902A9BFE9EE/'},
+        ['box']  = {'http://cloud-3.steamusercontent.com/ugc/82591194029068301/41D4D10265D8B4B9FC1B0C640F9F8D94C816CE89/'}
+    },
+    ['large'] = {
+        ['full'] = {'http://cloud-3.steamusercontent.com/ugc/856097073971964883/B11F61E5ED25B90F87C047EB6252D3B18EBB09F1/'},
+        ['box']  = {'http://cloud-3.steamusercontent.com/ugc/82591194029102991/E8AD5E7B2039AA6FD75C13884472D494D2590E6B/'}
+    }
+}
+
+boxCollider = {
+    ['small'] = 'http://cloud-3.steamusercontent.com/ugc/82591194029068301/41D4D10265D8B4B9FC1B0C640F9F8D94C816CE89/',
+    ['large'] = 'http://cloud-3.steamusercontent.com/ugc/82591194029102991/E8AD5E7B2039AA6FD75C13884472D494D2590E6B/'
+}
+
+fullCollider = {
+    ['small'] = 'http://cloud-3.steamusercontent.com/ugc/856097073971964332/9FA07C37B1615A416F306081D9152902A9BFE9EE/',
+    ['large'] = 'http://cloud-3.steamusercontent.com/ugc/856097073971964883/B11F61E5ED25B90F87C047EB6252D3B18EBB09F1/'
+}
 
 -- Ship data
 -- First level: tables keyed by faction name
