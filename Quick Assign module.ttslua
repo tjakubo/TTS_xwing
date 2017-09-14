@@ -33,10 +33,9 @@ Zone.Area = function(obj)
 end
 
 -- Get all objects clipping a zone
-Zone.GetObjects = function(zone)
-    return ObjType.GetBoxOfType(zone.getPosition(), zone.getRotation(), zone.getScale(), 'obj')
-    --local zoneCast = {origin = zone.getPosition(), direction={0, 1, 0}, type=3, size=zone.getScale(), orientation=zone.getRotation()}
-    --return HitObjects(Physics.cast(zoneCast))
+Zone.GetObjects = function(zone, type)
+    type = type or 'obj'
+    return ObjType.GetBoxOfType(zone.getPosition(), zone.getRotation(), zone.getScale(), type)
 end
 
 -- Return true if the zone is empty
@@ -103,52 +102,6 @@ end
 
 AssignModule = {}
 
--- Get objects within rectangle
--- Rectangle must be aligned with table (no rotation)
-function XW_ObjWithinRect(center, x_size, z_size)
-    local objects = {}
-    local x_min = center[1] - (x_size/2)
-    local x_max = center[1] + (x_size/2)
-    local z_min = center[3] - (z_size/2)
-    local z_max = center[3] + (z_size/2)
-    for k,obj in pairs(getAllObjects()) do
-        if obj.tag ~= 'Fog' and obj.interactable == true then
-            local obj_x = obj.getPosition()[1]
-            local obj_z = obj.getPosition()[3]
-            if obj_x < x_max and obj_x > x_min and obj_z < z_max and obj_z > z_min then
-                table.insert(objects, obj)
-            end
-        end
-    end
-    return objects
-end
-
--- get hot objects from hit table after some exclusions
-function HitObjects(hitTables)
-    local out = {}
-    local exclTags = {
-        ['Fog'] = true,
-        ['Surface'] = true,
-        ['Custom_Board'] = true
-    }
-    local exclude = function(obj)
-        if (not obj.interactable) then return true end
-        if exclTags[obj.tag] then return true end
-        if obj.getName():find('Extension') then return true end
-        if obj.getName():find('Arc Indicator') then return true end
-        if obj.getName():find('drop token') then return true end
-
-        return false
-    end
-    for k,hitData in pairs(hitTables) do
-        if not exclude(hitData.hit_object) then
-            table.insert(out, hitData.hit_object)
-        end
-    end
-    return out
-end
-
-
 AssignModule.maxShipCount = 12
 AssignModule.msg = {}
 AssignModule.msg.emptyZoneAndSelection = 'Quick Assign: Place ships you want to assign dials for in your hidden zone or select them first'
@@ -156,7 +109,8 @@ AssignModule.msg.notShipsOnly = 'Quick Assign: Remove objects that are not ship 
 AssignModule.msg.tooManyShips = 'Quick Assign: Too many ship models (max ' .. AssignModule.maxShipCount ..')'
 AssignModule.msg.unrecognizedShips = 'Quick Assign: Some ship models in your zone have not been recognized. Make sure your models are sourced from squad building tray on this table and contact author if this issue persists'
 AssignModule.msg.clickTooFast = 'Quick Assign: Clicking too fast, please wait until assignment finishes'
-AssignModule.msg.zoneTooSmall = 'Quick Assign: Too little horizontal space, please widen your zone (Gizmo tool -> X scale)'
+--AssignModule.msg.zoneTooSmall = 'Quick Assign: Too little horizontal space, please widen your zone (Gizmo tool -> X scale)'
+AssignModule.msg.zoneTooSmall = 'Quick Assign: Too many ships!'
 
 -- Sort ships by their positions in the zone, left to right
 AssignModule.SortShips = function(shipData, zone)
@@ -200,9 +154,9 @@ function API_AssignDials(args)
 end
 
 -- Check zone contents and assign dials if everything is OK
-AssignModule.Assign = function(playerColor, zone, misc)
-    print('A: ' .. tostring(playerColor) .. ' : ' .. tostring(zone) .. ' : ' .. tostring(misc))
-    table.print(misc)
+AssignModule.Assign = function(playerColor, zone, buttonPos, extension, playerStuff)
+    print('A: ' .. tostring(playerColor) .. ' : ' .. tostring(zone) .. ' : ' .. tostring(buttonPos) .. ' : ' .. tostring(extension) .. ' : ' .. tostring(playerStuff))
+
     -- If assignment is in progress, notify and return
     if zone.getVar('assignBusy') == true then
         broadcastToColor(AssignModule.msg.clickTooFast, playerColor, {1, 0.45, 0})
@@ -211,9 +165,9 @@ AssignModule.Assign = function(playerColor, zone, misc)
 
     -- Get objects inside the hidden zone or selected if zone empty, notify and return if empty
     local assignObjects = Zone.GetObjects(zone)
-    if assignObjects[1] == nil then
+    if table.empty(assignObjects) then
         assignObjects = AssignModule.ShipsFromSelection(playerColor)
-        if assignObjects[1] == nil then
+        if table.empty(assignObjects) then
             broadcastToColor(AssignModule.msg.emptyZoneAndSelection, playerColor, {1, 0.45, 0})
             return
         end
@@ -229,6 +183,7 @@ AssignModule.Assign = function(playerColor, zone, misc)
         elseif ObjType.IsOfType(obj, 'ship') then
             table.insert(shipObjects, obj)
         else
+            print(obj.getName() .. ' : ' .. obj.tag)
             shipsOnly = false
             break
         end
@@ -237,10 +192,10 @@ AssignModule.Assign = function(playerColor, zone, misc)
         broadcastToColor(AssignModule.msg.notShipsOnly, playerColor, {1, 0.45, 0})
         return
     end
-    if #shipObjects > AssignModule.maxShipCount then
+    --[[if #shipObjects > AssignModule.maxShipCount then
         broadcastToColor(AssignModule.msg.tooManyShips, playerColor, {1, 0.45, 0})
         return
-    end
+    end]]--
 
     -- Get and assert ship type data
     local typesOK = true
@@ -269,42 +224,17 @@ AssignModule.Assign = function(playerColor, zone, misc)
     -- Sort the ships to match their order
     shipData = AssignModule.SortShips(shipData, zone)
 
-    -- Replace colliders to standard ones if needed
-    -- TODO they should be pulled from Global
-    local collOK = {
-        small = 'http://cloud-3.steamusercontent.com/ugc/856097073971964332/9FA07C37B1615A416F306081D9152902A9BFE9EE/',
-        large = 'http://cloud-3.steamusercontent.com/ugc/856097073971964883/B11F61E5ED25B90F87C047EB6252D3B18EBB09F1/'
-    }
     for k,data in pairs(shipData) do
-        local shipColl = data.shipRef.getCustomObject().collider
-        local baseSize = Global.call('API_ModelDB_GetData', {data.shipRef}).baseSize or 'small'
-        if shipColl ~= collOK[baseSize] then
-            local custom = data.shipRef.getCustomObject()
-            custom.collider = collOK[baseSize]
-            data.shipRef.setCustomObject(custom)
-            data.shipRef = data.shipRef.reload()
-        end
+        data.shipRef = Global.call('API_ModelDB_SetCollider', {data.shipRef, 'full'}) or data.shipRef
     end
 
     -- Dial bags desired position and its step
-    local function BagPosStep(pos)
-        return {pos[1], pos[2], pos[3] - 2.6*math.sgn(pos[3])}
-    end
-    misc.bagInit = Vect.Sum(Vect.RotateDeg({0, 0, 4}, zone.getRotation()[2]), misc.bPos)
-    misc.bagStep = Vect.RotateDeg({0, 0, 2.6}, zone.getRotation()[2])
-    local bagPos = misc.bagInit
-    bagPos[2] = 1.5
+    local bagPos = Vect.Sum(Vect.RotateDeg({0, 1.5, 4}, zone.getRotation()[2]), buttonPos)
+    local bagStep = Vect.RotateDeg({0, 0, 2.6}, zone.getRotation()[2])
 
     -- If there are valid dial bags on the table, take them
-    -- TODO concat being part of table (libs in general1)
-    local function TableConcat(t1,t2)
-        for i=1,#t2 do
-            t1[#t1+1] = t2[i]
-        end
-        return t1
-    end
-    local playerStuff = misc.playerItems or {}
-    playerStuff = TableConcat(playerStuff, ObjType.GetBoxOfType({-71, 0, 0}, {0, 0, 0}, {28, 5, 54}, 'obj'))
+    playerStuff = playerStuff or {}
+    playerStuff = table.join(playerStuff, ObjType.GetBoxOfType({-71, 0, 0}, {0, 0, 0}, {28, 5, 54}, 'obj'))
     for k,obj in pairs(playerStuff) do
         if AssignModule.IsDialBag(obj) then
             local type = AssignModule.DialBagType(obj)
@@ -316,12 +246,10 @@ AssignModule.Assign = function(playerColor, zone, misc)
 
     -- Destroy dial bags obstructing target position for current set
     local dialNum = table.size(bagData)
+    local angle = Vect.AngleDeg2D(Vect.Between(bagPos, Vect.Sum(bagPos, bagStep)))
 
-    local angle = Vect.AngleDeg2D(Vect.Between(misc.bagInit, Vect.Sum(misc.bagInit, misc.bagStep)))
-
-    local len = Vect.Length(Vect.Scale(misc.bagStep, dialNum-1))
-    print('dn', dialNum, ' ', angle, ' ', len)
-    local currentDials = ObjType.GetBoxOfType(Vect.Middle(misc.bagInit, Vect.Sum(misc.bagInit, Vect.Scale(misc.bagStep, dialNum-1))), {0, angle, 0}, {len+2, 1, 2}, 'obj')
+    local len = Vect.Length(Vect.Scale(bagStep, dialNum-1))
+    local currentDials = ObjType.GetBoxOfType(Vect.Middle(bagPos, Vect.Sum(bagPos, Vect.Scale(bagStep, dialNum-1))), {0, angle, 0}, {len+3, 1, 3}, 'obj')
     for k,obj in pairs(currentDials) do
         if AssignModule.IsDialBag(obj) then
             local type = AssignModule.DialBagType(obj)
@@ -329,10 +257,6 @@ AssignModule.Assign = function(playerColor, zone, misc)
                 obj.destruct()
             end
         end
-    end
-
-    do
-        return
     end
 
     -- If some bags were not on the table, grab them from squad builder module
@@ -356,7 +280,7 @@ AssignModule.Assign = function(playerColor, zone, misc)
     for type,data in pairs(bagData) do
         data.bagRef.setPositionSmooth(bagPos)
         data.bagRef.unlock()
-        bagPos = BagPosStep(bagPos)
+        bagPos = Vect.Sum(bagPos, bagStep)
     end
 
     local scaleTable = {0.625, 0.525, 0.45}    -- Possible dial scales
@@ -400,7 +324,7 @@ AssignModule.Assign = function(playerColor, zone, misc)
     local shipRows = {}
     local rowScale = {}
     local maxRows = 1
-    if misc.extension then
+    if extension then
         maxRows = 2
     end
 
@@ -431,12 +355,12 @@ AssignModule.Assign = function(playerColor, zone, misc)
     end
 
     -- Adjust zone height to set amount of dial set rows, use extensions if neccesary
-    Zone.AdjustHeight(zone, #shipRows)
+    --Zone.AdjustHeight(zone, #shipRows)
     local zoneHeight = zone.getScale()[3]
-    if misc.extension and #shipRows > 1 then
-        Zone.Extend(misc.extension)
-    elseif misc.extension then
-        Zone.Retract(misc.extension)
+    if extension and #shipRows > 1 then
+        Zone.Extend(extension)
+    elseif extension then
+        Zone.Retract(extension)
     end
 
     -- Target (after assign) ship position and its step
@@ -463,6 +387,7 @@ AssignModule.Assign = function(playerColor, zone, misc)
             return Vect.Sum(pos, {rowData.widthSlack + setWidthScaled, 0, 0})
         end
 
+        local shipsInZone = Zone.GetObjects(zone, 'ship')
         -- Assignment for each ship in a row
         for shipNum, shipData in ipairs(rowData) do
             -- Take a dial set, layout, assign
@@ -470,14 +395,15 @@ AssignModule.Assign = function(playerColor, zone, misc)
             local newStack = bagData[shipData.shipType].bagRef.takeObject({position=setDest, rotation=setRot, callback='expandSet', callback_owner=self, params={ship = shipData.shipRef, scale = {rowData.scale, 1, rowData.scale}, unlock=zone}})
             newStack.setLuaScript(scriptSource.getLuaScript())
             setPos = SetStep(setPos)
-
             -- Move the ship with its tokens
-            local shipDest = Zone.LocalPos(zone, Vect.Sum(shipPos, {0, shipData.shipRef.getPosition()[2], 0}))
-            shipData.shipRef.setPositionSmooth(shipDest, false, true)
-            shipData.shipRef.setRotationSmooth(Vect.Sum(zone.getRotation(), {0, 180, 0}), false, true)
-            shipData.shipRef.highlightOn({0, 1, 0}, 1)
+            if table.find(shipsInZone, shipData.shipRef) then
+                local shipDest = Zone.LocalPos(zone, Vect.Sum(shipPos, {0, shipData.shipRef.getPosition()[2], 0}))
+                shipData.shipRef.setPositionSmooth(shipDest, false, true)
+                shipData.shipRef.setRotationSmooth(Vect.Sum(zone.getRotation(), {0, 180, 0}), false, true)
+                shipData.shipRef.highlightOn({0, 1, 0}, 1)
+                Global.call('API_QueueShipTokensMove', {ship = shipData.shipRef, noLock = true})
+            end
             shipPos = ShipStep(shipPos)
-            Global.call('API_QueueShipTokensMove', {ship = shipData.shipRef, noLock = true})
         end
     end
 

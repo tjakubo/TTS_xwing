@@ -3,9 +3,22 @@
 
 #include TTS_lib/ObjType/ObjType
 
+ObjType.AddType('dialBag', function(obj) return (obj.tag == 'Infinite') end)
+
 Layout = {}
 
-Layout.state = {
+#include TTS_xwing/src/Layouts/LayoutElements
+
+Layout.layouts = {}
+
+Layout.AddLayout = function(layoutTable)
+    table.insert(Layout.layouts, layoutTable)
+end
+
+#include TTS_xwing/src/Layouts/Standard
+#include TTS_xwing/src/Layouts/Epic
+
+state = {
     active = true,
     index = 1,
     dialZones = {}
@@ -24,8 +37,9 @@ Layout.NearGlobal = function(zone, pos)
 end
 
 Layout.extIndex = 1
-Layout.AddDialZone = function(zone, bPos)
-    Layout.state.dialZones[zone.getGUID()] = {bPos=bPos}
+Layout.AddDialZone = function(zone, bPos, sCent, sSize)
+    zone.clearButtons()
+    state.dialZones[zone.getGUID()] = {bPos, sCent, sSize}
     local extension = Layout.extensions[Layout.extIndex]
     local zoneColor = zone.getValue()
     local mainButton = {
@@ -39,12 +53,11 @@ Layout.AddDialZone = function(zone, bPos)
        font_size = 400,
        color = stringColorToRGB(zoneColor)
     }
+    mainButton.position[2] = -0.375
 
     _G['Assign' .. zoneColor] = function(_, playerColor)
-        Layout.quickAssignModule.call('API_AssignDials', {playerColor, zone, {
-            extension = extension,
-            bPos = Layout.NearGlobal(zone, bPos),
-        }})
+        local playerStuff = ObjType.GetBoxOfType(sCent, {0, 0, 0}, sSize, 'dialBag')
+        Layout.quickAssignModule.call('API_AssignDials', {playerColor, zone, Layout.NearGlobal(zone, bPos), extension, playerStuff})
     end
     extension.call('FitToZone', {zone = zone})
     mainButton.click_function = 'Assign' .. zoneColor
@@ -54,9 +67,13 @@ end
 
 Layout.required = {}
 function onObjectDestroyed(obj)
-    if Layout.required[obj] then
+    if state.active and Layout.required[obj] then
         broadcastToAll('An object that was part of layout system was destroyed, disabling layouts', {1, 0.4, 0})
-        Layout.state.active = false
+        state.active = false
+    end
+    if state.dialZones[obj.getGUID()] then
+        state.dialZones[obj.getGUID()] = nil
+        SaveState()
     end
 end
 Layout.RequireFromGUID = function(guid)
@@ -81,207 +98,7 @@ Layout.GetTableRef = function()
     end
     error('Layout.GetTableRef: No surface found')
 end
-Layout.FillElements = function()
-    if Layout.state.active then
-        Layout.elements = {
-            ['TFA Damage Decks']     = Layout.RequireFromGUID('b3ae5f'),
-            ['Old Damage Decks']     = Layout.RequireFromGUID('25ca2f'),
-            ['Tractor Beam']        = Layout.RequireFromGUID('5d033f'),
-            ['Reinforce']           = Layout.RequireFromGUID('25aa13'),
-            ['Ion']                 = Layout.RequireFromGUID('799a75'),
-            ['Stress']              = Layout.RequireFromGUID('a25e12'),
-            ['Evade']               = Layout.RequireFromGUID('4a352e'),
-            ['X-Wing Attack Die']   = Layout.RequireFromGUID('8a49f4'),
-            ['X-Wing Defense Die']  = Layout.RequireFromGUID('edbe72'),
-            ['Target Locks B']      = Layout.RequireFromGUID('2b8599'),
-            ['Target Locks A']      = Layout.RequireFromGUID('c81580'),
-            ['Focus']               = Layout.RequireFromGUID('beca0f'),
-            ['Shield']              = Layout.RequireFromGUID('930152'),
-            ['Critical Hit']        = Layout.RequireFromGUID('5fd219'),
-            ['Cloak']               = Layout.RequireFromGUID('ce3a99'),
-            ['Extra Munitions']     = Layout.RequireFromGUID('ca5ecb'),
-            ['Weapon Disabled']     = Layout.RequireFromGUID('f6e1a3'),
-            ['All mines tokens']    = Layout.RequireFromGUID('a9592f'),
-            ['Bomb drop tokens']    = Layout.RequireFromGUID('83a525'),
-            ['All bomb tokens']     = Layout.RequireFromGUID('093d29'),
-            ['1 Straight Templates']    = Layout.RequireFromGUID('67007b'),
-            ['2 Straight Templates']    = Layout.RequireFromGUID('e91425'),
-            ['3 Straight Templates']    = Layout.RequireFromGUID('388099'),
-            ['4 Straight Templates']    = Layout.RequireFromGUID('2eae8a'),
-            ['5 Straight Templates']    = Layout.RequireFromGUID('048bcd'),
-            ['1 Bank Templates']        = Layout.RequireFromGUID('144999'),
-            ['2 Bank Templates']        = Layout.RequireFromGUID('b7c8dc'),
-            ['3 Bank Templates']        = Layout.RequireFromGUID('cd656b'),
-            ['1 Turn Templates']        = Layout.RequireFromGUID('aa6042'),
-            ['2 Turn Templates']        = Layout.RequireFromGUID('7c189e'),
-            ['3 Turn Templates']        = Layout.RequireFromGUID('468b10'),
-            ['Range 1 Rulers']          = Layout.RequireFromGUID('f76650'),
-            ['Range 1-2 Rulers']        = Layout.RequireFromGUID('3d8f45'),
-            ['Range 1-3 Rulers']        = Layout.RequireFromGUID('c1cb74'),
-            ['Core Set Asteroids']      = Layout.RequireFromGUID('521a6a'),
-            ['TFA Set Asteroids']       = Layout.RequireFromGUID('3bac58'),
-            ['Debris Fields']           = Layout.RequireFromGUID('065d51'),
-            ['1 Straight Templates 2'] = Layout.RequireFromGUID('e8a183'),
-            ['2 Straight Templates 2'] = Layout.RequireFromGUID('7ce107'),
-            ['3 Straight Templates 2'] = Layout.RequireFromGUID('7ae643'),
-            ['4 Straight Templates 2'] = Layout.RequireFromGUID('ab10d9'),
-            ['5 Straight Templates 2'] = Layout.RequireFromGUID('45cf5e'),
-            ['1 Bank Templates 2']     = Layout.RequireFromGUID('317c48'),
-            ['2 Bank Templates 2']     = Layout.RequireFromGUID('ac38e2'),
-            ['3 Bank Templates 2']     = Layout.RequireFromGUID('815226'),
-            ['1 Turn Templates 2']     = Layout.RequireFromGUID('20c078'),
-            ['2 Turn Templates 2']     = Layout.RequireFromGUID('88cd23'),
-            ['3 Turn Templates 2']     = Layout.RequireFromGUID('515014'),
-            ['Core Set Asteroids 2']   = Layout.RequireFromGUID('017cb0'),
-            ['TFA Set Asteroids 2']    = Layout.RequireFromGUID('81237d'),
-            ['Debris Fields 2']        = Layout.RequireFromGUID('f8cfdf'),
-            ['Range 1 Rulers 2']       = Layout.RequireFromGUID('3d6edc'),
-            ['Range 1-2 Rulers 2']     = Layout.RequireFromGUID('a73d7c'),
-            ['Range 1-3 Rulers 2']     = Layout.RequireFromGUID('d2e315'),
-            ['Deck Holder 1'] = Layout.RequireFromGUID('16e138'),
-            ['Deck Holder 2'] = Layout.RequireFromGUID('d43c5c'),
-            ['Deck Holder 3'] = Layout.RequireFromGUID('37932a'),
-            ['Deck Holder 4'] = Layout.RequireFromGUID('252512'),
-        }
-        Layout.zones = {
-            Layout.RequireFromGUID('e98955'),
-            Layout.RequireFromGUID('d1b5ee'),
-            Layout.RequireFromGUID('909930'),
-            Layout.RequireFromGUID('e72909'),
-        }
-    end
-    Layout.extensions = {
-        Layout.RequireFromGUID('b5f9c9'),
-        Layout.RequireFromGUID('e76836'),
-        Layout.RequireFromGUID('c9a7f6'),
-        Layout.RequireFromGUID('5a92c4'),
-    }
-    Layout.quickAssignModule = Layout.RequireFromGUID('626772')
-end
 
-Layout.layouts = {}
-
-Layout.AddLayout = function(layoutTable)
-    table.insert(Layout.layouts, layoutTable)
-end
-
-do
-    local standard = {}
-    standard.name = 'Standard'
-    standard.tableImage = 'http://i.imgur.com/7w2BdHW.png'
-    standard.elements = {
-        ['TFA Damage Decks']     = { pos = {-2.10, 1.11, -18.00}, rot = {0.00, 315.00, 0.00},  scale = {1.50, 1.50, 1.50} },
-        ['Old Damage Decks']     = { pos = {2.10, 1.11, -18.00},  rot = {0.00, 315.00, 0.00},  scale = {1.50, 1.50, 1.50} },
-        ['Tractor Beam']        = { pos = {0.00, 1.09, -16.00},  rot = {0.00, 90.00, 0.00},   scale = {1.00, 1.00, 1.00} },
-        ['Reinforce']           = { pos = {0.00, 1.05, -13.70},  rot = {0.00, 90.00, 0.00},   scale = {0.87, 0.87, 0.87} },
-        ['Ion']                 = { pos = {0.00, 1.09, -11.00},  rot = {0.00, 270.00, 0.00},  scale = {1.25, 1.25, 1.25} },
-        ['Stress']              = { pos = {0.00, 0.99, -7.50},   rot = {0.00, 270.00, 0.00},  scale = {1.25, 1.25, 1.25} },
-        ['Evade']               = { pos = {0.00, 1.09, -4.50},   rot = {0.00, 0.00, 0.00},    scale = {1.25, 1.25, 1.25} },
-        ['X-Wing Attack Die']   = { pos = {0.00, 2.00, -1.50},   rot = {0.00, 45.00, 0.00},   scale = {3.00, 3.00, 3.00} },
-        ['X-Wing Defense Die']  = { pos = {0.00, 2.00, 1.50},    rot = {0.00, 225.00, 0.00},  scale = {3.00, 3.00, 3.00} },
-        ['Target Locks B']      = { pos = {-2.50, 1.00, 0.00},   rot = {0.00, 90.00, 0.00},   scale = {0.88, 0.88, 0.88} },
-        ['Target Locks A']      = { pos = {2.50, 1.09, 0.00},    rot = {0.00, 90.00, 180.00}, scale = {0.88, 0.88, 0.88} },
-        ['Focus']               = { pos = {0.00, 1.09, 4.50},    rot = {0.00, 270.00, 0.00},  scale = {1.25, 1.25, 1.25} },
-        ['Shield']              = { pos = {0.00, 1.09, 7.60},    rot = {0.00, 0.00, 0.00},    scale = {1.20, 1.20, 1.20} },
-        ['Critical Hit']        = { pos = {0.00, 1.09, 10.80},   rot = {0.00, 90.00, 0.00},   scale = {1.25, 1.25, 1.25} },
-        ['Cloak']               = { pos = {0.25, 1.05, 13.75},   rot = {0.00, 270.00, 0.00},  scale = {1.00, 1.00, 1.00} },
-        ['Extra Munitions']     = { pos = {1.20, 1.02, 16.20},   rot = {0.00, 90.00, 0.00},   scale = {0.60, 0.60, 0.60} },
-        ['Weapon Disabled']     = { pos = {-1.00, 1.02, 16.20},  rot = {0.00, 0.00, 0.00},    scale = {0.60, 0.60, 0.60} },
-        ['All mines tokens']    = { pos = {2.20, 0.96, 18.40},   rot = {0.00, 90.00, 0.00},   scale = {0.25, 0.25, 0.25} },
-        ['Bomb drop tokens']    = { pos = {0.00, 1.00, 18.28},   rot = {0.00, 0.00, 0.00},    scale = {0.58, 0.58, 0.58} },
-        ['All bomb tokens']     = { pos = {-2.00, 0.96, 18.40},  rot = {0.00, 90.00, 0.00},   scale = {0.40, 0.40, 0.40} },
-        ['1 Straight Templates']    = { pos = {-39.00, 0.96, -2.25}, rot = {0.00, 180.00, 0.00}, scale = {3.63, 3.63, 3.63} },
-        ['2 Straight Templates']    = { pos = {-41.00, 0.96, -3.00}, rot = {0.00, 0.00, 0.00},   scale = {3.63, 3.63, 3.63} },
-        ['3 Straight Templates']    = { pos = {-39.00, 0.96, 0.80},  rot = {0.00, 0.00, 0.00},   scale = {3.63, 3.63, 3.63} },
-        ['4 Straight Templates']    = { pos = {-41.00, 0.96, 1.50},  rot = {0.00, 0.00, 0.00},   scale = {3.63, 3.63, 3.63} },
-        ['5 Straight Templates']    = { pos = {-40.00, 0.96, 0.00},  rot = {0.00, 0.00, 0.00},   scale = {3.63, 3.63, 3.63} },
-        ['1 Bank Templates']        = { pos = {-39.50, 1.05, -7.50}, rot = {0.00, 270.00, 0.00}, scale = {3.63, 3.63, 3.63} },
-        ['2 Bank Templates']        = { pos = {-40.12, 1.05, -8.50}, rot = {0.00, 270.00, 0.00}, scale = {3.63, 3.63, 3.63} },
-        ['3 Bank Templates']        = { pos = {-40.75, 1.05, -9.50}, rot = {0.00, 270.00, 0.00}, scale = {3.63, 3.63, 3.63} },
-        ['1 Turn Templates']        = { pos = {-39.20, 0.96, 7.50},  rot = {0.00, 0.00, 0.00},   scale = {3.63, 3.63, 3.63} },
-        ['2 Turn Templates']        = { pos = {-39.70, 1.00, 8.50},  rot = {0.00, 0.00, 0.00},   scale = {3.63, 3.63, 3.63} },
-        ['3 Turn Templates']        = { pos = {-40.20, 0.96, 9.50},  rot = {0.00, 0.00, 0.00},   scale = {3.63, 3.63, 3.63} },
-        ['Core Set Asteroids']      = { pos = {-46.00, 0.99, -4.00}, rot = {0.00, 0.00, 0.00},   scale = {0.38, 0.53, 0.38} },
-        ['TFA Set Asteroids']       = { pos = {-46.00, 0.97, 0.00},  rot = {0.00, 0.00, 0.00},   scale = {0.38, 1.65, 0.38} },
-        ['Debris Fields']           = { pos = {-46.00, -0.27, 4.00}, rot = {0.00, 0.00, 0.00},   scale = {0.50, 1.90, 0.50} },
-        ['Range 1 Rulers']             = { pos = {-43.00, 1.00, -4.10}, rot = {0.00, 269.99, 0.00}, scale = {0.63, 0.63, 0.63} },
-        ['Range 1-2 Rulers']             = { pos = {-43.00, 1.00, 2.40}, rot = {0.00, 270.01, 180.00}, scale = {0.63, 0.63, 0.63} },
-        ['Range 1-3 Rulers']             = { pos = {-42.00, 1.00, 0.00}, rot = {0.00, 90.00, 0.00}, scale = {0.63, 0.63, 0.63} },
-        ['1 Straight Templates 2']  = { pos = {39.00, 0.97, 2.25},   rot = {0.00, 180.00, 0.00}, scale = {3.63, 3.63, 3.63} },
-        ['2 Straight Templates 2']  = { pos = {41.00, 0.97, -3.00},  rot = {0.00, 0.00, 0.00},   scale = {3.63, 3.63, 3.63} },
-        ['3 Straight Templates 2']  = { pos = {39.00, 0.97, -0.80},  rot = {0.00, 0.00, 0.00},   scale = {3.63, 3.63, 3.63} },
-        ['4 Straight Templates 2']  = { pos = {41.00, 0.97, 1.50},   rot = {0.00, 0.00, 0.00},   scale = {3.63, 3.63, 3.63} },
-        ['5 Straight Templates 2']  = { pos = {40.00, 0.97, 0.00},   rot = {0.00, 0.00, 0.00},   scale = {3.63, 3.63, 3.63} },
-        ['1 Bank Templates 2']      = { pos = {39.50, 1.06, -7.50},  rot = {0.00, 225.00, 0.00}, scale = {3.63, 3.63, 3.63} },
-        ['2 Bank Templates 2']      = { pos = {40.12, 1.06, -8.50},  rot = {0.00, 225.00, 0.00}, scale = {3.63, 3.63, 3.63} },
-        ['3 Bank Templates 2']      = { pos = {40.75, 1.06, -9.50},  rot = {0.00, 225.00, 0.00}, scale = {3.63, 3.63, 3.63} },
-        ['1 Turn Templates 2']      = { pos = {39.20, 0.96, 7.50},   rot = {0.00, 90.00, 0.00},  scale = {3.63, 3.63, 3.63} },
-        ['2 Turn Templates 2']      = { pos = {39.70, 0.98, 8.50},   rot = {0.00, 90.00, 0.00},  scale = {3.63, 3.63, 3.63} },
-        ['3 Turn Templates 2']      = { pos = {40.20, 0.97, 9.50},   rot = {0.00, 90.00, 0.00},  scale = {3.63, 3.63, 3.63} },
-        ['Core Set Asteroids 2']    = { pos = {46.00, 0.98, 4.00},   rot = {0.00, 180.00, 0.00}, scale = {0.38, 0.53, 0.38} },
-        ['TFA Set Asteroids 2']     = { pos = {46.00, 0.96, 0.00},   rot = {0.00, 180.00, 0.00}, scale = {0.38, 1.65, 0.38} },
-        ['Debris Fields 2']         = { pos = {46.00, -0.28, -4.00}, rot = {0.00, 180.00, 0.00}, scale = {0.50, 1.90, 0.50} },
-        ['Range 1 Rulers 2']             = { pos = {43.00, 1.00, 4.10}, rot = {0.00, 270.00, 180.00}, scale = {0.63, 0.63, 0.63} },
-        ['Range 1-2 Rulers 2']             = { pos = {43.00, 1.00, -2.40}, rot = {0.00, 270.01, 0.00}, scale = {0.63, 0.63, 0.63} },
-        ['Range 1-3 Rulers 2']             = { pos = {42.00, 1.00, 0.00}, rot = {0.00, 270.00, 180.00}, scale = {0.63, 0.63, 0.63} },
-        ['Deck Holder 1']   = { pos = {-40.00, 0.90, -15.00}, rot = {0.00, 0.00, 0.00}, scale = {0.65, 0.65, 0.65}},
-        ['Deck Holder 2']   = { pos = {-40.00, 0.90, 15.00}, rot = {0.00, 180.00, 0.00}, scale = {0.65, 0.65, 0.65}},
-        ['Deck Holder 3']   = { pos = {40.00, 0.90, 15.00}, rot = {0.00, 180.00, 0.00}, scale = {0.65, 0.65, 0.65}},
-        ['Deck Holder 4']   = { pos = {40.00, 0.90, -15.00}, rot = {0.00, 0.00, 0.00}, scale = {0.65, 0.65, 0.65}},
-    }
-    local assignOffset  = {-5, 1, 2}
-    local zonePos       = {22.5, 2.5, -32}
-    local zoneScale     = {44.9, 4, 12}
-    local function left(data)
-        return Vect.ScaleEach(data, {-1, 1, 1})
-    end
-    local function opposite(data)
-        return Vect.ScaleEach(data, {1, 1, -1})
-    end
-    standard.zoneData = {
-        {   color = 'Red',
-            pos = left(zonePos),
-            rot = {0, 0, 0},
-            scale = zoneScale,
-            bPos = left(assignOffset) },
-
-        {   color = 'Green',
-            pos = left(opposite(zonePos)),
-            rot = {0, 180, 0},
-            scale = zoneScale,
-            bPos = assignOffset },
-
-        {   color = 'Blue',
-            pos = opposite(zonePos),
-            rot = {0, 180, 0},
-            scale = zoneScale,
-            bPos = left(assignOffset) },
-
-        {   color = 'Teal',
-            pos = zonePos,
-            rot = {0, 0, 0},
-            scale = zoneScale,
-            bPos = assignOffset },
-    }
-    standard.hands = {
-        ['Red']     = { pos = {-22.50, 5.00, -40.00}, rot = {0.00, 0.00, 0.00}, scale = {5.00, 5.00, 1.00} },
-        ['Green']   = { pos = {-22.50, 5.00, 40.00}, rot = {0.00, 180.00, 0.00}, scale = {5.00, 5.00, 1.00} },
-        ['Blue']    = { pos = {22.50, 5.00, 40.00}, rot = {0.00, 180.00, 0.00}, scale = {5.00, 5.00, 1.00} },
-        ['Teal']    = { pos = {22.50, 5.00, -40.00}, rot = {0.00, 0.00, 0.00}, scale = {5.00, 5.00, 1.00} },
-        ['Purple']  = { pos = {-50.00, 5.00, -15.00}, rot = {0.00, 90.28, 0.00}, scale = {5.00, 5.00, 1.00} },
-        ['Orange']  = { pos = {-52.00, 5.00, 0.00}, rot = {0.00, 90.00, 0.00}, scale = {5.01, 5.00, 1.00} },
-        ['Yellow']  = { pos = {-50.00, 5.00, 15.00}, rot = {0.00, 90.00, 0.00}, scale = {5.01, 5.00, 1.00} },
-        ['Brown']   = { pos = {50.00, 5.00, 15.00}, rot = {0.00, 270.00, 0.00}, scale = {5.01, 5.00, 1.00} },
-        ['Pink']    = { pos = {52.00, 5.00, 0.00}, rot = {0.00, 270.00, 0.00}, scale = {5.01, 5.00, 1.00} },
-        ['White']   = { pos = {50.00, 5.00, -15.00}, rot = {0.00, 270.00, 0.00}, scale = {5.01, 5.00, 1.00} },
-    }
-    standard.mats = {
-        ['Green-Red'] = { pos = {-20.5142, -0.17, 0.00}, rot = {0.00, 180.00, 0.00}, scale = {1.225, 1.2, 1.225}, int = false },
-        ['Teal-Blue'] = { pos = {20.5142, -0.17, 0.00}, rot = {0.00, 180.00, 0.00}, scale = {1.225, 1.2, 1.225}, int = false },
-    }
-
-    Layout.AddLayout(standard)
-end
 
 Layout.Hide = function(obj)
     obj.highlightOff()
@@ -298,7 +115,8 @@ end
 
 Layout.Put = function(obj, data)
     obj.lock()
-    local int = data.int or true
+    local int = data.int
+    if int == nil then int = true end
     obj.interactable = int
     obj.tooltip = int
     obj.setPositionSmooth(data.pos, false, true)
@@ -328,10 +146,11 @@ Layout.GetMats = function()
 end
 
 Layout.Switch = function(newIndex)
-    if not Layout.state.active then
+    if not state.active then
         broadcastToAll('Layout system disabled', {1, 0.2, 0})
         return
     end
+    table.print(Layout.layouts)
     local lay = Layout.layouts[newIndex]
     print('Switch to ' .. lay.name)
     local tabRef = Layout.GetTableRef()
@@ -352,12 +171,16 @@ Layout.Switch = function(newIndex)
     end
 
     Layout.extIndex = 1
-
+    state.dialZones = {}
     for k,data in pairs(lay.zoneData) do
         local zone = Layout.zones[k]
         zone.setValue(data.color)
         Layout.Put(zone, data)
-        Layout.AddDialZone(zone, data.bPos)
+        Layout.AddDialZone(zone, data.bPos, data.sCent, data.sSize)
+    end
+    for k=#lay.zoneData+1,#Layout.zones do
+        Layout.zones[k].clearButtons()
+        Layout.Hide(Layout.zones[k])
     end
 
     local matData = Layout.GetMats()
@@ -390,7 +213,8 @@ Layout.Switch = function(newIndex)
         return 1
     end
     startLuaCoroutine(self, 'setHandsDelayed')
-    Layout.state.index = newIndex
+    state.index = newIndex
+    SaveState()
 end
 
 function onChat(message, player)
@@ -409,12 +233,19 @@ end
 
 
 function onLoad(saveState)
-
-    --[[if saveState and saveState ~= '' then
-        local loadedState = JSON.decode(saveState)
-        Layout.Switch(loadedState.index)
-    end]]--
+    print('load[['..saveState..']]')
+    local load = JSON.decode(saveState)
+    state.active = load.active
+    state.index = load.index
     Layout.FillElements()
+    for guid,data in pairs(load.dialZones) do
+        local zone = getObjectFromGUID(guid)
+        if zone then
+            print('Restore ' .. zone.getValue())
+            Layout.AddDialZone(zone, table.unpack(data))
+        end
+    end
+
     local sPos = self.getPosition()
     self.setPosition({sPos[1], 0, sPos[3]})
     self.interactable = false
@@ -423,218 +254,9 @@ function onLoad(saveState)
 end
 
 function onSave()
-    return JSON.encode(Layout.state)
+    return JSON.encode(state)
 end
 
---[[
-elements = {
-    ['TFA Damage Deck']     = { pos = {17.95, 1.11, 19.00},  rot = {0.00, 225.00, 0.00}, scale = {1.50, 1.50, 1.50} },
-    ['Old Damage Deck']     = { pos = {17.88, 1.11, 24.00},  rot = {0.00, 225.00, 0.00}, scale = {1.50, 1.50, 1.50} },
-    ['Tractor Beam']        = { pos = {15.91, 1.09, 21.50},  rot = {0.00, 0.00, 0.00},   scale = {1.00, 1.00, 1.00} },
-    ['Reinforce']           = { pos = {13.61, 1.05, 21.50},  rot = {0.00, 0.00, 0.00},   scale = {0.87, 0.87, 0.87} },
-    ['Ion']                 = { pos = {10.92, 1.05, 21.50},  rot = {0.00, 180.00, 0.00}, scale = {1.25, 1.25, 1.25} },
-    ['Stress']              = { pos = {7.42, 0.99, 21.50},   rot = {0.00, 180.00, 0.00}, scale = {1.25, 1.25, 1.25} },
-    ['Evade']               = { pos = {4.42, 1.09, 21.50},   rot = {0.00, 270.00, 0.00}, scale = {1.25, 1.25, 1.25} },
-    ['X-Wing Attack Die']   = { pos = {1.42, 2.00, 21.50},   rot = {0.00, 315.00, 0.00}, scale = {3.00, 3.00, 3.00} },
-    ['X-Wing Defense Die']  = { pos = {-1.58, 2.00, 21.50},  rot = {0.00, 135.00, 0.00}, scale = {3.00, 3.00, 3.00} },
-    ['Target Locks B']      = { pos = {-0.04, 1.00, 19.00},  rot = {0.00, 0.00, 0.00},   scale = {0.88, 0.88, 0.88} },
-    ['Target Locks A']      = { pos = {-0.13, 1.09, 24.00},  rot = {0.00, 0.00, 180.00}, scale = {0.88, 0.88, 0.88} },
-    ['Focus']               = { pos = {-4.58, 1.09, 21.50},  rot = {0.00, 180.00, 0.00}, scale = {1.25, 1.25, 1.25} },
-    ['Shield']              = { pos = {-7.68, 1.09, 21.50},  rot = {0.00, 270.00, 0.00}, scale = {1.20, 1.20, 1.20} },
-    ['Critical Hit']        = { pos = {-10.88, 1.09, 21.50}, rot = {0.00, 0.00, 0.00},   scale = {1.25, 1.25, 1.25} },
-    ['Cloak']               = { pos = {-13.84, 1.05, 21.70}, rot = {0.00, 180.00, 0.00}, scale = {1.00, 1.00, 1.00} },
-    ['Extra Munitions']     = { pos = {-16.30, 1.02, 22.50}, rot = {0.00, 0.00, 0.00},   scale = {0.60, 0.60, 0.60} },
-    ['Weapon Disabled']     = { pos = {-16.26, 1.02, 20.50}, rot = {0.00, 270.00, 0.00}, scale = {0.60, 0.60, 0.60} },
-    ['All mines tokens']    = { pos = {-18.52, 0.96, 23.50}, rot = {0.00, 0.00, 0.00},   scale = {0.25, 0.25, 0.25} },
-    ['Bomb drop tokens']    = { pos = {-18.36, 1.00, 21.50}, rot = {0.00, 270.00, 0.00}, scale = {0.58, 0.58, 0.58} },
-    ['All bomb tokens']     = { pos = {-18.45, 0.96, 19.50}, rot = {0.00, 0.00, 0.00},   scale = {0.40, 0.40, 0.40} },
-    ['1 Straight Templates']    = { pos = {2.28, 0.96, -18.99}, rot = {0.00, 89.99, 0.00}, scale = {3.63, 3.63, 3.63} },
-    ['2 Straight Templates']    = { pos = {3.03, 0.96, -20.99}, rot = {0.00, 269.99, 0.00}, scale = {3.63, 3.63, 3.63} },
-    ['3 Straight Templates']    = { pos = {-0.77, 0.96, -18.99}, rot = {0.00, 269.99, 0.00}, scale = {3.63, 3.63, 3.63} },
-    ['4 Straight Templates']    = { pos = {-1.47, 0.96, -20.99}, rot = {0.00, 269.99, 0.00}, scale = {3.63, 3.63, 3.63} },
-    ['5 Straight Templates']    = { pos = {0.03, 0.96, -19.99}, rot = {0.00, 269.99, 0.00}, scale = {3.63, 3.63, 3.63} },
-    ['1 Bank Templates']        = { pos = {7.53, 1.05, -19.49}, rot = {0.00, 179.99, 0.00}, scale = {3.63, 3.63, 3.63} },
-    ['2 Bank Templates']        = { pos = {8.53, 1.05, -20.11}, rot = {0.00, 179.99, 0.00}, scale = {3.63, 3.63, 3.63} },
-    ['3 Bank Templates']        = { pos = {9.53, 1.05, -20.74}, rot = {0.00, 180.00, 0.00}, scale = {3.63, 3.63, 3.63} },
-    ['1 Turn Templates']        = { pos = {-7.47, 0.96, -19.19}, rot = {359.08, 270.01, 359.02}, scale = {3.63, 3.63, 3.63} },
-    ['2 Turn Templates']        = { pos = {-8.47, 0.96, -19.69}, rot = {359.99, 270.00, 359.99}, scale = {3.63, 3.63, 3.63} },
-    ['3 Turn Templates']        = { pos = {-9.47, 1.03, -20.19}, rot = {3.09, 270.05, 2.19}, scale = {3.63, 3.63, 3.63} },
-    ['Core Set Asteroids']      = { pos = {4.03, 0.98, -27.51}, rot = {0.00, 269.99, 0.00}, scale = {0.38, 0.53, 0.38} },
-    ['TFA Set Asteroids']       = { pos = {0.03, 0.96, -27.51}, rot = {0.00, 270.00, 0.00}, scale = {0.38, 1.65, 0.38} },
-    ['Debris Fields']           = { pos = {-3.97, -0.28, -27.51}, rot = {0.00, 270.00, 0.00}, scale = {0.50, 1.90, 0.50} },
-    ['Range 1 Rulers']          = { pos = {-4.10, 1.00, -23.25}, rot = {0.00, 359.98, 0.00}, scale = {0.63, 0.63, 0.63} },
-    ['Range 1-2 Rulers']        = { pos = {2.40, 1.00, -23.25}, rot = {0.00, 0.00, 180.00}, scale = {0.63, 0.63, 0.63} },
-    ['Range 1-3 Rulers']        = { pos = {0.00, 1.00, -24.25}, rot = {0.00, 179.99, 0.00}, scale = {0.63, 0.63, 0.63} },
-
-    --[[{
-        name = 'Standard',
-        tableImage = 'http://i.imgur.com/7w2BdHW.png',
-        elements = {
-            ['TFA Damage Decks']     = { pos = {-2.10, 1.11, -18.00}, rot = {0.00, 315.00, 0.00},  scale = {1.50, 1.50, 1.50} },
-            ['Old Damage Decks']     = { pos = {2.10, 1.11, -18.00},  rot = {0.00, 315.00, 0.00},  scale = {1.50, 1.50, 1.50} },
-            ['Tractor Beam']        = { pos = {0.00, 1.09, -16.00},  rot = {0.00, 90.00, 0.00},   scale = {1.00, 1.00, 1.00} },
-            ['Reinforce']           = { pos = {0.00, 1.05, -13.70},  rot = {0.00, 90.00, 0.00},   scale = {0.87, 0.87, 0.87} },
-            ['Ion']                 = { pos = {0.00, 1.09, -11.00},  rot = {0.00, 270.00, 0.00},  scale = {1.25, 1.25, 1.25} },
-            ['Stress']              = { pos = {0.00, 0.99, -7.50},   rot = {0.00, 270.00, 0.00},  scale = {1.25, 1.25, 1.25} },
-            ['Evade']               = { pos = {0.00, 1.09, -4.50},   rot = {0.00, 0.00, 0.00},    scale = {1.25, 1.25, 1.25} },
-            ['X-Wing Attack Die']   = { pos = {0.00, 2.00, -1.50},   rot = {0.00, 45.00, 0.00},   scale = {3.00, 3.00, 3.00} },
-            ['X-Wing Defense Die']  = { pos = {0.00, 2.00, 1.50},    rot = {0.00, 225.00, 0.00},  scale = {3.00, 3.00, 3.00} },
-            ['Target Locks B']      = { pos = {-2.50, 1.00, 0.00},   rot = {0.00, 90.00, 0.00},   scale = {0.88, 0.88, 0.88} },
-            ['Target Locks A']      = { pos = {2.50, 1.09, 0.00},    rot = {0.00, 90.00, 180.00}, scale = {0.88, 0.88, 0.88} },
-            ['Focus']               = { pos = {0.00, 1.09, 4.50},    rot = {0.00, 270.00, 0.00},  scale = {1.25, 1.25, 1.25} },
-            ['Shield']              = { pos = {0.00, 1.09, 7.60},    rot = {0.00, 0.00, 0.00},    scale = {1.20, 1.20, 1.20} },
-            ['Critical Hit']        = { pos = {0.00, 1.09, 10.80},   rot = {0.00, 90.00, 0.00},   scale = {1.25, 1.25, 1.25} },
-            ['Cloak']               = { pos = {0.25, 1.05, 13.75},   rot = {0.00, 270.00, 0.00},  scale = {1.00, 1.00, 1.00} },
-            ['Extra Munitions']     = { pos = {1.20, 1.02, 16.20},   rot = {0.00, 90.00, 0.00},   scale = {0.60, 0.60, 0.60} },
-            ['Weapon Disabled']     = { pos = {-1.00, 1.02, 16.20},  rot = {0.00, 0.00, 0.00},    scale = {0.60, 0.60, 0.60} },
-            ['All mines tokens']    = { pos = {2.20, 0.96, 18.40},   rot = {0.00, 90.00, 0.00},   scale = {0.25, 0.25, 0.25} },
-            ['Bomb drop tokens']    = { pos = {0.00, 1.00, 18.28},   rot = {0.00, 0.00, 0.00},    scale = {0.58, 0.58, 0.58} },
-            ['All bomb tokens']     = { pos = {-2.00, 0.96, 18.40},  rot = {0.00, 90.00, 0.00},   scale = {0.40, 0.40, 0.40} },
-            ['1 Straight Templates']    = { pos = {-39.00, 0.96, -2.25}, rot = {0.00, 180.00, 0.00}, scale = {3.63, 3.63, 3.63} },
-            ['2 Straight Templates']    = { pos = {-41.00, 0.96, -3.00}, rot = {0.00, 0.00, 0.00},   scale = {3.63, 3.63, 3.63} },
-            ['3 Straight Templates']    = { pos = {-39.00, 0.96, 0.80},  rot = {0.00, 0.00, 0.00},   scale = {3.63, 3.63, 3.63} },
-            ['4 Straight Templates']    = { pos = {-41.00, 0.96, 1.50},  rot = {0.00, 0.00, 0.00},   scale = {3.63, 3.63, 3.63} },
-            ['5 Straight Templates']    = { pos = {-40.00, 0.96, 0.00},  rot = {0.00, 0.00, 0.00},   scale = {3.63, 3.63, 3.63} },
-            ['1 Bank Templates']        = { pos = {-39.50, 1.05, -7.50}, rot = {0.00, 270.00, 0.00}, scale = {3.63, 3.63, 3.63} },
-            ['2 Bank Templates']        = { pos = {-40.12, 1.05, -8.50}, rot = {0.00, 270.00, 0.00}, scale = {3.63, 3.63, 3.63} },
-            ['3 Bank Templates']        = { pos = {-40.75, 1.05, -9.50}, rot = {0.00, 270.00, 0.00}, scale = {3.63, 3.63, 3.63} },
-            ['1 Turn Templates']        = { pos = {-39.20, 0.96, 7.50},  rot = {0.00, 0.00, 0.00},   scale = {3.63, 3.63, 3.63} },
-            ['2 Turn Templates']        = { pos = {-39.70, 1.00, 8.50},  rot = {0.00, 0.00, 0.00},   scale = {3.63, 3.63, 3.63} },
-            ['3 Turn Templates']        = { pos = {-40.20, 0.96, 9.50},  rot = {0.00, 0.00, 0.00},   scale = {3.63, 3.63, 3.63} },
-            ['Core Set Asteroids']      = { pos = {-46.00, 0.99, -4.00}, rot = {0.00, 0.00, 0.00},   scale = {0.38, 0.53, 0.38} },
-            ['TFA Set Asteroids']       = { pos = {-46.00, 0.97, 0.00},  rot = {0.00, 0.00, 0.00},   scale = {0.38, 1.65, 0.38} },
-            ['Debris Fields']           = { pos = {-46.00, -0.27, 4.00}, rot = {0.00, 0.00, 0.00},   scale = {0.50, 1.90, 0.50} },
-            ['Range 1 Rulers']             = { pos = {-43.00, 1.00, -4.10}, rot = {0.00, 269.99, 0.00}, scale = {0.63, 0.63, 0.63} },
-            ['Range 1-2 Rulers']             = { pos = {-43.00, 1.00, 2.40}, rot = {0.00, 270.01, 180.00}, scale = {0.63, 0.63, 0.63} },
-            ['Range 1-3 Rulers']             = { pos = {-42.00, 1.00, 0.00}, rot = {0.00, 90.00, 0.00}, scale = {0.63, 0.63, 0.63} },
-            ['1 Straight Templates 2']  = { pos = {39.00, 0.97, 2.25},   rot = {0.00, 180.00, 0.00}, scale = {3.63, 3.63, 3.63} },
-            ['2 Straight Templates 2']  = { pos = {41.00, 0.97, -3.00},  rot = {0.00, 0.00, 0.00},   scale = {3.63, 3.63, 3.63} },
-            ['3 Straight Templates 2']  = { pos = {39.00, 0.97, -0.80},  rot = {0.00, 0.00, 0.00},   scale = {3.63, 3.63, 3.63} },
-            ['4 Straight Templates 2']  = { pos = {41.00, 0.97, 1.50},   rot = {0.00, 0.00, 0.00},   scale = {3.63, 3.63, 3.63} },
-            ['5 Straight Templates 2']  = { pos = {40.00, 0.97, 0.00},   rot = {0.00, 0.00, 0.00},   scale = {3.63, 3.63, 3.63} },
-            ['1 Bank Templates 2']      = { pos = {39.50, 1.06, -7.50},  rot = {0.00, 225.00, 0.00}, scale = {3.63, 3.63, 3.63} },
-            ['2 Bank Templates 2']      = { pos = {40.12, 1.06, -8.50},  rot = {0.00, 225.00, 0.00}, scale = {3.63, 3.63, 3.63} },
-            ['3 Bank Templates 2']      = { pos = {40.75, 1.06, -9.50},  rot = {0.00, 225.00, 0.00}, scale = {3.63, 3.63, 3.63} },
-            ['1 Turn Templates 2']      = { pos = {39.20, 0.96, 7.50},   rot = {0.00, 90.00, 0.00},  scale = {3.63, 3.63, 3.63} },
-            ['2 Turn Templates 2']      = { pos = {39.70, 0.98, 8.50},   rot = {0.00, 90.00, 0.00},  scale = {3.63, 3.63, 3.63} },
-            ['3 Turn Templates 2']      = { pos = {40.20, 0.97, 9.50},   rot = {0.00, 90.00, 0.00},  scale = {3.63, 3.63, 3.63} },
-            ['Core Set Asteroids 2']    = { pos = {46.00, 0.98, 4.00},   rot = {0.00, 180.00, 0.00}, scale = {0.38, 0.53, 0.38} },
-            ['TFA Set Asteroids 2']     = { pos = {46.00, 0.96, 0.00},   rot = {0.00, 180.00, 0.00}, scale = {0.38, 1.65, 0.38} },
-            ['Debris Fields 2']         = { pos = {46.00, -0.28, -4.00}, rot = {0.00, 180.00, 0.00}, scale = {0.50, 1.90, 0.50} },
-            ['Range 1 Rulers 2']             = { pos = {43.00, 1.00, 4.10}, rot = {0.00, 270.00, 180.00}, scale = {0.63, 0.63, 0.63} },
-            ['Range 1-2 Rulers 2']             = { pos = {43.00, 1.00, -2.40}, rot = {0.00, 270.01, 0.00}, scale = {0.63, 0.63, 0.63} },
-            ['Range 1-3 Rulers 2']             = { pos = {42.00, 1.00, 0.00}, rot = {0.00, 270.00, 180.00}, scale = {0.63, 0.63, 0.63} },
-            ['Deck Holder 1']   = { pos = {-40.00, 0.90, -15.00}, rot = {0.00, 0.00, 0.00}, scale = {0.65, 0.65, 0.65}},
-            ['Deck Holder 2']   = { pos = {-40.00, 0.90, 15.00}, rot = {0.00, 180.00, 0.00}, scale = {0.65, 0.65, 0.65}},
-            ['Deck Holder 3']   = { pos = {40.00, 0.90, 15.00}, rot = {0.00, 180.00, 0.00}, scale = {0.65, 0.65, 0.65}},
-            ['Deck Holder 4']   = { pos = {40.00, 0.90, -15.00}, rot = {0.00, 0.00, 0.00}, scale = {0.65, 0.65, 0.65}},
-        },
-        zones = {
-            ['Zone 1'] = { pos = {-22.50, 2.50, -32.00}, rot = {0.00, 0.00, 0.00}, scale = {44.90, 4.00, 12.00}, set = function(obj)
-                obj.setValue('Red')
-                Layout.AddDialZone(obj, {5, 1, 2}, {5, 1.2, 7}, {0, 0, 2.6}, {})
-            end },
-            ['Zone 2'] = { pos = {-22.50, 2.50, 32.00}, rot = {0.00, 180.00, 0.00}, scale = {44.90, 4.00, 12.00}, set = function(obj)
-                obj.setValue('Green')
-                Layout.AddDialZone(obj, {-5, 1, 2}, {-5, 1.2, 7}, {0, 0, -2.6})
-            end },
-            ['Zone 3'] = { pos = {22.50, 2.50, 32.00}, rot = {0.00, 180.00, 0.00}, scale = {44.90, 4.00, 12.00}, set = function(obj)
-                obj.setValue('Blue')
-                Layout.AddDialZone(obj, {5, 1, 2}, {5, 1.2, 7}, {0, 0, -2.6})
-            end },
-            ['Zone 4'] = { pos = {22.50, 2.50, -32.00}, rot = {0.00, 0.00, 0.00}, scale = {44.90, 4.00, 12.00}, set = function(obj)
-                obj.setValue('Teal')
-                Layout.AddDialZone(obj, {-5, 1, 2}, {-5, 1.2, 7}, {0, 0, 2.6})
-            end },
-        },
-        hands = {
-            ['Red']     = { pos = {-22.50, 5.00, -40.00}, rot = {0.00, 0.00, 0.00}, scale = {5.00, 5.00, 1.00} },
-            ['Green']   = { pos = {-22.50, 5.00, 40.00}, rot = {0.00, 180.00, 0.00}, scale = {5.00, 5.00, 1.00} },
-            ['Blue']    = { pos = {22.50, 5.00, 40.00}, rot = {0.00, 180.00, 0.00}, scale = {5.00, 5.00, 1.00} },
-            ['Teal']    = { pos = {22.50, 5.00, -40.00}, rot = {0.00, 0.00, 0.00}, scale = {5.00, 5.00, 1.00} },
-            ['Purple']  = { pos = {-50.00, 5.00, -15.00}, rot = {0.00, 90.28, 0.00}, scale = {5.00, 5.00, 1.00} },
-            ['Orange']  = { pos = {-52.00, 5.00, 0.00}, rot = {0.00, 90.00, 0.00}, scale = {5.01, 5.00, 1.00} },
-            ['Yellow']  = { pos = {-50.00, 5.00, 15.00}, rot = {0.00, 90.00, 0.00}, scale = {5.01, 5.00, 1.00} },
-            ['Brown']   = { pos = {50.00, 5.00, 15.00}, rot = {0.00, 270.00, 0.00}, scale = {5.01, 5.00, 1.00} },
-            ['Pink']    = { pos = {52.00, 5.00, 0.00}, rot = {0.00, 270.00, 0.00}, scale = {5.01, 5.00, 1.00} },
-            ['White']   = { pos = {50.00, 5.00, -15.00}, rot = {0.00, 270.00, 0.00}, scale = {5.01, 5.00, 1.00} },
-        },
-        mats = {
-            ['Green-Red'] = { pos = {-20.5142, -0.17, 0.00}, rot = {0.00, 180.00, 0.00}, scale = {1.225, 1.2, 1.225}, int = false },
-            ['Teal-Blue'] = { pos = {20.5142, -0.17, 0.00}, rot = {0.00, 180.00, 0.00}, scale = {1.225, 1.2, 1.225}, int = false },
-        },
-        data = {
-            assignButtonPos = {-5, 1, 2},
-            dialInitPos     = {-5, 1.2, 7},
-            dialStepDist    = 2.6
-        }
-    },
-    {
-        name = 'Epic',
-        tableImage = 'https://i.imgur.com/oeiISeR.png',
-        elements = {
-            ['TFA Damage Decks']     = { pos = {36.62, 1.13, -17.67},  rot = {0.00, 315.00, 0.00}, scale = {1.50, 1.50, 1.50} },
-            ['Old Damage Decks']     = { pos = {40.82, 1.13, -17.67},  rot = {0.00, 315.00, 0.00}, scale = {1.50, 1.50, 1.50} },
-            ['Tractor Beam']        = { pos = {38.72, 1.10, -15.67},  rot = {0.00, 89.99, 0.00}, scale = {1.00, 1.00, 1.00} },
-            ['Reinforce']           = { pos = {38.72, 1.06, -13.37},  rot = {0.00, 90.00, 0.00}, scale = {0.87, 0.87, 0.87} },
-            ['Ion']                 = { pos = {38.72, 1.10, -10.67},  rot = {0.00, 270.00, 0.00}, scale = {1.25, 1.25, 1.25} },
-            ['Stress']              = { pos = {38.72, 1.01, -7.17},  rot = {0.00, 270.00, 0.00}, scale = {1.25, 1.25, 1.25} },
-            ['Evade']               = { pos = {38.72, 1.10, -4.17},  rot = {0.00, 0.01, 0.00}, scale = {1.25, 1.25, 1.25} },
-            ['X-Wing Attack Die']   = { pos = {38.72, 2.02, -1.17},  rot = {0.00, 45.00, 0.00}, scale = {3.00, 3.00, 3.00} },
-            ['X-Wing Defense Die']  = { pos = {38.72, 2.02, 1.83},  rot = {0.00, 225.00, 0.00}, scale = {3.00, 3.00, 3.00} },
-            ['Target Locks B']      = { pos = {36.22, 1.02, 0.33},  rot = {0.00, 90.00, 0.00}, scale = {0.88, 0.88, 0.88} },
-            ['Target Locks A']      = { pos = {41.22, 1.10, 0.33},  rot = {0.00, 90.00, 180.00}, scale = {0.88, 0.88, 0.88} },
-            ['Focus']               = { pos = {38.72, 1.10, 4.83},  rot = {0.00, 269.99, 0.00}, scale = {1.25, 1.25, 1.25} },
-            ['Shield']              = { pos = {38.72, 1.10, 7.93},  rot = {0.00, 0.00, 0.00}, scale = {1.20, 1.20, 1.20} },
-            ['Critical Hit']        = { pos = {38.72, 1.10, 11.13},  rot = {0.00, 90.00, 0.00}, scale = {1.25, 1.25, 1.25} },
-            ['Cloak']               = { pos = {38.97, 1.07, 14.08},  rot = {0.00, 270.03, 0.00}, scale = {1.00, 1.00, 1.00} },
-            ['Extra Munitions']     = { pos = {39.92, 1.03, 16.53},  rot = {0.00, 90.00, 0.00}, scale = {0.60, 0.60, 0.60} },
-            ['Weapon Disabled']     = { pos = {37.72, 1.04, 16.53},  rot = {0.00, 0.00, 0.00}, scale = {0.60, 0.60, 0.60} },
-            ['All mines tokens']    = { pos = {40.92, 0.98, 18.73},  rot = {0.00, 90.01, 0.00}, scale = {0.25, 0.25, 0.25} },
-            ['Bomb drop tokens']    = { pos = {38.72, 1.02, 18.61},  rot = {0.00, 359.99, 0.00}, scale = {0.58, 0.58, 0.58} },
-            ['All bomb tokens']     = { pos = {36.72, 0.98, 18.73},  rot = {0.00, 90.00, 0.00}, scale = {0.40, 0.40, 0.40} },
-            ['1 Straight Templates']    = { pos = {-39.00, 0.96, -2.25}, rot = {0.00, 180.00, 0.00}, scale = {3.63, 3.63, 3.63} },
-            ['2 Straight Templates']    = { pos = {-41.00, 0.96, -3.00}, rot = {0.00, 0.00, 0.00},   scale = {3.63, 3.63, 3.63} },
-            ['3 Straight Templates']    = { pos = {-39.00, 0.96, 0.80},  rot = {0.00, 0.00, 0.00},   scale = {3.63, 3.63, 3.63} },
-            ['4 Straight Templates']    = { pos = {-41.00, 0.96, 1.50},  rot = {0.00, 0.00, 0.00},   scale = {3.63, 3.63, 3.63} },
-            ['5 Straight Templates']    = { pos = {-40.00, 0.96, 0.00},  rot = {0.00, 0.00, 0.00},   scale = {3.63, 3.63, 3.63} },
-            ['1 Bank Templates']        = { pos = {-39.50, 1.05, -7.50}, rot = {0.00, 270.00, 0.00}, scale = {3.63, 3.63, 3.63} },
-            ['2 Bank Templates']        = { pos = {-40.12, 1.05, -8.50}, rot = {0.00, 270.00, 0.00}, scale = {3.63, 3.63, 3.63} },
-            ['3 Bank Templates']        = { pos = {-40.75, 1.05, -9.50}, rot = {0.00, 270.00, 0.00}, scale = {3.63, 3.63, 3.63} },
-            ['1 Turn Templates']        = { pos = {-39.20, 0.96, 7.50},  rot = {0.00, 0.00, 0.00},   scale = {3.63, 3.63, 3.63} },
-            ['2 Turn Templates']        = { pos = {-39.70, 1.00, 8.50},  rot = {0.00, 0.00, 0.00},   scale = {3.63, 3.63, 3.63} },
-            ['3 Turn Templates']        = { pos = {-40.20, 0.96, 9.50},  rot = {0.00, 0.00, 0.00},   scale = {3.63, 3.63, 3.63} },
-            ['Core Set Asteroids']      = { pos = {-46.00, 0.99, -4.00}, rot = {0.00, 0.00, 0.00},   scale = {0.38, 0.53, 0.38} },
-            ['TFA Set Asteroids']       = { pos = {-46.00, 0.97, 0.00},  rot = {0.00, 0.00, 0.00},   scale = {0.38, 1.65, 0.38} },
-            ['Debris Fields']           = { pos = {-46.00, -0.27, 4.00}, rot = {0.00, 0.00, 0.00},   scale = {0.50, 1.90, 0.50} },
-            ['Range 1 Rulers']             = { pos = {-43.00, 1.00, -4.10}, rot = {0.00, 269.99, 0.00}, scale = {0.63, 0.63, 0.63} },
-            ['Range 1-2 Rulers']             = { pos = {-43.00, 1.00, 2.40}, rot = {0.00, 270.01, 180.00}, scale = {0.63, 0.63, 0.63} },
-            ['Range 1-3 Rulers']             = { pos = {-42.00, 1.00, 0.00}, rot = {0.00, 90.00, 0.00}, scale = {0.63, 0.63, 0.63} },
-        },
-        zones = {
-            ['Zone 1'] = { pos = {0.00, 2.50, -32.00}, rot = {0.00, 0.00, 0.00}, scale = {110.00, 4.00, 12.00},
-                set = function(obj)
-                    obj.setValue('Orange')
-                    Layout.extensions[1].call('FitToZone', {zone = obj})
-                end },
-            ['Zone 2'] = { pos = {0.00, 2.50, 32.00}, rot = {0.00, 180.00, 0.00}, scale = {110.00, 4.00, 12.00}, set = function(obj) obj.setValue('Purple') end },
-        },
-        hands = {
-            ['Red']     = { pos = {-22.50, 5.00, -40.00}, rot = {0.00, 0.00, 0.00}, scale = {5.00, 5.00, 1.00} },
-            ['Green']   = { pos = {-22.50, 5.00, 40.00}, rot = {0.00, 180.00, 0.00}, scale = {5.00, 5.00, 1.00} },
-            ['Blue']    = { pos = {22.50, 5.00, 40.00}, rot = {0.00, 180.00, 0.00}, scale = {5.00, 5.00, 1.00} },
-            ['Teal']    = { pos = {22.50, 5.00, -40.00}, rot = {0.00, 0.00, 0.00}, scale = {5.00, 5.00, 1.00} },
-            ['Purple']  = { pos = {-50.00, 5.00, -15.00}, rot = {0.00, 90.28, 0.00}, scale = {5.00, 5.00, 1.00} },
-            ['Orange']  = { pos = {-52.00, 5.00, 0.00}, rot = {0.00, 90.00, 0.00}, scale = {5.01, 5.00, 1.00} },
-            ['Yellow']  = { pos = {-50.00, 5.00, 15.00}, rot = {0.00, 90.00, 0.00}, scale = {5.01, 5.00, 1.00} },
-            ['Brown']   = { pos = {50.00, 5.00, 15.00}, rot = {0.00, 270.00, 0.00}, scale = {5.01, 5.00, 1.00} },
-            ['Pink']    = { pos = {52.00, 5.00, 0.00}, rot = {0.00, 270.00, 0.00}, scale = {5.01, 5.00, 1.00} },
-            ['White']   = { pos = {50.00, 5.00, -15.00}, rot = {0.00, 270.00, 0.00}, scale = {5.01, 5.00, 1.00} },
-        },
-        mats = {
-            ['Main'] = { pos = {0.00, -0.17, 0.00}, rot = {0.00, 180.00, 0.00}, scale = {1.225, 1.2, 1.225}, int = false },
-        }
-    },
-}
-
-]]--
+function SaveState()
+    self.script_state = JSON.encode(state)
+end
