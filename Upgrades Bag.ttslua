@@ -241,6 +241,7 @@ function startAsBuilder()
     init()
     local rot = {self.getRotation()[1], self.getRotation()[2]+180, self.getRotation()[3]}
     --Builder.noteObj = Spawner.Spawn('Spawn Me', Builder.LocalPos({-15, 0.5, 2}), rot)
+    assert(Builder.textToolTemplate, '3D Text deleted, reload the table')
     Builder.noteObj = Builder.textToolTemplate.clone({position = Builder.LocalPos({-15, 0, 8}, self, 0.75)})
     Builder.noteObj.setValue(Builder.initialNote)
 
