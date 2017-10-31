@@ -279,7 +279,10 @@ ModelDB.data = {
                 meshes = {'http://pastebin.com/LezDjunY'} },
             ['TIE Aggressor'] = {
                 arcType = 'P',
-                meshes = {'http://cloud-3.steamusercontent.com/ugc/767149048511803270/CCF070748EEB6BE259A107E63685A03015510D37/'} }
+                meshes = {'http://cloud-3.steamusercontent.com/ugc/767149048511803270/CCF070748EEB6BE259A107E63685A03015510D37/'} },
+            ['Alpha-Class Star Wing'] = {
+                arcType = 'P',
+                meshes = {'http://cloud-3.steamusercontent.com/ugc/856107339832208499/B487E10204BD99C37E225603E914169A90B352AC/'} },
         },
         ['large'] = {
             ['Upsilon Class Shuttle'] = {

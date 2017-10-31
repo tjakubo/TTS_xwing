@@ -122,6 +122,49 @@ do
         ['Green-Red'] = { pos = {-20.5142, -0.17, 0.00}, rot = {0.00, 180.00, 0.00}, scale = {1.225, 1.2, 1.225}, int = false },
         ['Teal-Blue'] = { pos = {20.5142, -0.17, 0.00}, rot = {0.00, 180.00, 0.00}, scale = {1.225, 1.2, 1.225}, int = false },
     }
+    function StandardCallMat(matName, callFcn)
+        local mat = Layout.GetMats()[standard.name][matName]
+        mat.call(callFcn)
+    end
+    function StandardChangeMatGR()
+        StandardCallMat('Green-Red', 'NextImage')
+    end
+    function StandardChangeMatTB()
+        StandardCallMat('Teal-Blue', 'NextImage')
+    end
+    function StandardToggleRulersGR()
+        StandardCallMat('Green-Red', 'ToggleRulers')
+    end
+    function StandardToggleRulersTB()
+        StandardCallMat('Teal-Blue', 'ToggleRulers')
+    end
+    local bWidth = 2200
+    local bHeight = 500
+    local bFontSize = 230
+    standard.controls = {
+        {   position = {50.5, 1, 0},
+            rotation = {0, 90, 0},
+            click_function = 'StandardChangeMatGR',
+            label = 'NEXT PLAYMAT'    },
+        {   position = {-50.5, 1, 0},
+            rotation = {0, -90, 0},
+            click_function = 'StandardChangeMatTB',
+            label = 'NEXT PLAYMAT'    },
+        {   position = {49, 1, 0},
+            rotation = {0, 90, 0},
+            click_function = 'StandardToggleRulersGR',
+            label = 'TOGGLE RULERS'    },
+        {   position = {-49, 1, 0},
+            rotation = {0, -90, 0},
+            click_function = 'StandardToggleRulersTB',
+            label = 'TOGGLE RULERS'    },
+    }
+    for k,button in ipairs(standard.controls) do
+        button.width = bWidth
+        button.height = bHeight
+        button.font_size = bFontSize
+        button.function_owner = self
+    end
 
     Layout.AddLayout(standard)
 end
