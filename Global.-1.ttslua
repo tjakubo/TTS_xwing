@@ -3100,20 +3100,20 @@ end
 
 -- Dial buttons definitions (centralized so it;s easier to adjust)
 DialModule.Buttons = {}
-DialModule.Buttons.deleteFacedown = {label='Return', click_function='DialClick_Return', height = 400, width=1000, position={0, -0.5, 2}, rotation={180, 180, 0}, font_size=300}
+DialModule.Buttons.deleteFacedown = {label='Return', click_function='DialClick_Return', tooltip = 'Return the dial to your hidden zone', height = 400, width=1000, position={0, -0.5, 2}, rotation={180, 180, 0}, font_size=300}
 DialModule.Buttons.flipNotify = {label='(flip to start)', click_function='dummy', height = 0, width = 0, position={0, 0.5, 0.2}, font_size=150, font_color={1,1,1}}
-DialModule.Buttons.deleteFaceup = {label='Return', click_function='DialClick_Return', height = 400, width=1000, position={0, 0.5, 2}, font_size=300}
-DialModule.Buttons.flip = {label='Flip', click_function='DialClick_Flip', height = 400, width=600, position={0, -0.5, 0.2}, rotation={180, 180, 0}, font_size=300}
-DialModule.Buttons.move = {label='Move', click_function='DialClick_Move', height = 500, width=750, position={-0.32, 0.5, 1}, font_size=300}
-DialModule.Buttons.undoMove = {label='Undo', click_function='DialClick_Undo', height = 500, width=750, position={-0.32, 0.5, 1}, font_size=300}
-DialModule.Buttons.focus = {label = 'F', click_function='DialClick_Focus', height=500, width=200, position={0.9, 0.5, -1}, font_size=250}
-DialModule.Buttons.stress = {label = 'S', click_function='DialClick_Stress', height=500, width=200, position={0.9, 0.5, 0}, font_size=250}
-DialModule.Buttons.shedStress = {label = '-', click_function='DialClick_Unstress', height=500, width=200, position={0.53, 0.5, 0}, font_size=250}
-DialModule.Buttons.evade = {label = 'E', click_function='DialClick_Evade', height=500, width=200, position={0.9, 0.5, 1}, font_size=250}
-DialModule.Buttons.toggleMainExpanded = {label = 'A', click_function='DialClick_ToggleMainExpanded', height=500, width=200, position={-0.9, 0.5, 0}, font_size=250}
-DialModule.Buttons.moveTemplate = {label = 'T', click_function='DialClick_SpawnMoveTemplate', height=500, width=200, position={-0.53, 0.5, 0}, font_size=250}
-DialModule.Buttons.toggleInitialExpanded = {label = 'A', click_function='DialClick_ToggleInitialExpanded', height=500, width=200, position={0.9, -0.5, 1}, rotation={180, 180, 0}, font_size=250}
-DialModule.Buttons.undo = {label = 'Q', click_function='DialClick_Undo', height=500, width=200, position={-0.9, 0.5, -1}, font_size=250}
+DialModule.Buttons.deleteFaceup = {label='Return', click_function='DialClick_Return', tooltip = 'Return the dial to your hidden zone', height = 400, width=1000, position={0, 0.5, 2}, font_size=300}
+DialModule.Buttons.flip = {label='Flip', click_function='DialClick_Flip', tooltip = 'Reveal the dial', height = 400, width=600, position={0, -0.5, 0.2}, rotation={180, 180, 0}, font_size=300}
+DialModule.Buttons.move = {label='Move', click_function='DialClick_Move', tooltip = 'Perform the maneuver', height = 500, width=750, position={-0.32, 0.5, 1}, font_size=300}
+DialModule.Buttons.undoMove = {label='Undo', click_function='DialClick_Undo', tooltip = 'Undo the maneuver', height = 500, width=750, position={-0.32, 0.5, 1}, font_size=300}
+DialModule.Buttons.focus = {label = 'F', click_function='DialClick_Focus', tooltip = 'Assign a focus token', height=500, width=200, position={0.9, 0.5, -1}, font_size=250}
+DialModule.Buttons.stress = {label = 'S', click_function='DialClick_Stress', tooltip = 'Assign a stress token', height=500, width=200, position={0.9, 0.5, 0}, font_size=250}
+DialModule.Buttons.shedStress = {label = '-', click_function='DialClick_Unstress', tooltip = 'Remove a stress token', height=500, width=200, position={0.53, 0.5, 0}, font_size=250}
+DialModule.Buttons.evade = {label = 'E', click_function='DialClick_Evade', tooltip = 'Assign an evade token', height=500, width=200, position={0.9, 0.5, 1}, font_size=250}
+DialModule.Buttons.toggleMainExpanded = {label = 'A', click_function='DialClick_ToggleMainExpanded', tooltip = 'Toggle advanced actions', height=500, width=200, position={-0.9, 0.5, 0}, font_size=250}
+DialModule.Buttons.moveTemplate = {label = 'T', click_function='DialClick_SpawnMoveTemplate', tooltip = 'Show/hide maneuver template', height=500, width=200, position={-0.53, 0.5, 0}, font_size=250}
+DialModule.Buttons.toggleInitialExpanded = {label = 'A', click_function='DialClick_ToggleInitialExpanded', tooltip = 'Toggle advanced actions', height=500, width=200, position={0.9, -0.5, 1}, rotation={180, 180, 0}, font_size=250}
+DialModule.Buttons.undo = {label = 'Q', click_function='DialClick_Undo', tooltip = 'Undo last movement', height=500, width=200, position={-0.9, 0.5, -1}, font_size=250}
 DialModule.Buttons.nameButton = function(ship)
     local shortName = DialModule.GetShortName(ship)
     local nameWidth = 900
@@ -3123,29 +3123,29 @@ DialModule.Buttons.nameButton = function(ship)
     if strWidth > nameWidth then
         nameWidth = strWidth
     end
-    return {label=shortName, click_function='DialClick_HighlightShip', height=300, width=nameWidth, position={0, -0.5, -1}, rotation={180, 180, 0}, font_size=250}
+    return {label=shortName, click_function='DialClick_HighlightShip', tooltip = 'Click to highlight this ship', height=300, width=nameWidth, position={0, -0.5, -1}, rotation={180, 180, 0}, font_size=250}
 end
 DialModule.Buttons.nameButtonLifted = function(ship)
     local regularButton = DialModule.Buttons.nameButton(ship)
     regularButton.position[3] = regularButton.position[3]-2.2
     return regularButton
 end
-DialModule.Buttons.boostS = {label='B', click_function='DialClick_BoostS', height=500, width=365, position={0, 0.5, -2.2}, font_size=250}
-DialModule.Buttons.boostR = {label='Br', click_function='DialClick_BoostR', height=500, width=365, position={0.75, 0.5, -2.2}, font_size=250}
-DialModule.Buttons.boostL = {label='Bl', click_function='DialClick_BoostL', height=500, width=365, position={-0.75, 0.5, -2.2}, font_size=250}
-DialModule.Buttons.rollR = {label='X', click_function='DialClick_RollR', height=500, width=365, position={1.5, 0.5, 0}, font_size=250}
-DialModule.Buttons.rollRF = {label='Xf', click_function='DialClick_RollRF', height=500, width=365, position={1.5, 0.5, -1}, font_size=250}
-DialModule.Buttons.rollRB = {label='Xb', click_function='DialClick_RollRB', height=500, width=365, position={1.5, 0.5, 1}, font_size=250}
-DialModule.Buttons.rollL = {label='X', click_function='DialClick_RollL', height=500, width=365, position={-1.5, 0.5, 0}, font_size=250}
-DialModule.Buttons.rollLF = {label='Xf', click_function='DialClick_RollLF', height=500, width=365, position={-1.5, 0.5, -1}, font_size=250}
-DialModule.Buttons.rollLB = {label='Xb', click_function='DialClick_RollLB', height=500, width=365, position={-1.5, 0.5, 1}, font_size=250}
-DialModule.Buttons.rulerArc = {label='Arc', click_function='DialClick_RulerArc', height=500, width=400, position={-2.35, 0.5, 2}, font_size=220}
-DialModule.Buttons.rulerTurr = {label='Tur', click_function='DialClick_RulerTurr', height=500, width=400, position={-1.55, 0.5, 2}, font_size=220}
-DialModule.Buttons.rulerR1 = {label='1', click_function='DialClick_RulerR1', height=500, width=250, position={-2.45, 0.5, 3}, font_size=250}
-DialModule.Buttons.rulerR2 = {label='2', click_function='DialClick_RulerR2', height=500, width=250, position={-1.95, 0.5, 3}, font_size=250}
-DialModule.Buttons.rulerR3 = {label='3', click_function='DialClick_RulerR3', height=500, width=250, position={-1.45, 0.5, 3}, font_size=250}
-DialModule.Buttons.targetLock = {label='TL', click_function='DialClick_TargetLock', height=500, width=365, position={1.5, 0.5, 2}, font_size=250}
-DialModule.Buttons.slide = {label='Slide', click_function='DialClick_SlideStart', height=250, width=2000, position={2.5, 0.5, 0}, font_size=250, rotation={0, 90, 0}}
+DialModule.Buttons.boostS = {label='B', click_function='DialClick_BoostS', tooltip = 'Boost straight', height=500, width=365, position={0, 0.5, -2.2}, font_size=250}
+DialModule.Buttons.boostR = {label='Br', click_function='DialClick_BoostR', tooltip = 'Boost right', height=500, width=365, position={0.75, 0.5, -2.2}, font_size=250}
+DialModule.Buttons.boostL = {label='Bl', click_function='DialClick_BoostL', tooltip = 'Boost left', height=500, width=365, position={-0.75, 0.5, -2.2}, font_size=250}
+DialModule.Buttons.rollR = {label='X', click_function='DialClick_RollR', tooltip = 'Barrel roll right', height=500, width=365, position={1.5, 0.5, 0}, font_size=250}
+DialModule.Buttons.rollRF = {label='Xf', click_function='DialClick_RollRF', tooltip = 'Barrel roll right (forward)', height=500, width=365, position={1.5, 0.5, -1}, font_size=250}
+DialModule.Buttons.rollRB = {label='Xb', click_function='DialClick_RollRB', tooltip = 'Barrel roll right (backward)', height=500, width=365, position={1.5, 0.5, 1}, font_size=250}
+DialModule.Buttons.rollL = {label='X', click_function='DialClick_RollL', tooltip = 'Barrel roll left', height=500, width=365, position={-1.5, 0.5, 0}, font_size=250}
+DialModule.Buttons.rollLF = {label='Xf', click_function='DialClick_RollLF', tooltip = 'Barrel roll left (forward)', height=500, width=365, position={-1.5, 0.5, -1}, font_size=250}
+DialModule.Buttons.rollLB = {label='Xb', click_function='DialClick_RollLB', tooltip = 'Barrel roll left (backward)', height=500, width=365, position={-1.5, 0.5, 1}, font_size=250}
+DialModule.Buttons.rulerArc = {label='Arc', click_function='DialClick_RulerArc', tooltip = 'Toggle turret arc ruler', height=500, width=400, position={-2.35, 0.5, 2}, font_size=220}
+DialModule.Buttons.rulerTurr = {label='Tur', click_function='DialClick_RulerTurr', tooltip = 'Toggle firing arc ruler', height=500, width=400, position={-1.55, 0.5, 2}, font_size=220}
+DialModule.Buttons.rulerR1 = {label='1', click_function='DialClick_RulerR1', tooltip = 'Toggle range 1 ruler', height=500, width=250, position={-2.45, 0.5, 3}, font_size=250}
+DialModule.Buttons.rulerR2 = {label='2', click_function='DialClick_RulerR2', tooltip = 'Toggle range 2 ruler', height=500, width=250, position={-1.95, 0.5, 3}, font_size=250}
+DialModule.Buttons.rulerR3 = {label='3', click_function='DialClick_RulerR3', tooltip = 'Toggle range 3 ruler', height=500, width=250, position={-1.45, 0.5, 3}, font_size=250}
+DialModule.Buttons.targetLock = {label='TL', click_function='DialClick_TargetLock', tooltip = 'Assign a target lock token', height=500, width=365, position={1.5, 0.5, 2}, font_size=250}
+DialModule.Buttons.slide = {label='Slide', click_function='DialClick_SlideStart', tooltip = 'Adjust base slide on last movement', height=250, width=2000, position={2.5, 0.5, 0}, font_size=250, rotation={0, 90, 0}}
 
 -- Get a button data if it was to be placen on the other side of a  card
 DialModule.Buttons.FlipVersion = function(buttonEntry)
@@ -3459,7 +3459,7 @@ DialModule.GetShortName = function(ship)
         if str == nil then
             return false
         end
-        return ( (str:len() < 10) and (str:len() > 3) )
+        return ( (str:len() < 10) --[[and (str:len() > 3)]] )
     end
     -- Delete the first word if too short/long and next is better
     if ( not sizeJustRight(shipNameWords[1]) ) and ( sizeJustRight(shipNameWords[2]) ) then
@@ -3773,6 +3773,7 @@ RulerModule.meshes.smallBase.scale = {0.629, 0.629, 0.629}
 RulerModule.meshes.smallBase.collider = 'http://pastebin.com/raw/5G8JN2B6'
 RulerModule.meshes.smallBase.full = 'http://cloud-3.steamusercontent.com/ugc/856096260992686885/93A78E32E8B4D456A8850956D0A394AFDD339BD7/'
 RulerModule.meshes.smallBase.primary = 'http://cloud-3.steamusercontent.com/ugc/856096260992683070/F2A246F3E449439892E5721CC8210097D0717FB1/'
+RulerModule.meshes.smallBase.bullseye = 'http://cloud-3.steamusercontent.com/ugc/905653584538232658/F002272A63F9C57A5421BDA86EB9BDB1F12EC94C/'
 RulerModule.meshes.smallBase.side = 'http://cloud-3.steamusercontent.com/ugc/856096260992684737/67D7CC3612702885FAF89DABA36B7FF03102E245/'
 RulerModule.meshes.smallBase.rear = 'http://cloud-3.steamusercontent.com/ugc/856096260992274940/BCD8DB9C2B0ABC3975EA2742979D5D1D2B0C29F2/'
 RulerModule.meshes.smallBase.turret = 'http://cloud-3.steamusercontent.com/ugc/856096260992685072/A3075630B5140D7BF0823686F2351E97E6567B05/'
@@ -3819,6 +3820,7 @@ RulerModule.typeToKey['AS'] = 'side'
 RulerModule.typeToKey['AR'] = 'rear'
 RulerModule.typeToKey['AT'] = 'turret'
 RulerModule.typeToKey['AM'] = 'mobile'
+RulerModule.typeToKey['AB'] = 'bullseye'
 RulerModule.typeToKey['R'] = 'range'
 
 -- Get ruler spawn tables for some ship and some ruler code
