@@ -57,6 +57,15 @@ ModelDB.GetData = function(model)
                         out.type = type
                         out.faction = faction
                         out.baseSize = baseSize
+                        local collData = ModelDB.colliders[baseSize]
+                        local collLink = ModelDB.RectifyLink(model.getCustomObject().collider)
+                        for collType, collSet in pairs(collData) do
+                            if table.find(collSet, collLink) then
+                                out.collider = collType
+                                break
+                            end
+                        end
+                        out.collider = out.collider or 'unknown'
                         ModelDB.SaveData(out, model)
                         return out
                     end
@@ -75,6 +84,42 @@ function API_ModelDB_GetData(arg)
     end
     return ModelDB.GetData(model)
 end
+
+ModelDB.SetCollider = function(model, type)
+    local data = ModelDB.GetData(model)
+    if not data.baseSize or (data.collider == type) then
+        return
+    end
+
+    local custom = model.getCustomObject()
+    custom.collider = ModelDB.colliders[data.baseSize][type][1]
+    model.setCustomObject(custom)
+    return model.reload()
+end
+function API_ModelDB_SetCollider(args)
+    return ModelDB.SetCollider(table.unpack(args))
+end
+
+ModelDB.colliders = {
+    ['small'] = {
+        ['full'] = {'http://cloud-3.steamusercontent.com/ugc/856097073971964332/9FA07C37B1615A416F306081D9152902A9BFE9EE/'},
+        ['box']  = {'http://cloud-3.steamusercontent.com/ugc/82591194029068301/41D4D10265D8B4B9FC1B0C640F9F8D94C816CE89/'}
+    },
+    ['large'] = {
+        ['full'] = {'http://cloud-3.steamusercontent.com/ugc/856097073971964883/B11F61E5ED25B90F87C047EB6252D3B18EBB09F1/'},
+        ['box']  = {'http://cloud-3.steamusercontent.com/ugc/82591194029102991/E8AD5E7B2039AA6FD75C13884472D494D2590E6B/'}
+    }
+}
+
+boxCollider = {
+    ['small'] = 'http://cloud-3.steamusercontent.com/ugc/82591194029068301/41D4D10265D8B4B9FC1B0C640F9F8D94C816CE89/',
+    ['large'] = 'http://cloud-3.steamusercontent.com/ugc/82591194029102991/E8AD5E7B2039AA6FD75C13884472D494D2590E6B/'
+}
+
+fullCollider = {
+    ['small'] = 'http://cloud-3.steamusercontent.com/ugc/856097073971964332/9FA07C37B1615A416F306081D9152902A9BFE9EE/',
+    ['large'] = 'http://cloud-3.steamusercontent.com/ugc/856097073971964883/B11F61E5ED25B90F87C047EB6252D3B18EBB09F1/'
+}
 
 -- Ship data
 -- First level: tables keyed by faction name
@@ -127,7 +172,10 @@ ModelDB.data = {
                 meshes = {'http://cloud-3.steamusercontent.com/ugc/830199836523150434/792F09608618B0AC2FF114BAA88567BA214B4A62/'} },
             ['Scurrg H-6 Bomber Rebel'] = {
                 arcType = 'P',
-                meshes = {'http://cloud-3.steamusercontent.com/ugc/856096098866548845/FA5948D17379237DF015D8EE177A7F61B2452595/'} }
+                meshes = {'http://cloud-3.steamusercontent.com/ugc/856096098866548845/FA5948D17379237DF015D8EE177A7F61B2452595/'} },
+            ['Sheathipede-Class Shuttle'] = {
+                arcType = 'R',
+                meshes = {'https://drive.google.com/uc?export=download&id=12r1p78FIOiMXnpPuUONjIJ63pMKHTrWo'} },
         },
         ['large'] = {
             ['VCX-100'] = {
@@ -141,7 +189,10 @@ ModelDB.data = {
                 meshes = {'https://paste.ee/r/Ff0vZ', 'http://cloud-3.steamusercontent.com/ugc/82591194029079241/206F408212849DCBB3E1934A623FD7A8844AAE47/'} },
             ['U-Wing'] = {
                 arcType = 'P',
-                meshes = {'https://paste.ee/r/D4Jjb', 'http://cloud-3.steamusercontent.com/ugc/82591194029075014/E561AA8493F86562F48EE85AB0C02F9C4F54D1B3/', 'http://cloud-3.steamusercontent.com/ugc/89352927638740227/F17424FAEF4C4429CE544FEF03DAE0E7EA2A672E/'} }
+                meshes = {'https://paste.ee/r/D4Jjb', 'http://cloud-3.steamusercontent.com/ugc/82591194029075014/E561AA8493F86562F48EE85AB0C02F9C4F54D1B3/', 'http://cloud-3.steamusercontent.com/ugc/89352927638740227/F17424FAEF4C4429CE544FEF03DAE0E7EA2A672E/'} },
+            ['B/SF-17 Bomber'] = {
+                arcType = 'T',
+                meshes = {'https://drive.google.com/uc?export=download&id=199mquPHcEJgHx1UFp8wHVSXEeWpW4wxG'} },
         }
     },
 
@@ -176,7 +227,10 @@ ModelDB.data = {
                 meshes = {'https://paste.ee/r/GmKW8', 'http://cloud-3.steamusercontent.com/ugc/82591194029065993/9838180A02D9960D4DE949001BBFD05452DA90D2/', 'http://cloud-3.steamusercontent.com/ugc/89352769138031546/C70B323524602140897D8E195C19522DB450A7E0/'} },
             ['Scurrg H-6 Bomber Scum'] = {
                 arcType = 'P',
-                meshes = {'http://cloud-3.steamusercontent.com/ugc/830199511120337844/FA5948D17379237DF015D8EE177A7F61B2452595/'} }
+                meshes = {'http://cloud-3.steamusercontent.com/ugc/830199511120337844/FA5948D17379237DF015D8EE177A7F61B2452595/'} },
+            ['M12-L Kimogila Fighter'] = {
+                arcType = 'B',
+                meshes = {'https://drive.google.com/uc?export=download&id=1-h__m8DbhyN5hFKxU1DEx_yA8KFbIbsX'} },
         },
         ['large'] = {
             ['JumpMaster 5000'] = {
@@ -234,7 +288,13 @@ ModelDB.data = {
                 meshes = {'http://pastebin.com/LezDjunY'} },
             ['TIE Aggressor'] = {
                 arcType = 'P',
-                meshes = {'http://cloud-3.steamusercontent.com/ugc/767149048511803270/CCF070748EEB6BE259A107E63685A03015510D37/'} }
+                meshes = {'http://cloud-3.steamusercontent.com/ugc/767149048511803270/CCF070748EEB6BE259A107E63685A03015510D37/'} },
+            ['Alpha-Class Star Wing'] = {
+                arcType = 'P',
+                meshes = {'http://cloud-3.steamusercontent.com/ugc/856107339832208499/B487E10204BD99C37E225603E914169A90B352AC/'} },
+            ['TIE Silencer'] = {
+                arcType = 'P',
+                meshes = {'https://drive.google.com/uc?export=download&id=1V-uML2bUYLOHSCP1bb-ESe5zuVK5bUMN'} },
         },
         ['large'] = {
             ['Upsilon Class Shuttle'] = {

@@ -7,38 +7,22 @@
 
 #include TTS_lib/Vector/Vector
 
+#include TTS_lib/Util/Util
+
+#include TTS_lib/ObjType/ObjType
+
+
+ObjType.AddType('ship', function(obj)
+    return (obj.tag == 'Figurine')
+end)
+ObjType.AddType('token', function(obj)
+    return (obj.tag == 'Chip' or (obj.getVar('__XW_Token') and obj.getVar('__XW_TokenIdle')))
+end)
+ObjType.AddType('obj', function(obj)
+    return ( (obj.tag ~= 'Fog') and obj.interactable )
+end)
+
 Zone = {}
-
-Zone.colors = {}
-Zone.colors.Red = {0.856, 0.1, 0.094}
-Zone.colors.Blue = {0.118, 0.53, 1}
-Zone.colors.Green = {0.192, 0.701, 0.168}
-Zone.colors.Teal = {0.129, 0.694, 0.607}
-
--- Check and return a color from Zone.colors list
--- Return nil if none matches
-Zone.CheckColor = function(zoneObj)
-    local zoneTint = zoneObj.getColorTint()
-    for color,colorTint in pairs(Zone.colors) do
-        if Vect.Length(Vect.Sub(zoneTint, colorTint)) < 0.1 then
-            return color
-        end
-    end
-    return nil
-end
-
--- Reset dial zone data to empty
-Zone.ResetZones = function()
-    Zone.dialZones = {
-        ['Red'] = {},
-        ['Blue'] = {},
-        ['Green'] = {},
-        ['Teal'] = {},
-    }
-end
-
--- Create empty dial zone data
-Zone.ResetZones()
 
 -- Return zone area, zero if size below some lower limit
 Zone.Area = function(obj)
@@ -48,30 +32,10 @@ Zone.Area = function(obj)
     return scale[1]*scale[3]
 end
 
--- Look through all objects for potential dial zones and their accesories
-Zone.UpdateDialZones = function()
-    Zone.ResetZones()
-    for k,obj in pairs(getAllObjects()) do
-        if obj.tag == 'Fog' then
-            local zoneColor = Zone.CheckColor(obj)
-            if zoneColor ~= nil and Zone.dialZones[zoneColor] ~= nil
-                                and (Zone.Area(obj) > Zone.Area(Zone.dialZones[zoneColor].zone))
-                                and (Zone.Area(obj) > 1) then
-                Zone.dialZones[zoneColor].zone = obj
-            end
-        elseif obj.getName():sub(1, 14) == 'Zone Extension' then
-            local extColor = obj.getName():sub(18, -1)
-            if Zone.dialZones[extColor] then
-                Zone.dialZones[extColor].extension = obj
-            end
-        end
-    end
-end
-
 -- Get all objects clipping a zone
-Zone.GetObjects = function(zone)
-    local zoneCast = {origin = zone.getPosition(), direction={0, 1, 0}, type=3, size=zone.getScale(), orientation=zone.getRotation()}
-    return HitObjects(Physics.cast(zoneCast))
+Zone.GetObjects = function(zone, type)
+    type = type or 'obj'
+    return ObjType.GetBoxOfType(zone.getPosition(), zone.getRotation(), zone.getScale(), type)
 end
 
 -- Return true if the zone is empty
@@ -126,135 +90,17 @@ Zone.AdjustHeight = function(zone, rowNum)
 end
 
 -- Pull out an extension tray for zone
-Zone.Extend = function(color)
-    local zone = Zone.dialZones[color].zone
-    local extension = Zone.dialZones[color].extension
-    if zone ~= nil and extension ~= nil then
-        extension.call('extend')
-    end
+Zone.Extend = function(extension)
+    extension.call('extend')
 end
 
 -- Retract an extension tray for zone
-Zone.Retract = function(color)
-    local zone = Zone.dialZones[color].zone
-    local extension = Zone.dialZones[color].extension
-    if zone ~= nil and extension ~= nil then
-        extension.call('retract')
-    end
+Zone.Retract = function(extension)
+    extension.call('retract')
 end
 
--- Update zones and buttons if zone destroyed
-function onObjectDestroyed(obj)
-    local dialZone = false
-    if obj.tag == 'Fog' then
-        for color,zoneData in pairs(Zone.dialZones) do
-            if zoneData.zone == obj then
-                Zone.dialZones.zone = nil
-                dialZone = true
-            end
-        end
-    end
-    if dialZone then
-        obj.setScale({0, 0, 0})
-        Zone.UpdateDialZones()
-        AssignModule.UpdateButtons()
-    end
-end
-
--- Update zones and buttons if zone created
-function onObjectSpawn(obj)
-    if obj.tag == 'Fog' then
-        Zone.UpdateDialZones()
-        AssignModule.UpdateButtons()
-    end
-end
-
--- Data for buttons spawn and dial layout zones
-PosData = {}
-
--- Position for the 'Assign dials' button
-PosData.buttonCorner = {50, 4, 36}
-PosData.AssignButtonPos = function(zoneColor)
-    return PosData[zoneColor](PosData.buttonCorner)
-end
-
--- Modify position data for each color
-PosData.Blue = function(pos)
-    return {pos[1], pos[2], pos[3]}
-end
-PosData.Green = function(pos)
-    return {-1*pos[1], pos[2], pos[3]}
-end
-PosData.Teal = function(pos)
-    return {pos[1], pos[2], -1*pos[3]}
-end
-PosData.Red = function(pos)
-    return {-1*pos[1], pos[2], -1*pos[3]}
-end
 
 AssignModule = {}
-
--- Is object matching some predefeined X-W type
-function XW_ObjMatchType(obj, type)
-    if type == 'any' then
-        return true
-    elseif type == 'ship' then
-        if obj.tag == 'Figurine' then return true end
-    elseif type == 'token' then
-        if (obj.tag == 'Chip' or obj.getVar('set') ~= nil) and obj.getName() ~= 'Shield' then return true end
-    elseif type == 'lock' then
-        if obj.getVar('set') ~= nil then return true end
-    elseif type == 'dial' then
-        if obj.tag == 'Card' and obj.getDescription() ~= '' then return true end
-    end
-    return false
-end
-
--- Get objects within rectangle
--- Rectangle must be aligned with table (no rotation)
-function XW_ObjWithinRect(center, x_size, z_size)
-    local objects = {}
-    local x_min = center[1] - (x_size/2)
-    local x_max = center[1] + (x_size/2)
-    local z_min = center[3] - (z_size/2)
-    local z_max = center[3] + (z_size/2)
-    for k,obj in pairs(getAllObjects()) do
-        if obj.tag ~= 'Fog' and obj.interactable == true then
-            local obj_x = obj.getPosition()[1]
-            local obj_z = obj.getPosition()[3]
-            if obj_x < x_max and obj_x > x_min and obj_z < z_max and obj_z > z_min then
-                table.insert(objects, obj)
-            end
-        end
-    end
-    return objects
-end
-
--- get hot objects from hit table after some exclusions
-function HitObjects(hitTables)
-    local out = {}
-    local exclTags = {
-        ['Fog'] = true,
-        ['Surface'] = true,
-        ['Custom_Board'] = true
-    }
-    local exclude = function(obj)
-        if (not obj.interactable) then return true end
-        if exclTags[obj.tag] then return true end
-        if obj.getName():find('Extension') then return true end
-        if obj.getName():find('Arc Indicator') then return true end
-        if obj.getName():find('drop token') then return true end
-
-        return false
-    end
-    for k,hitData in pairs(hitTables) do
-        if not exclude(hitData.hit_object) then
-            table.insert(out, hitData.hit_object)
-        end
-    end
-    return out
-end
-
 
 AssignModule.maxShipCount = 12
 AssignModule.msg = {}
@@ -263,7 +109,8 @@ AssignModule.msg.notShipsOnly = 'Quick Assign: Remove objects that are not ship 
 AssignModule.msg.tooManyShips = 'Quick Assign: Too many ship models (max ' .. AssignModule.maxShipCount ..')'
 AssignModule.msg.unrecognizedShips = 'Quick Assign: Some ship models in your zone have not been recognized. Make sure your models are sourced from squad building tray on this table and contact author if this issue persists'
 AssignModule.msg.clickTooFast = 'Quick Assign: Clicking too fast, please wait until assignment finishes'
-AssignModule.msg.zoneTooSmall = 'Quick Assign: Too little horizontal space, please widen your zone (Gizmo tool -> X scale)'
+--AssignModule.msg.zoneTooSmall = 'Quick Assign: Too little horizontal space, please widen your zone (Gizmo tool -> X scale)'
+AssignModule.msg.zoneTooSmall = 'Quick Assign: Too many ships!'
 
 -- Sort ships by their positions in the zone, left to right
 AssignModule.SortShips = function(shipData, zone)
@@ -290,6 +137,9 @@ end
 
 -- Get ships selected by player with some color
 AssignModule.ShipsFromSelection = function(playerColor)
+    if not Player[playerColor].seated then
+        return {}
+    end
     local selectedShips = {}
     for k,obj in pairs(Player[playerColor].getSelectedObjects()) do
         if obj.tag == 'Figurine' then
@@ -299,8 +149,13 @@ AssignModule.ShipsFromSelection = function(playerColor)
     return selectedShips
 end
 
+function API_AssignDials(args)
+    return AssignModule.Assign(table.unpack(args))
+end
+
 -- Check zone contents and assign dials if everything is OK
-AssignModule.Assign = function(zone, playerColor)
+AssignModule.Assign = function(playerColor, zone, buttonPos, extension, playerStuff)
+    print('A: ' .. tostring(playerColor) .. ' : ' .. tostring(zone) .. ' : ' .. tostring(buttonPos) .. ' : ' .. tostring(extension) .. ' : ' .. tostring(playerStuff))
 
     -- If assignment is in progress, notify and return
     if zone.getVar('assignBusy') == true then
@@ -310,9 +165,9 @@ AssignModule.Assign = function(zone, playerColor)
 
     -- Get objects inside the hidden zone or selected if zone empty, notify and return if empty
     local assignObjects = Zone.GetObjects(zone)
-    if assignObjects[1] == nil then
+    if table.empty(assignObjects) then
         assignObjects = AssignModule.ShipsFromSelection(playerColor)
-        if assignObjects[1] == nil then
+        if table.empty(assignObjects) then
             broadcastToColor(AssignModule.msg.emptyZoneAndSelection, playerColor, {1, 0.45, 0})
             return
         end
@@ -323,11 +178,12 @@ AssignModule.Assign = function(zone, playerColor)
     local tokenObjects = {}
     local shipObjects = {}
     for k,obj in pairs(assignObjects) do
-        if XW_ObjMatchType(obj, 'token') then
+        if ObjType.IsOfType(obj, 'token') then
             table.insert(tokenObjects, obj)
-        elseif XW_ObjMatchType(obj, 'ship') then
+        elseif ObjType.IsOfType(obj, 'ship') then
             table.insert(shipObjects, obj)
         else
+            print(obj.getName() .. ' : ' .. obj.tag)
             shipsOnly = false
             break
         end
@@ -336,10 +192,10 @@ AssignModule.Assign = function(zone, playerColor)
         broadcastToColor(AssignModule.msg.notShipsOnly, playerColor, {1, 0.45, 0})
         return
     end
-    if #shipObjects > AssignModule.maxShipCount then
+    --[[if #shipObjects > AssignModule.maxShipCount then
         broadcastToColor(AssignModule.msg.tooManyShips, playerColor, {1, 0.45, 0})
         return
-    end
+    end]]--
 
     -- Get and assert ship type data
     local typesOK = true
@@ -362,44 +218,23 @@ AssignModule.Assign = function(zone, playerColor)
         return
     end
 
+    -- Block the zone
+    zone.setVar('assignBusy', false)
+
     -- Sort the ships to match their order
     shipData = AssignModule.SortShips(shipData, zone)
 
-    -- Replace colliders to standard ones if needed
-    -- TODO they should be pulled from Global
-    local collOK = {
-        small = 'http://cloud-3.steamusercontent.com/ugc/856097073971964332/9FA07C37B1615A416F306081D9152902A9BFE9EE/',
-        large = 'http://cloud-3.steamusercontent.com/ugc/856097073971964883/B11F61E5ED25B90F87C047EB6252D3B18EBB09F1/'
-    }
     for k,data in pairs(shipData) do
-        local shipColl = data.shipRef.getCustomObject().collider
-        local baseSize = Global.call('API_ModelDB_GetData', {data.shipRef}).baseSize or 'small'
-        if shipColl ~= collOK[baseSize] then
-            local custom = data.shipRef.getCustomObject()
-            custom.collider = collOK[baseSize]
-            data.shipRef.setCustomObject(custom)
-            data.shipRef = data.shipRef.reload()
-        end
+        data.shipRef = Global.call('API_ModelDB_SetCollider', {data.shipRef, 'full'}) or data.shipRef
     end
 
     -- Dial bags desired position and its step
-    local function BagPosStep(pos)
-        return {pos[1], pos[2], pos[3] - 2.6*math.sgn(pos[3])}
-    end
-    local zoneColor = Zone.CheckColor(zone)
-    local bagPos = BagPosStep(PosData.AssignButtonPos(zoneColor))
-    bagPos[2] = 1.5
+    local bagPos = Vect.Sum(Vect.RotateDeg({0, 1.5, 4}, zone.getRotation()[2]), buttonPos)
+    local bagStep = Vect.RotateDeg({0, 0, 2.6}, zone.getRotation()[2])
 
     -- If there are valid dial bags on the table, take them
-    -- TODO concat being part of table (libs in general1)
-    local function TableConcat(t1,t2)
-        for i=1,#t2 do
-            t1[#t1+1] = t2[i]
-        end
-        return t1
-    end
-    local playerStuff = XW_ObjWithinRect({bagPos[1]/2, 0, bagPos[3]/2}, math.abs(bagPos[1])+1, math.abs(bagPos[3])+1)
-    playerStuff = TableConcat(playerStuff, XW_ObjWithinRect({-71, 0, 0}, 28, 54))
+    playerStuff = playerStuff or {}
+    playerStuff = table.join(playerStuff, ObjType.GetBoxOfType({-71, 0, 0}, {0, 0, 0}, {28, 5, 54}, 'obj'))
     for k,obj in pairs(playerStuff) do
         if AssignModule.IsDialBag(obj) then
             local type = AssignModule.DialBagType(obj)
@@ -410,7 +245,11 @@ AssignModule.Assign = function(zone, playerColor)
     end
 
     -- Destroy dial bags obstructing target position for current set
-    local currentDials = XW_ObjWithinRect(PosData[zoneColor]({50, 0, 23.5}), 6, 23)
+    local dialNum = table.size(bagData)
+    local angle = Vect.AngleDeg2D(Vect.Between(bagPos, Vect.Sum(bagPos, bagStep)))
+
+    local len = Vect.Length(Vect.Scale(bagStep, dialNum-1))
+    local currentDials = ObjType.GetBoxOfType(Vect.Middle(bagPos, Vect.Sum(bagPos, Vect.Scale(bagStep, dialNum-1))), {0, angle, 0}, {len+3, 1, 3}, 'obj')
     for k,obj in pairs(currentDials) do
         if AssignModule.IsDialBag(obj) then
             local type = AssignModule.DialBagType(obj)
@@ -441,7 +280,7 @@ AssignModule.Assign = function(zone, playerColor)
     for type,data in pairs(bagData) do
         data.bagRef.setPositionSmooth(bagPos)
         data.bagRef.unlock()
-        bagPos = BagPosStep(bagPos)
+        bagPos = Vect.Sum(bagPos, bagStep)
     end
 
     local scaleTable = {0.625, 0.525, 0.45}    -- Possible dial scales
@@ -484,7 +323,10 @@ AssignModule.Assign = function(zone, playerColor)
 
     local shipRows = {}
     local rowScale = {}
-    local maxRows = 2
+    local maxRows = 1
+    if extension then
+        maxRows = 2
+    end
 
     -- If more than 5 ships split evenly, else cram in one row
     if #shipData > 5 then
@@ -507,17 +349,18 @@ AssignModule.Assign = function(zone, playerColor)
         shipRows[row].scale, shipRows[row].widthSlack = getRowScale(#shipRows[row])
         if shipRows[row].scale == nil then
             broadcastToColor(AssignModule.msg.zoneTooSmall, playerColor, {1, 0.45, 0})
+            zone.setVar('assignBusy', false)
             return
         end
     end
 
     -- Adjust zone height to set amount of dial set rows, use extensions if neccesary
-    Zone.AdjustHeight(zone, #shipRows)
+    --Zone.AdjustHeight(zone, #shipRows)
     local zoneHeight = zone.getScale()[3]
-    if #shipRows > 1 then
-        Zone.Extend(zoneColor)
-    else
-        Zone.Retract(zoneColor)
+    if extension and #shipRows > 1 then
+        Zone.Extend(extension)
+    elseif extension then
+        Zone.Retract(extension)
     end
 
     -- Target (after assign) ship position and its step
@@ -544,6 +387,7 @@ AssignModule.Assign = function(zone, playerColor)
             return Vect.Sum(pos, {rowData.widthSlack + setWidthScaled, 0, 0})
         end
 
+        local shipsInZone = Zone.GetObjects(zone, 'ship')
         -- Assignment for each ship in a row
         for shipNum, shipData in ipairs(rowData) do
             -- Take a dial set, layout, assign
@@ -551,14 +395,15 @@ AssignModule.Assign = function(zone, playerColor)
             local newStack = bagData[shipData.shipType].bagRef.takeObject({position=setDest, rotation=setRot, callback='expandSet', callback_owner=self, params={ship = shipData.shipRef, scale = {rowData.scale, 1, rowData.scale}, unlock=zone}})
             newStack.setLuaScript(scriptSource.getLuaScript())
             setPos = SetStep(setPos)
-
             -- Move the ship with its tokens
-            local shipDest = Zone.LocalPos(zone, Vect.Sum(shipPos, {0, shipData.shipRef.getPosition()[2], 0}))
-            shipData.shipRef.setPositionSmooth(shipDest, false, true)
-            shipData.shipRef.setRotationSmooth(Vect.Sum(zone.getRotation(), {0, 180, 0}), false, true)
-            shipData.shipRef.highlightOn({0, 1, 0}, 1)
+            if table.find(shipsInZone, shipData.shipRef) then
+                local shipDest = Zone.LocalPos(zone, Vect.Sum(shipPos, {0, shipData.shipRef.getPosition()[2], 0}))
+                shipData.shipRef.setPositionSmooth(shipDest, false, true)
+                shipData.shipRef.setRotationSmooth(Vect.Sum(zone.getRotation(), {0, 180, 0}), false, true)
+                shipData.shipRef.highlightOn({0, 1, 0}, 1)
+                Global.call('API_QueueShipTokensMove', {ship = shipData.shipRef, noLock = true})
+            end
             shipPos = ShipStep(shipPos)
-            Global.call('API_QueueShipTokensMove', {ship = shipData.shipRef, noLock = true})
         end
     end
 
@@ -638,28 +483,6 @@ AssignModule.GrabDialBags = function(shipTypesTable)
     return grabbed
 end
 
--- Update zone buttons (create if zone exists)
-AssignModule.UpdateButtons = function()
-    self.clearButtons()
-    for color, zoneData in pairs(Zone.dialZones) do
-        if zoneData.zone ~= nil and zoneData.extension ~= nil then
-            local mainButton = {
-                label = 'Assign Dials',
-                position = Vect.ScaleEach(PosData.AssignButtonPos(color), {-1, 1, 1}),
-                rotation = Vect.Sum(zoneData.zone.getRotation(), {0, 180, 0}),
-                function_owner = self,
-                height = 750,
-                width = 2500,
-                font_size = 400,
-                color = stringColorToRGB(color)
-            }
-            _G['Assign' .. color] = function(_, playerColor) AssignModule.Assign(zoneData.zone, playerColor, false) end
-            mainButton.click_function = 'Assign' .. color
-            self.createButton(mainButton)
-        end
-    end
-end
-
 function onLoad(save_state)
 
     -- Get the dial set stack script
@@ -674,6 +497,6 @@ function onLoad(save_state)
     self.setScale({1, 1, 1})
     self.interactable = false
     self.tooltip = false
-    Zone.UpdateDialZones()
-    AssignModule.UpdateButtons()
+    --Zone.UpdateDialZones()
+    --AssignModule.UpdateButtons()
 end

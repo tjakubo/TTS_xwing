@@ -64,22 +64,25 @@ ChatCmd.BroadcastUsage = function(cmd)
     cmd.giver.broadcast('Usage: ' .. ChatCmd.commands[cmd.name].usage, ChatCmd.colors.warn)
 end
 
-ChatCmd.AddCommand = function(name, desc, usage, perm, fcn)
-    ChatCmd.commands[name] = {
-        usage = (usage and usage:gsub('<p>', ChatCmd.prefix)) or name,
-        desc = desc or 'NO DESCRIPTION',
-        fcn = fcn,
-        permissions = perm or 'everyone'
+ChatCmd.AddCommand = function(info)
+    assert(type(info.name) == 'string', 'ChatCmd.AddCommand: no name specified')
+    assert(ChatCmd.commands[info.name] == nil, 'ChatCmd.AddCommand: command \'' .. info.name .. '\' already defined')
+    assert(type(info.fcn) == 'function', 'ChatCmd.AddCommand: no function specified')
+    ChatCmd.commands[info.name] = {
+        usage = (info.usage and info.usage:gsub('<p>', ChatCmd.prefix)) or (ChatCmd.prefix .. info.name),
+        examples = info.examples or {}
+        desc = info.desc or '(no description)',
+        fcn = info.fcn,
+        permissions = info.perm or 'everyone'
     }
 end
 
 ChatCmd.fcns = {}
 ChatCmd.commands = {}
 
-ChatCmd.AddCommand(
-    'coin',
-    'Flips a coin and prints the result'
-)
+ChatCmd.AddCommand({
+
+})
 ChatCmd.fcns.coin = function(cmd)
     local result = 'HEADS'
     if math.random() > 0.5 then
