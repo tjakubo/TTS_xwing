@@ -739,11 +739,11 @@ Builder.ParseSquad.uk_Browse = function(input)
     -- Flag if the next name is a pilot
     local newShip = true
     -- Separate 'words' by opening parentheses OR plus sign
-    for word in input:gmatch('[\u{201C}\u{201D}\u{2019}\'\"/%w%s%-%.]+[%s][+%(]') do
+    for word in input:gmatch('[“”’\'\"/%w%s%-%.]+[%s][+%(]') do
         word = Builder.TrimWord(word)
         -- Replace special characters
-        word = word:gsub('[\u{201C}\u{201D}]', '"')
-        word = word:gsub('\u{2019}', '\'')
+        word = word:gsub('[“”]', '"')
+        word = word:gsub('’', '\'')
 
         local itemName = word:sub(1, -3)
         local delim = word:sub(-1, -1)
@@ -1149,6 +1149,7 @@ Builder.SpawnBombTokens = function()
     -- Which upgrades expand bomb drop options
     local extraDropUpgrades = {
         ['Bombardier'] = {'s2'},
+        ['Trajectory Simulator'] = {'s5r'},
     }
     -- Which pilots expand bomb drop options
     local extraDropPilots = {
@@ -1271,6 +1272,13 @@ Builder.SpawnConditionCards = function()
             cOff[2] = cOff[2] + 0.1
             table.insert(Builder.misc.other, {ref=newCond1, com='Condition'})
             table.insert(Builder.misc.other, {ref=newCond2, com='Condition'})
+        elseif pTable.name == '"Crimson Leader"' then
+            local newCond = Spawner.Spawn('Rattled condition', Builder.LocalPos(cOff, pTable.pRef), cRot)
+            cOff[2] = cOff[2] + 0.1
+            table.insert(Builder.misc.other, {ref=newCond, com='Condition'})
+            local condToken = Spawner.Spawn('Rattled condition token', Builder.LocalPos({0, 0.1, 0}, newCond), cRot)
+            table.insert(Builder.misc.tokens, {tRef=condToken, pRef=newCond})
+            condToken.setName(condToken.getName():sub(1,-7))
         end
         if Builder.HasUpgrade('A Score to Settle', k) then
             local newCond = Spawner.Spawn('A Debt To Pay condition', Builder.LocalPos(cOff, pTable.pRef), cRot)
@@ -1331,6 +1339,11 @@ Builder.SpawnExtraMunitions = function()
     applicableUpgrades['Cluster Mines'] = true
     applicableUpgrades['Conner Net'] = true
     applicableUpgrades['Proton Bombs'] = true
+    applicableUpgrades['Bomblet Generator'] = true
+    applicableUpgrades['Cruise Missiles'] = true
+    applicableUpgrades['Unguided Rockets'] = true
+    applicableUpgrades['Harpoon Missiles'] = true
+    applicableUpgrades['Cluster Missiles'] = true
     for k=1,#Builder.pilots,1 do
         if Builder.HasUpgrade('Extra Munitions', k) then
             local upgrades = Builder.GetUpgrades(k)
@@ -2039,6 +2052,8 @@ shipStatsDatabase['U-Wing'] = { shieldCount=4 }
 shipStatsDatabase['ARC-170'] = { shieldCount=3 }
 shipStatsDatabase['Auzituck Gunship'] = { shieldCount=3 }
 shipStatsDatabase['Scurrg H-6 Bomber Rebel'] = { shieldCount=5 }
+shipStatsDatabase['Sheathipede-Class Shuttle'] = { shieldCount=1 }
+shipStatsDatabase['B/SF-17 Bomber'] = { shieldCount=3 }
 
 shipStatsDatabase['Firespray-31 Scum'] = { shieldCount=4 }
 shipStatsDatabase['Z-95 Headhunter Scum'] = { shieldCount=2 }
@@ -2055,6 +2070,7 @@ shipStatsDatabase['Lancer-Class Pursuit Craft'] = { shieldCount=3 }
 shipStatsDatabase['Quadjumper'] = { shieldCount=0 }
 shipStatsDatabase['Protectorate Starfighter'] = { shieldCount=0 }
 shipStatsDatabase['Scurrg H-6 Bomber Scum'] = { shieldCount=5 }
+shipStatsDatabase['M12-L Kimogila Fighter'] = { shieldCount=2 }
 
 shipStatsDatabase['TIE Fighter'] = { shieldCount=0 }
 shipStatsDatabase['TIE Interceptor'] = { shieldCount=0 }
@@ -2072,6 +2088,8 @@ shipStatsDatabase['TIE Striker'] = { shieldCount=0 }
 shipStatsDatabase['TIE/sf Fighter'] = { shieldCount=3 }
 shipStatsDatabase['Upsilon Class Shuttle'] = { shieldCount=6 }
 shipStatsDatabase['TIE Aggressor'] = { shieldCount=1 }
+shipStatsDatabase['Alpha-Class Star Wing'] = { shieldCount=3 }
+shipStatsDatabase['TIE Silencer'] = { shieldCount=2 }
 
 -- END SHIP STATS DATABASE
 --------
