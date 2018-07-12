@@ -46,7 +46,8 @@ function DialAPI_AssignSet(argTable)
         else
             if dial.getVar('assignedShip') == nil then
                 validSet[dial.getDescription()] = {dial=dial, originPos=dial.getPosition()}
-                dial.call('setShip', {argTable.ship})
+                local assignFcn = function() dial.call('setShip', {argTable.ship}) end
+                Wait.condition(assignFcn, function() return not dial.spawning end, 2, assignFcn)
                 dial.setName(argTable.ship.getName())
             else
                 AnnModule.Announce({type='error_DialModule', note='tried to assign dial that belong to other ship (API call)'}, 'all', argTable.ship)
